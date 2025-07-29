@@ -9,9 +9,15 @@ from feriados_gui import abrir_gestor_feriados
 import os
 from datetime import timedelta
 import datetime
+import sys
+
 
 # Directorios fijos del sistema
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 CARPETA_ARCHIVOS = os.path.join(BASE_DIR, "archivos")
 CARPETA_REPORTES = os.path.join(BASE_DIR, "reportes")
 CARPETA_LOGO = os.path.join(BASE_DIR, "logo")
@@ -20,6 +26,7 @@ LOGO_PATH = os.path.join(CARPETA_LOGO, "logo.png")
 os.makedirs(CARPETA_ARCHIVOS, exist_ok=True)
 os.makedirs(CARPETA_REPORTES, exist_ok=True)
 os.makedirs(CARPETA_LOGO, exist_ok=True)
+
 
 # ------ Selector visual de archivos con fecha de modificación ------
 def seleccionar_archivo_con_fecha(archivos_disp, carpeta):
@@ -198,4 +205,3 @@ btn_salir = tk.Button(ventana, text="Salir del sistema", command=ventana.destroy
 btn_salir.pack(pady=18)
 
 ventana.mainloop()
-
