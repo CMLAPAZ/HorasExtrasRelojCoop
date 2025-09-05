@@ -5,7 +5,15 @@ build/
 dist/
 *.spec
 *.exe
+*.dll
 *.log
+build_log.txt
 releases/
 *.xlsx
+*.xls
+*.pdf
 *.zip
+instaler.exe
+installer*.bat
+uninstall*.bat
+dejavu-fonts-ttf-*
