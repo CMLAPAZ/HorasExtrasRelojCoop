@@ -355,6 +355,17 @@ def _calcular_por_dia(pares, feriados_set, eventos_dia):
                 if b > datetime.combine(d, OT100_NIGHT_START):
                     ot100 = b - max(a, datetime.combine(d, OT100_NIGHT_START))
 
+                # --- REGLA: reclasificar post-21 < 30' a 50% si la entrada fue antes de 21:00
+                corte_21 = datetime.combine(d, OT100_NIGHT_START)
+                if a < corte_21 and b > corte_21:
+                    post21 = b - corte_21
+                    if post21 < timedelta(minutes=30):
+                        ot50 += post21
+                        if ot100 >= post21:
+                            ot100 -= post21
+                        else:
+                            ot100 = timedelta(0)
+
                 # ajusta solapamientos con dur_total por seguridad
                 if ot50 + ot100 > dur_total:
                     exceso = (ot50 + ot100) - dur_total
