@@ -1,533 +1,888 @@
 # -*- coding: utf-8 -*-
-"""
-Módulo: procesador.py
-Autor: Carola + ChatGPT
-Descripción:
-------------
-Procesa fichadas de empleados a partir de un DataFrame y calcula:
-- Horas normales
-- Horas extra al 50% y al 100%
-- Comidas
-- Francos compensatorios
-- Llegadas tarde
-- Observaciones (feriado, fin de semana, salida anticipada, etc.)
-
-Los feriados se cargan automáticamente desde el archivo config.json si no se
-pasan explícitamente como parámetro.
-"""
-
+# VERSION ESTABLE - PRUEBA MARZO
+# Base corregida con:
+# - comparacion habil anterior/siguiente
+# - tardanza sin error de entrada_anterior
+# - mejor manejo de dyn_start
+# Ajuste puntual:
+# - soporte de cuadrilla 04:30
+# - exclusión de asignaciones especiales de la inferencia grupal
 from datetime import datetime, timedelta, time, date
 from collections import defaultdict
+from pathlib import Path
 import pandas as pd
 import json
-from pathlib import Path
 
-# ---------------- Constantes ----------------
-TIME_FMT = "%Y-%m-%d %H:%M:%S"
-DATE_FMT = "%Y-%m-%d"
-
-NORMAL_START = time(6, 0, 0)            # Inicio jornada
-NORMAL_END = time(13, 0, 0)            # Fin jornada normal
-OT100_NIGHT_START = time(21, 0, 0)     # Inicio horas 100% nocturnas
-LATE_LIMIT = time(6, 6, 0)             # Límite de llegada tarde
-
-UMBRAL_1_COMIDA = timedelta(hours=7, minutes=30)
-UMBRAL_2_COMIDA = timedelta(hours=15, minutes=0)
-
-# ------------------- FERIADOS -------------------
-# Por defecto, busca config.json en la misma carpeta que este archivo.
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
+# =========================================================
+# CONFIG
+# =========================================================
+def cargar_config():
+    if CONFIG_PATH.exists():
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    return {}
 
-def _parse_date_string(s):
-    """Intenta parsear una string a date probando varios formatos comunes."""
-    if s is None:
+def cargar_feriados(config):
+    return {
+        datetime.strptime(f, "%Y-%m-%d").date()
+        for f in config.get("feriados", [])
+    }
+
+def cargar_dias_paro(config):
+    return {str(f).strip() for f in config.get("dias_paro", []) if str(f).strip()}
+
+
+# =========================================================
+# CONSTANTES
+# =========================================================
+NORMAL_START = time(6, 0)
+OT100_NIGHT_START = time(21, 0)
+
+JORNADA_NORMAL = timedelta(hours=7)
+
+LATE_TOLERANCE_MIN = 6
+
+UMBRAL_1_COMIDA = timedelta(hours=7, minutes=30)
+UMBRAL_2_COMIDA = timedelta(hours=14)
+
+
+# =========================================================
+# UTILIDADES
+# =========================================================
+def normalizar_depto(d):
+    return str(d).strip().lower()
+
+def is_weekend(d: date):
+    return d.weekday() >= 5
+
+def _fmt(td):
+    s = int(td.total_seconds())
+    return f"{s//3600:02}:{(s%3600)//60:02}:{s%60:02}"
+
+def _round(td):
+    if td <= timedelta(0):
+        return timedelta(0)
+    mins = td.total_seconds() / 60
+    h = int(mins // 60)
+    if mins - h*60 >= 30:
+        h += 1
+    return timedelta(hours=h)
+
+def cargar_asignaciones_especiales(path: Path = None):
+    p = Path(path) if path else CONFIG_PATH
+    if not p.exists():
+        return []
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    asignaciones = data.get("asignaciones_especiales", [])
+    return asignaciones if isinstance(asignaciones, list) else []
+
+def obtener_inicio_asignado(asignaciones, legajo, d):
+    """
+    Busca asignación especial por legajo y rango de fechas.
+    Si existe y tiene inicio válido, devuelve time(HH, MM).
+    """
+    if not asignaciones:
         return None
-    s = str(s).strip()
-    if not s:
-        return None
-    formatos = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y%m%d")
-    for fmt in formatos:
+
+    legajo = str(legajo).strip()
+
+    for a in asignaciones:
+        if str(a.get("legajo", "")).strip() != legajo:
+            continue
+
+        desde_txt = str(a.get("desde", "")).strip()
+        hasta_txt = str(a.get("hasta", "")).strip()
+        inicio_txt = str(a.get("inicio", "")).strip()
+
+        if not desde_txt or not hasta_txt or not inicio_txt:
+            continue
+
         try:
-            return datetime.strptime(s, fmt).date()
+            desde = datetime.strptime(desde_txt, "%Y-%m-%d").date()
+            hasta = datetime.strptime(hasta_txt, "%Y-%m-%d").date()
         except Exception:
-            pass
-    # Intento parseo ISO (datetime con hora o fecha)
-    try:
-        return datetime.fromisoformat(s).date()
-    except Exception:
-        pass
-    # Heurística final para entradas raras (ej. dd-mm-yyyy sin ceros)
-    try:
-        parts = [p for p in (s.replace("/", "-").split("-")) if p]
-        if len(parts) >= 3:
-            p0, p1, p2 = parts[0], parts[1], parts[2]
-            if len(p0) == 4:
-                cand = f"{p0}-{p1.zfill(2)}-{p2.zfill(2)}"
-            else:
-                cand = f"{p2.zfill(4)}-{p1.zfill(2)}-{p0.zfill(2)}"
-            return datetime.strptime(cand, "%Y-%m-%d").date()
-    except Exception:
-        pass
+            continue
+
+        if not (desde <= d <= hasta):
+            continue
+
+        try:
+            hh, mm = map(int, inicio_txt.split(":"))
+            return time(hh, mm)
+        except Exception:
+            continue
+
     return None
 
 
-def cargar_feriados(path: Path = None, verbose: bool = False):
+# =========================================================
+# HORARIOS
+# =========================================================
+def obtener_horario_fijo(depto, d, config):
+    depto = normalizar_depto(depto)
+    for h in config.get("horarios_fijos", {}).get(depto, []):
+        desde = datetime.strptime(h["desde"], "%Y-%m-%d").date()
+        hasta = datetime.strptime(h["hasta"], "%Y-%m-%d").date()
+        if desde <= d <= hasta:
+            hh, mm = map(int, h["hora"].split(":"))
+            return time(hh, mm)
+    return None
+
+
+def obtener_horario_paro(depto, d, config):
+    depto = normalizar_depto(depto)
+    mapa = config.get("horarios_paro", {}).get(depto)
+
+    if not mapa:
+        return None
+
+    if isinstance(mapa, str):
+        h, m = map(int, mapa.split(":"))
+        return time(h, m)
+
+    clave = f"{d.year}-{d.month:02d}"
+    if clave in mapa:
+        h, m = map(int, mapa[clave].split(":"))
+        return time(h, m)
+
+    return None
+
+
+def resolver_hora_inicio(d, depto, inicio_grupal, config, es_paro, legajo):
+
+    depto = normalizar_depto(depto)
+
+    # PARO: nunca debe caer en cuadrilla ni en horario fijo.
+    # Si no hay horario de paro configurado, por defecto entra a las 06:00.
+    if es_paro:
+        return obtener_horario_paro(depto, d, config) or NORMAL_START
+
+    # FIJO
+    fijo = obtener_horario_fijo(depto, d, config)
+    if fijo:
+        return fijo
+
+    # CUADRILLA POR LEGAJO
+    if (depto, d, legajo) in inicio_grupal:
+        return inicio_grupal[(depto, d, legajo)]
+
+    return NORMAL_START
+
+
+# =========================================================
+# CUADRILLA (INFERENCIA)
+# =========================================================
+def _clasificar_franja_por_minutos(minutos_promedio):
     """
-    Carga feriados desde JSON.
-    Acepta claves: "feriados", "holidays", "dias_especiales", "diasEspeciales".
-    También acepta:
-      - JSON que es directamente una lista: ["2025-08-17", "25/12/2025"]
-      - JSON dict con keys como fechas: { "2025-08-17": "Feriado" }
-    Devuelve un set de objetos date.
+    Clasifica la franja grupal usando puntos medios entre franjas válidas:
+    04:30 | 05:00 | 05:30 | 06:00
     """
-    p = Path(path) if path else CONFIG_PATH
+    if minutos_promedio < 285:    # antes de 04:45
+        return time(4, 30)
+    elif minutos_promedio < 315:  # 04:45 a 05:14
+        return time(5, 0)
+    elif minutos_promedio < 345:  # 05:15 a 05:44
+        return time(5, 30)
+    else:
+        return time(6, 0)
 
-    # Si no existe en la ruta del módulo, intentar cwd/config.json
-    if not p.exists():
-        alt = Path.cwd() / p.name
-        if alt.exists():
-            p = alt
+EXCLUIR_DE_INFERENCIA = {"100", "101"}
+def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro=None, excluir_legajos=None):
+    """
+    Infiere cuadrilla por departamento y día usando SOLO la primera entrada real
+    de cada legajo. Excluye de la inferencia:
+      - asignaciones especiales vigentes
+      - feriados
+      - fines de semana
+      - días de paro
+    Devuelve {(depto, fecha, legajo): hora_base_grupal}
+    """
+    por_dia = defaultdict(list)
+    primeras_por_legajo = {}
+    asignaciones = asignaciones or []
+    feriados = feriados or set()
+    dias_paro = dias_paro or set()
+    excluir_legajos = {str(x).strip() for x in (excluir_legajos or set())}
+        
+    for depto, legajo, nombre, dt, tipo in registros:
+        if tipo != "ENTRADA":
+            continue
 
-    if verbose:
-        print(f"[DEBUG] cargar_feriados() buscando archivo en: {p} (exists={p.exists()})")
-        print(f"[DEBUG] cwd = {Path.cwd()}")
+        depto = normalizar_depto(depto)
+        d = dt.date()
+        fecha_str = d.strftime("%Y-%m-%d")
+        legajo_txt = str(legajo).strip()
+        if legajo_txt in excluir_legajos:
+            continue
 
-    if not p.exists():
-        if verbose:
-            print(f"[WARN] No se encontró {p}. Retornando set vacío.")
-        return set()
+        if is_weekend(d) or d in feriados or fecha_str in dias_paro:
+            continue
 
-    try:
-        raw_text = p.read_text(encoding="utf-8")
-    except Exception as e:
-        if verbose:
-            print(f"[ERROR] No pude leer {p}: {e}")
-        return set()
+        if obtener_inicio_asignado(asignaciones, legajo_txt, d):
+            continue
 
-    try:
-        data = json.loads(raw_text)
-    except Exception as e:
-        if verbose:
-            print(f"[ERROR] JSON inválido en {p}: {e}")
-        return set()
+        clave = (depto, d, legajo_txt)
+        if clave not in primeras_por_legajo or dt < primeras_por_legajo[clave]:
+            primeras_por_legajo[clave] = dt
 
-    raw = []
-    # Buscar claves comunes
-    for key in ("feriados", "holidays", "dias_especiales", "diasEspeciales"):
-        if isinstance(data, dict) and key in data and isinstance(data[key], list):
-            raw = data[key]
-            break
+    for (depto, d, legajo), dt in primeras_por_legajo.items():
+        por_dia[(depto, d)].append((legajo, dt))
 
-    # Si el JSON es directamente una lista
-    if not raw and isinstance(data, list):
-        raw = data
+    res = {}
 
-    # Si es un dict y sus keys parecen fechas, tomar las keys
-    if not raw and isinstance(data, dict):
-        posibles = list(data.keys())
-        fecha_ok = 0
-        for k in posibles[:20]:
-            if _parse_date_string(k):
-                fecha_ok += 1
-        if fecha_ok >= 1:
-            raw = posibles
+    for (depto, d), entradas in por_dia.items():
+        if not entradas:
+            continue
 
-    holidays = set()
-    for item in raw:
-        d = _parse_date_string(item)
-        if d:
-            holidays.add(d)
-        else:
-            if verbose:
-                print(f"[WARN] No pude parsear entrada de feriados: {item}")
+        entradas_sorted = sorted(entradas, key=lambda x: x[1])
 
-    if verbose:
-        print(f"[INFO] Feriados cargados: {len(holidays)} -> {sorted([x.isoformat() for x in holidays])}")
+        grupos = []
+        grupo_actual = [entradas_sorted[0]]
 
-    return holidays
+        for i in range(1, len(entradas_sorted)):
+            prev = entradas_sorted[i - 1][1]
+            curr = entradas_sorted[i][1]
+            diff = (curr - prev).total_seconds() / 60
 
+            if diff >= 25:
+                grupos.append(grupo_actual)
+                grupo_actual = []
 
-# --------------- Utilidades -----------------
-def is_weekend(d: date) -> bool:
-    return d.weekday() >= 5
+            grupo_actual.append(entradas_sorted[i])
 
+        grupos.append(grupo_actual)
 
-def clamp_interval(a: datetime, b: datetime, w_start: datetime, w_end: datetime) -> timedelta:
-    start = max(a, w_start)
-    end = min(b, w_end)
-    return max(end - start, timedelta(0))
+        for grupo in grupos:
+            minutos = [dt.hour * 60 + dt.minute for _, dt in grupo]
+            promedio = sum(minutos) / len(minutos)
+            hora = _clasificar_franja_por_minutos(promedio)
 
+            for legajo, _ in grupo:
+                res[(depto, d, legajo)] = hora
 
-def _round_to_hour(td: timedelta) -> timedelta:
-    if not isinstance(td, timedelta) or td <= timedelta(0):
-        return timedelta(0)
-    total_min = td.total_seconds() / 60.0
-    hours = int(total_min // 60)
-    rem = total_min - hours * 60
-    if rem >= 30:
-        hours += 1
-    return timedelta(hours=hours)
+    return res
 
 
-def _fmt(td: timedelta) -> str:
-    if not isinstance(td, timedelta):
-        return "00:00:00"
-    total_seconds = int(td.total_seconds())
-    h = total_seconds // 3600
-    m = (total_seconds % 3600) // 60
-    s = total_seconds % 60
-    return f"{h:02}:{m:02}:{s:02}"
-
-
-# ----------- Preprocesamiento DF ------------
+# =========================================================
+# PREPROCESAMIENTO
+# =========================================================
 def _df_to_registros(df: pd.DataFrame):
-    renombres = {
+    df = df.rename(columns={
         "Nro. de usuario": "Legajo",
         "Fecha/Hora": "FechaHora",
         "Tipo de registro": "Tipo"
-    }
-    df = df.rename(columns=renombres)
+    })
 
     cols_min = {"Legajo", "FechaHora", "Tipo"}
-    if not cols_min.issubset(df.columns):
-        faltan = cols_min - set(df.columns)
+    faltan = cols_min - set(df.columns)
+    if faltan:
         raise ValueError(f"Faltan columnas requeridas: {faltan}")
 
     tmp = df.copy()
-    tmp["FechaHora"] = pd.to_datetime(tmp["FechaHora"], errors="coerce")
-    tmp = tmp[~tmp["FechaHora"].isna()].copy()
-    tmp["Legajo"] = tmp["Legajo"].astype(str).str.strip()
-    tmp["Tipo"] = tmp["Tipo"].fillna("").astype(str).str.upper().str.strip()
 
-    if "Nombre" in tmp.columns:
-        tmp["Nombre"] = tmp["Nombre"].ffill().fillna("").astype(str).str.strip()
-    else:
-        tmp["Nombre"] = tmp["Legajo"]
+    tmp["FechaHora"] = pd.to_datetime(tmp["FechaHora"], errors="coerce")
+    tmp = tmp.dropna(subset=["FechaHora"]).copy()
+
+    tmp["Legajo"] = tmp["Legajo"].astype(str).str.strip()
+    tmp["Tipo"] = tmp["Tipo"].astype(str).str.upper().str.strip()
+    tmp = tmp[tmp["Tipo"].isin(["ENTRADA", "SALIDA", "BREAK"])].copy()
 
     if "Departamento" in tmp.columns:
-        tmp["Departamento"] = tmp["Departamento"].ffill().fillna("").astype(str).str.strip()
+        tmp["Departamento"] = tmp["Departamento"].fillna("").astype(str).map(normalizar_depto)
     else:
         tmp["Departamento"] = ""
 
-    tmp = tmp[tmp["Tipo"].isin(["ENTRADA", "SALIDA", "BREAK"])].copy()
-    tmp.sort_values(["Departamento", "Legajo", "Nombre", "FechaHora"], inplace=True, kind="mergesort")
+    if "Nombre" in tmp.columns:
+        tmp["Nombre"] = tmp["Nombre"].fillna("").astype(str).str.strip()
+    else:
+        tmp["Nombre"] = tmp["Legajo"]
+
+    tmp = tmp.sort_values(
+        ["Departamento", "Legajo", "Nombre", "FechaHora"],
+        kind="mergesort"
+    )
 
     return list(zip(
         tmp["Departamento"].tolist(),
         tmp["Legajo"].tolist(),
         tmp["Nombre"].tolist(),
-        tmp["FechaHora"].to_list(),
+        tmp["FechaHora"].tolist(),
         tmp["Tipo"].tolist()
     ))
 
 
 def _agrupar_por_empleado(registros):
     grupos = defaultdict(list)
+
     for depto, legajo, nombre, dt, tipo in registros:
-        grupos[(depto, legajo, nombre)].append({"dt": dt, "tipo": tipo})
+        grupos[(depto, legajo, nombre)].append({
+            "dt": dt,
+            "tipo": tipo
+        })
+
     for k in grupos:
         grupos[k].sort(key=lambda x: x["dt"])
+
     return grupos
 
 
 def _limpiar_y_emparejar(eventos):
     """
-    Normaliza eventos, elimina rebotes ENTRADA->ENTRADA < 2min, reordena SALIDA/ENTRADA mal ordenados
-    y devuelve lista de pares (entrada, salida) como datetimes.
+    Normaliza eventos y arma pares (entrada, salida).
+    Si hay entrada repetida sin salida intermedia,
+    se cierra el tramo anterior en la nueva entrada.
+    Si queda una entrada abierta al final, se marca incompleta.
     """
     if not eventos:
         return []
-    limpios = []
-    last_in = None
-    for ev in eventos:
-        if ev["tipo"] == "ENTRADA":
-            if last_in and (ev["dt"] - last_in).total_seconds() < 120:
-                # rebote de entrada muy corto -> ignorar
-                continue
-            last_in = ev["dt"]
-            limpios.append(ev)
-        elif ev["tipo"] in ["SALIDA", "BREAK"]:
-            limpios.append(ev)
-
-    corr = []
-    for ev in limpios:
-        if corr and corr[-1]["tipo"] == "SALIDA" and ev["tipo"] == "ENTRADA":
-            # si SALIDA seguido de ENTRADA y están desordenados por timestamp, intercambiar
-            if ev["dt"] < corr[-1]["dt"]:
-                corr[-1], ev = ev, corr[-1]
-        corr.append(ev)
 
     pares = []
     current_in = None
-    for ev in corr:
-        if ev["tipo"] == "ENTRADA":
+
+    for ev in eventos:
+        tipo = ev["tipo"]
+        dt = ev["dt"]
+
+        if tipo == "ENTRADA":
             if current_in is None:
-                current_in = ev["dt"]
+                current_in = dt
             else:
-                # entrada seguida de entrada -> asumimos cierre del tramo anterior con esta entrada
-                pares.append((current_in, ev["dt"]))
-                current_in = ev["dt"]
-        elif ev["tipo"] == "SALIDA":
+                # tramo incompleto: cerramos con la nueva entrada
+                pares.append((current_in, current_in))
+                current_in = dt
+
+        elif tipo in ("SALIDA", "BREAK"):
             if current_in is not None:
-                pares.append((current_in, ev["dt"]))
+                pares.append((current_in, dt))
                 current_in = None
+            else:
+                # salida sin entrada previa
+                pares.append((dt, dt))
+
+    if current_in is not None:
+        pares.append((current_in, current_in))
+
     return pares
 
 
-def _partir_tramo(e: datetime, s: datetime):
+def _debe_imputarse_al_dia_anterior(
+    e,
+    s,
+    depto,
+    legajo,
+    inicio_grupal,
+    asignaciones,
+    dias_paro,
+    feriados,
+    config
+):
     """
-    Si el tramo cruza de fecha, lo parte en subtramos por día.
-    Devuelve lista de (fecha, inicio, fin).
+    Regla puntual y conservadora:
+    un tramo de madrugada se imputa al día anterior SOLO si:
+    - entrada y salida caen el mismo día de madrugada
+    - el día actual NO es feriado, fin de semana ni paro
+    - la salida queda al menos 90 minutos antes del inicio asignado o inferido/votado
+      de ese mismo día
     """
-    if e.date() == s.date():
-        return [(e.date(), e, s)]
-    parts = []
-    cur_start = e
-    while cur_start.date() < s.date():
-        end_of_day = datetime.combine(cur_start.date(), time(23, 59, 59))
-        parts.append((cur_start.date(), cur_start, end_of_day))
-        cur_start = datetime.combine(cur_start.date() + timedelta(days=1), time(0, 0, 0))
-    parts.append((s.date(), cur_start, s))
-    return parts
+    if not e or not s:
+        return False
+
+    d_actual = e.date()
+    fecha_str = d_actual.strftime("%Y-%m-%d")
+
+    if d_actual in feriados or is_weekend(d_actual) or fecha_str in dias_paro:
+        return False
+
+    # caso típico: tramo ya dentro de la madrugada del "día siguiente"
+    if e.date() != s.date():
+        return False
+
+    # solo considerar madrugada; no tocar el resto
+    if not (e.time() < time(4, 30) and s.time() < time(4, 30)):
+        return False
+
+    inicio_asignado = obtener_inicio_asignado(asignaciones, legajo, d_actual)
+
+    if inicio_asignado:
+        inicio_ref = inicio_asignado
+    else:
+        inicio_ref = resolver_hora_inicio(
+            d=d_actual,
+            depto=depto,
+            inicio_grupal=inicio_grupal,
+            config=config,
+            es_paro=False,
+            legajo=legajo
+        )
+
+    inicio_dt = datetime.combine(d_actual, inicio_ref)
+    margen_dt = inicio_dt - timedelta(minutes=90)
+
+    return s <= margen_dt
 
 
-# ----------- Cálculo por día ----------------
-def _calcular_por_dia(pares, feriados_set, eventos_dia):
+def _calcular_por_dia(
+    pares,
+    feriados,
+    depto,
+    inicio_grupal,
+    legajo,
+    excluir_tardanza,
+    asignaciones,
+    dias_paro,
+    config,
+    eventos_dia=None
+):
     """
-    pares: lista de (datetime entrada, datetime salida)
-    feriados_set: set de date objects
-    eventos_dia: lista original de eventos para este empleado (se usa para detectar BREAK)
+    Reglas:
+    - Día normal:
+        normales + extras
+        comidas por tramo
+        tardanza sí
+    - Paro:
+        igual a día normal
+        pero sin tardanza
+        usando horario base de horarios_paro
+    - Feriado / fin de semana:
+        todo al 100%
+        comidas por total del día
+    - Redondeo:
+        50 y 100 por separado, al final del día
     """
+
     por_dia = defaultdict(list)
     for e, s in pares:
-        for d, a, b in _partir_tramo(e, s):
-            por_dia[d].append((a, b))
+        fecha_destino = e.date()
 
+        if _debe_imputarse_al_dia_anterior(
+            e=e,
+            s=s,
+            depto=depto,
+            legajo=legajo,
+            inicio_grupal=inicio_grupal,
+            asignaciones=asignaciones,
+            dias_paro=dias_paro,
+            feriados=feriados,
+            config=config
+        ):
+            fecha_destino = e.date() - timedelta(days=1)
+
+        por_dia[fecha_destino].append((e, s))
+
+    # Derivar primeras entradas desde por_dia, que ya tiene la imputación
+    # de madrugada al día anterior aplicada.  Si usáramos eventos_dia crudos,
+    # una entrada de 00:04 del 05/03 seguiría apareciendo bajo esa fecha aunque
+    # el tramo ya fue movido al 04/03, desacoplando la lógica de tardanza.
+    primeras_entradas = {
+        fecha: min(e for e, s in tramos)
+        for fecha, tramos in por_dia.items()
+        if tramos
+    }
     resultados = {}
-    for d in sorted(por_dia.keys()):
-        tramos = sorted(por_dia[d], key=lambda x: x[0])
+    excluir_tardanza = excluir_tardanza or set()
 
-        es_feriado = (feriados_set is not None) and (d in feriados_set)
+    for d in sorted(por_dia):
+        tramos = [(a, b) for a, b in por_dia[d]]
+        fecha_str = d.strftime("%Y-%m-%d")
+
+        es_paro = fecha_str in dias_paro
+        es_feriado = d in feriados
         es_finsem = is_weekend(d)
         es_especial = es_feriado or es_finsem
 
-        filas = []
+        if not tramos:
+            resultados[d] = {
+                "filas": [],
+                "totales": {
+                    "normales": "00:00:00",
+                    "ot50": "00:00:00",
+                    "ot100": "00:00:00",
+                    "tarde": 0,
+                    "franco": 0,
+                    "comida": 0
+                }
+            }
+            continue
+
+        inicio_asignado = obtener_inicio_asignado(asignaciones, legajo, d)
+
+        if inicio_asignado:
+            dyn_start = inicio_asignado
+        else:
+            dyn_start = resolver_hora_inicio(
+                d=d,
+                depto=depto,
+                inicio_grupal=inicio_grupal,
+                config=config,
+                es_paro=es_paro,
+                legajo=legajo
+            )
+
+        normal_start_dt = datetime.combine(d, dyn_start)
+        horario_fin = normal_start_dt + JORNADA_NORMAL
+        corte_21 = datetime.combine(d, OT100_NIGHT_START)
+
         total_norm = timedelta(0)
         total_50 = timedelta(0)
         total_100 = timedelta(0)
         total_tarde = 0
         total_franco = 0
         total_comida = 0
+        filas = []
 
-        # Llegada tarde se evalúa solo en días hábiles (no feriado/fin de semana)
-        if tramos and (not es_especial) and tramos[0][0].time() >= LATE_LIMIT:
-            total_tarde = 1
+        primer_tramo = tramos[0] if tramos else None
 
-        normal_consumida = False
-        for (a, b) in tramos:
+        # =====================================================
+        # TARDANZA
+        # SOLO PARA DÍAS NORMALES
+        # SI HAY INICIO ASIGNADO, USA ESE INICIO
+        # SI NO, USA EL INICIO INFERIDO / VOTADO (dyn_start)
+        # =====================================================
+        if (
+            not es_especial
+            and not es_paro
+            and str(legajo) not in set(map(str, excluir_tardanza))
+            and d in primeras_entradas
+        ):
+            entrada_dia = primeras_entradas[d]
+            inicio_referencia = inicio_asignado if inicio_asignado else dyn_start
+            inicio_dt = datetime.combine(d, inicio_referencia)
+            diff_min = (entrada_dia - inicio_dt).total_seconds() / 60
+            total_tarde = 1 if diff_min >= LATE_TOLERANCE_MIN else 0
+
+        # =====================================================
+        # MOTOR POR TRAMO
+        # =====================================================
+        for a_orig, b_orig in tramos:
             obs = []
+
             if es_feriado:
-                obs.append("Feriado ✦")
-            if es_finsem and not es_feriado:
-                obs.append("Sábado" if d.weekday() == 5 else "Domingo")
-
-            if not es_especial:
-                # Descontar minutos anteriores a la jornada en días hábiles
-                if a.date() == d and a.time() < NORMAL_START:
-                    a = datetime.combine(d, NORMAL_START)
-
-                # calcular normales solo una vez por día en el primer tramo que aplique
-                if not normal_consumida:
-                    norm = clamp_interval(a, b,
-                                          datetime.combine(d, NORMAL_START),
-                                          datetime.combine(d, NORMAL_END))
-                    total_norm += norm
-                    normal_consumida = norm > timedelta(0)
+                obs.append("★ FER")
+            elif es_finsem:
+                if d.weekday() == 5:
+                    obs.append("◆ SAB")
                 else:
-                    norm = timedelta(0)
+                    obs.append("◆ DOM")
+            elif es_paro:
+                obs.append("✦ PARO")
 
-                dur_total = b - a
-                ot50 = clamp_interval(a, b,
-                                      datetime.combine(d, NORMAL_END),
-                                      datetime.combine(d, OT100_NIGHT_START))
-                ot100 = timedelta(0)
-                if b > datetime.combine(d, OT100_NIGHT_START):
-                    ot100 = b - max(a, datetime.combine(d, OT100_NIGHT_START))
+            if inicio_asignado and not es_especial and not es_paro:
+                obs.insert(0, "ASIG")
 
-                # --- REGLA: reclasificar post-21 < 30' a 50% si la entrada fue antes de 21:00
-                corte_21 = datetime.combine(d, OT100_NIGHT_START)
-                if a < corte_21 and b > corte_21:
-                    post21 = b - corte_21
-                    if post21 < timedelta(minutes=30):
-                        ot50 += post21
-                        if ot100 >= post21:
-                            ot100 -= post21
-                        else:
-                            ot100 = timedelta(0)
+            es_primer_tramo = (a_orig, b_orig) == primer_tramo
 
-                # ajusta solapamientos con dur_total por seguridad
-                if ot50 + ot100 > dur_total:
-                    exceso = (ot50 + ot100) - dur_total
-                    if ot50 >= exceso:
-                        ot50 -= exceso
-                    else:
-                        exceso -= ot50
-                        ot50 = timedelta(0)
-                        ot100 -= exceso
+            # Tramo incompleto
+            if a_orig == b_orig:
+                obs.append("△ INC")
+                filas.append({
+                    "entrada": a_orig,
+                    "salida": b_orig,
+                    "normales": "00:00:00",
+                    "ot50": "00:00:00",
+                    "ot100": "00:00:00",
+                    "obs": " | ".join(obs)
+                })
+                continue
 
-                total_50 += ot50
-                total_100 += ot100
+            # Feriado / Fin de semana
+            if es_especial:
+                dur = b_orig - a_orig
+                total_100 += dur
+                filas.append({
+                    "entrada": a_orig,
+                    "salida": b_orig,
+                    "normales": "00:00:00",
+                    "ot50": "00:00:00",
+                    "ot100": _fmt(dur),
+                    "obs": " | ".join(obs)
+                })
+                continue
 
-            else:
-                # en feriados/fin de semana todo va al 100% (si el tramo pertenece a ese día)
-                if a.date() == d:
-                    dur = b - a
-                    norm = timedelta(0)
-                    ot50 = timedelta(0)
-                    ot100 = dur
-                    total_100 += dur
-                else:
-                    # tramo que empieza en día anterior y termina en este feriado -> ya fue tratado en su día correcto
-                    continue
+            # Día normal + paro
+            if es_primer_tramo and a_orig < normal_start_dt:
+                obs.append("↘ EA")
 
-            if b.time() < NORMAL_END and not es_especial:
-                obs.append("Salida anticipada")
+            a_calc = max(a_orig, normal_start_dt)
+            b_calc = b_orig
+
+            # Normales: dentro de la jornada
+            norm_chunk = max(min(horario_fin, b_calc) - a_calc, timedelta(0))
+
+            # Extras al 50%: desde fin de jornada hasta las 21:00
+            inicio_ot50 = max(horario_fin, a_calc)
+            ot50 = max(min(b_calc, corte_21) - inicio_ot50, timedelta(0))
+
+            # Extras al 100%: después de las 21:00
+            ot100 = max(b_calc - max(a_calc, corte_21), timedelta(0))
+
+            total_norm += norm_chunk
+            total_50 += ot50
+            total_100 += ot100
+
+            if es_primer_tramo and b_orig < horario_fin:
+                obs.append("✌ SA")
 
             filas.append({
-                "entrada": a, "salida": b,
-                "normales": _fmt(norm), "ot50": _fmt(ot50), "ot100": _fmt(ot100),
-                "tarde": 0, "franco": 0, "comida": 0,
-                "obs": ", ".join(obs)
+                "entrada": a_orig,
+                "salida": b_orig,
+                "normales": _fmt(norm_chunk),
+                "ot50": _fmt(ot50),
+                "ot100": _fmt(ot100),
+                "obs": " | ".join(obs)
             })
 
-        # ---- cálculo de comidas por día ----
-        total_comida = 0
-
+        # =====================================================
+        # COMIDAS
+        # =====================================================
         if es_especial:
-            # En sábados/domingos/feriados: la regla se aplica sobre la suma TOTAL
-            # de horas trabajadas en el día (incluye tramos discontinuos).
-            total_trabajado = timedelta(0)
-            for a, b in tramos:
-                inicio = a
-                fin = b
-                # contar solo la porción del tramo que pertenece a este día
-                if inicio.date() < d:
-                    inicio = datetime.combine(d, time(0, 0, 0))
-                if fin.date() > d:
-                    fin = datetime.combine(d, time(23, 59, 59))
-                if fin > inicio:
-                    total_trabajado += (fin - inicio)
-
+            total_trabajado = sum((b - a for a, b in tramos if b > a), timedelta(0))
             if total_trabajado >= UMBRAL_2_COMIDA:
                 total_comida = 2
             elif total_trabajado >= UMBRAL_1_COMIDA:
                 total_comida = 1
         else:
-            # Día hábil: comportamiento por tramo (no sumar discontinuos)
             for a, b in tramos:
-                dur = b - a
-                if a.date() == d and a.time() < NORMAL_START:
-                    a = datetime.combine(a.date(), NORMAL_START)
-                    dur = b - a
+                if b <= a:
+                    continue
+
+                a_comida = max(a, normal_start_dt)
+                if b <= a_comida:
+                    continue
+
+                dur = b - a_comida
                 if dur >= UMBRAL_2_COMIDA:
                     total_comida = max(total_comida, 2)
                 elif dur >= UMBRAL_1_COMIDA:
                     total_comida = max(total_comida, 1)
 
-        total_50_rounded = _round_to_hour(total_50)
-        total_100_rounded = _round_to_hour(total_100)
+        # =====================================================
+        # REDONDEO
+        # El total diario de extras se redondea UNA sola vez.
+        # Ejemplos:
+        #   08:30 -> 09:00
+        #   08:00 -> 08:00
+        # Así evitamos que 50% + 100% superen lo realmente trabajado.
+        # =====================================================
+        extra_total_real = total_50 + total_100
+        extra_total_red = _round(extra_total_real)
 
-        # ---- Franco ----
-        # Si es día especial (feriado o fin de semana) y total 100% redondeado >= 4h -> franco
-        if es_especial and total_100_rounded >= timedelta(hours=4):
+        if extra_total_red <= timedelta(0):
+            total_50 = timedelta(0)
+            total_100 = timedelta(0)
+        else:
+            # Damos prioridad al 100%, pero sin pasarnos del total redondeado
+            total_100_red = min(_round(total_100), extra_total_red)
+            total_50_red = extra_total_red - total_100_red
+
+            if total_50_red < timedelta(0):
+                total_50_red = timedelta(0)
+
+            total_50 = total_50_red
+            total_100 = total_100_red
+
+        # =====================================================
+        # FRANCO
+        # =====================================================
+        if es_especial and total_100 >= timedelta(hours=4):
             total_franco = 1
-            if filas:
-                filas[-1]["franco"] = 1
-                if filas[-1]["obs"]:
-                    filas[-1]["obs"] += " | Franco compensatorio"
-                else:
-                    filas[-1]["obs"] = "Franco compensatorio"
 
-        # ---- Break detectado en eventos originales ----
-        if any(ev["tipo"] == "BREAK" and ev["dt"].date() == d for ev in eventos_dia):
-            if filas:
+        # =====================================================
+        # BREAK
+        # =====================================================
+        if eventos_dia:
+            hubo_break = any(
+                ev["tipo"] == "BREAK" and ev["dt"].date() == d
+                for ev in eventos_dia
+            )
+            if hubo_break and filas:
                 if filas[0]["obs"]:
-                    filas[0]["obs"] += " | Break registrado ✌️"
+                    filas[0]["obs"] += " | ☕ BRK"
                 else:
-                    filas[0]["obs"] = "Break registrado ✌️"
+                    filas[0]["obs"] = "☕ BRK"
 
         resultados[d] = {
             "filas": filas,
             "totales": {
                 "normales": _fmt(total_norm),
-                "ot50": _fmt(total_50_rounded),
-                "ot100": _fmt(total_100_rounded),
+                "ot50": _fmt(total_50),
+                "ot100": _fmt(total_100),
                 "tarde": int(total_tarde),
                 "franco": int(total_franco),
                 "comida": int(total_comida)
             }
         }
+
     return resultados
 
 
-# ---------- API pública ----------
-def procesar_fichadas(df: pd.DataFrame, feriados: set = None):
+# =========================================================
+# API PÚBLICA
+# =========================================================
+def procesar_fichadas(
+    df: pd.DataFrame,
+    feriados: set | None = None,
+    inicio_variable: dict | None = None,
+    excluir_tardanza: set | None = None
+):
     """
     Procesa un DataFrame de fichadas y devuelve estructura por empleado.
-    Si feriados es None, se cargan automáticamente desde config.json.
+
+    Parámetros:
+    - df: DataFrame con fichadas
+    - feriados: set opcional de date; si no viene, se toma de config
+    - inicio_variable: reservado para futura extensión
+    - excluir_tardanza: set de legajos a excluir de cálculo de tardanza
     """
+    config = cargar_config()
+
     if feriados is None:
-        feriados = cargar_feriados()
+        feriados = cargar_feriados(config)
+
+    inicio_variable = inicio_variable or {}
+    excluir_tardanza = excluir_tardanza or set()
+    asignaciones = cargar_asignaciones_especiales()
+    dias_paro = cargar_dias_paro(config)
 
     registros = _df_to_registros(df)
     grupos = _agrupar_por_empleado(registros)
+
+    # inferencia de cuadrilla usando el universo de entradas,
+    # excluyendo especiales, feriados, fines de semana y paro
+    inicio_grupal = inferir_inicio_grupal(
+        registros,
+        asignaciones=asignaciones,
+        feriados=feriados,
+        dias_paro=dias_paro,
+        excluir_legajos=EXCLUIR_DE_INFERENCIA
+    )
+
     resultados = {}
+
     for key, eventos in grupos.items():
+        depto, legajo, nombre = key
+
         pares = _limpiar_y_emparejar(eventos)
-        por_dia = _calcular_por_dia(pares, feriados, eventos)
+
+        por_dia = _calcular_por_dia(
+            pares=pares,
+            feriados=feriados,
+            depto=depto,
+            inicio_grupal=inicio_grupal,
+            legajo=legajo,
+            excluir_tardanza=excluir_tardanza,
+            asignaciones=asignaciones,
+            dias_paro=dias_paro,
+            config=config,
+            eventos_dia=eventos
+        )
+
         resultados[key] = por_dia
+
     return resultados
 
 
-def aplanar_registros_por_tramo(resultados: dict):
+# =========================================================
+# SALIDA APLANADA POR TRAMO
+# =========================================================
+def aplanar_registros_por_tramo(resultados):
+    """
+    Convierte la estructura procesada en una salida lista para exportar,
+    manteniendo una fila por tramo y poniendo los totales del día
+    solamente en la primera fila de cada fecha.
+    """
     salida = []
+
     for (depto, legajo, nombre), por_dia in resultados.items():
         filas_emp = []
+
         for d in sorted(por_dia.keys()):
             data_dia = por_dia[d]
             tramos = data_dia.get("filas", [])
+            tot = data_dia.get("totales", {})
 
-            norm_dia = data_dia["totales"]["normales"]
-            ot50_dia = data_dia["totales"]["ot50"]
-            ot100_dia = data_dia["totales"]["ot100"]
-            comida_dia = data_dia["totales"]["comida"]
-            franco_dia = data_dia["totales"]["franco"]
-            tarde_dia = data_dia["totales"]["tarde"]
+            norm_dia = tot.get("normales", "00:00:00")
+            ot50_dia = tot.get("ot50", "00:00:00")
+            ot100_dia = tot.get("ot100", "00:00:00")
+            comida_dia = int(tot.get("comida", 0))
+            franco_dia = int(tot.get("franco", 0))
+            tarde_dia = int(tot.get("tarde", 0))
+
+            if not tramos:
+                filas_emp.append({
+                    "Fecha": d.strftime("%Y-%m-%d"),
+                    "Entrada": "",
+                    "Salida": "",
+                    "Normales": norm_dia,
+                    "50%": ot50_dia,
+                    "100%": ot100_dia,
+                    "Tarde": tarde_dia,
+                    "FRANCO": franco_dia,
+                    "COMIDA": comida_dia,
+                    "Observaciones": ""
+                })
+                continue
 
             for idx, fila in enumerate(tramos):
-                primera = (idx == 0)
+                primera = idx == 0
+
                 filas_emp.append({
-                    "Fecha": d.strftime(DATE_FMT),
-                    "Entrada": fila["entrada"].strftime("%H:%M:%S"),
-                    "Salida": fila["salida"].strftime("%H:%M:%S"),
-
-                    "Normales": str(norm_dia) if primera else "00:00:00",
-                    "50%": str(ot50_dia) if primera else "00:00:00",
-                    "100%": str(ot100_dia) if primera else "00:00:00",
-
-                    "Tarde": int(tarde_dia) if primera else 0,
-                    "FRANCO": int(franco_dia) if primera else 0,
-                    "COMIDA": int(comida_dia) if primera else 0,
-
-                    "Observaciones": fila["obs"] if primera else ""
+                    "Fecha": d.strftime("%Y-%m-%d"),
+                    "Entrada": fila["entrada"].strftime("%H:%M:%S") if fila.get("entrada") else "",
+                    "Salida": fila["salida"].strftime("%H:%M:%S") if fila.get("salida") else "",
+                    "Normales": norm_dia if primera else "00:00:00",
+                    "50%": ot50_dia if primera else "00:00:00",
+                    "100%": ot100_dia if primera else "00:00:00",
+                    "Tarde": tarde_dia if primera else 0,
+                    "FRANCO": franco_dia if primera else 0,
+                    "COMIDA": comida_dia if primera else 0,
+                    "Observaciones": fila.get("obs", "") if primera else ""
                 })
+
         salida.append({
-            "depto": depto,
+            "departamento": depto,
             "legajo": legajo,
             "nombre": nombre,
             "registros": filas_emp
         })
+
     return salida
 
 
+# =========================================================
+# UTILIDAD OPCIONAL: A DATAFRAME
+# =========================================================
+def aplanar_a_dataframe(resultados):
+    """
+    Devuelve un DataFrame plano útil para exportar a Excel.
+    """
+    filas = []
+
+    for emp in aplanar_registros_por_tramo(resultados):
+        depto = emp["departamento"]
+        legajo = emp["legajo"]
+        nombre = emp["nombre"]
+
+        for r in emp["registros"]:
+            filas.append({
+                "Departamento": depto,
+                "Legajo": legajo,
+                "Nombre": nombre,
+                "Fecha": r["Fecha"],
+                "Entrada": r["Entrada"],
+                "Salida": r["Salida"],
+                "Normales": r["Normales"],
+                "50%": r["50%"],
+                "100%": r["100%"],
+                "Tarde": r["Tarde"],
+                "FRANCO": r["FRANCO"],
+                "COMIDA": r["COMIDA"],
+                "Observaciones": r["Observaciones"]
+            })
+
+    return pd.DataFrame(filas)
