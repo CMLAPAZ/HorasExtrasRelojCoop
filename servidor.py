@@ -13,6 +13,7 @@ from procesador import procesar_fichadas, aplanar_registros_por_tramo
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
 SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
+FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola")
 
 SESION_FILE  = Path("sesion.json")
 CONFIRM_DIR  = Path("confirmaciones")
@@ -484,7 +485,8 @@ def periodo():
     if not _autenticado(): return _requiere_auth()
     meta = _cargar_metadata()
     return render_template("periodo.html", semanas=meta.get("semanas",[]),
-                           semana_actual=meta.get("semana_actual", 0))
+                           semana_actual=meta.get("semana_actual", 0),
+                           firma=FIRMA_SUPERVISOR)
 
 
 def _calcular_periodo(desde, hasta):
