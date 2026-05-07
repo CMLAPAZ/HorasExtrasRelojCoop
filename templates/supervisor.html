@@ -14,28 +14,46 @@
     .nav a:hover{text-decoration:underline}
     .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
     .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
+    .card-title-inline{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
     label{display:block;font-weight:600;margin-bottom:8px;font-size:.9rem}
     input[type=file]{width:100%;padding:10px;border:2px dashed #d1d5db;border-radius:8px;cursor:pointer;font-size:.9rem}
     .btn{padding:11px 28px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:14px}
     .btn:hover{background:#2d2d4e}
-    .btn-sm{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;margin-left:10px}
+    .btn-sm{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer}
+    .btn-sm:hover{background:#2d2d4e}
+    .btn-outline{padding:5px 12px;background:#fff;color:#1a1a2e;border:1px solid #d1d5db;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+    .btn-outline:hover{background:#f3f4f6}
+    .btn-warn{padding:5px 12px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+    .btn-warn:hover{background:#fffbeb}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
-    #resultado{display:none}
-    .tabla-wrap{overflow-x:auto;margin-top:12px}
+    .tabla-wrap{overflow-x:auto}
     table{width:100%;border-collapse:collapse;font-size:.85rem}
     th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
     .link-url{word-break:break-all;color:#1d4ed8;font-size:.8rem}
     .copy-btn{font-size:.75rem;padding:3px 10px;background:#e5e7eb;border:none;border-radius:4px;cursor:pointer;white-space:nowrap}
     .copy-btn:hover{background:#d1d5db}
     .ok{color:#065f46;font-weight:600}
     .pend{color:#92400e}
+    .badge-semana{background:#dbeafe;color:#1e40af;font-size:.75rem;font-weight:700;padding:3px 12px;border-radius:20px}
+    .progress-wrap{min-width:90px}
+    .progress-bar-bg{background:#f0f0f0;border-radius:4px;height:7px;overflow:hidden;margin-bottom:3px}
+    .progress-bar{background:#22c55e;height:100%;transition:width .3s}
+    .progress-text{font-size:.73rem;color:#555}
+    .sem-n{font-weight:700}
+    .sem-fecha{font-size:.75rem;color:#888;display:block;margin-top:2px}
+    .vacio{color:#888;font-size:.85rem;padding:16px 0;text-align:center}
+    .actions-cell{display:flex;gap:6px;flex-wrap:wrap}
     .desc-dia{font-size:.78rem;color:#555;margin-top:3px;padding:4px 8px;background:#f8f9fb;border-radius:4px;border-left:3px solid #d1d5db}
     .desc-fecha{font-weight:600;color:#1a1a2e}
-    #estado-wrap{display:none}
-    .card-header{display:flex;align-items:center;justify-content:space-between}
-    .card-title-inline{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
+    .info-ok{font-size:.82rem;color:#065f46;background:#d1fae5;padding:8px 12px;border-radius:6px;margin-bottom:12px}
+    .hidden{display:none}
+    .td-fechas{font-size:.82rem}
+    .td-cargando{color:#888}
+    .td-vacio{text-align:center;color:#888}
   </style>
 </head>
 <body>
@@ -43,23 +61,28 @@
 <div class="topbar">
   <h1>CM Horas Extras</h1>
   <div class="nav">
-    <a href="/historial">Ver historial</a>
+    <a href="/historial">Historial</a>
+    <a href="/periodo">Períodos</a>
     <a href="/logout">Salir</a>
   </div>
 </div>
 
-<!-- Upload -->
+<!-- Nueva semana -->
 <div class="card">
+  <div class="card-title">Nueva semana</div>
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
-  <div id="error"></div>
-  <div id="loading">⏳ Procesando fichadas…</div>
-  <button type="button" class="btn" onclick="procesar()">Generar links</button>
+  <div id="error" class="hidden"></div>
+  <div id="loading" class="hidden">⏳ Procesando fichadas…</div>
+  <button type="button" class="btn" onclick="procesar()">Procesar y generar links</button>
 </div>
 
-<!-- Links generados -->
-<div class="card" id="resultado">
-  <strong>Links para enviar por WhatsApp</strong>
+<!-- Links de la semana recién procesada -->
+<div class="card hidden" id="resultado">
+  <div class="card-header">
+    <span class="card-title-inline">Links para enviar</span>
+    <span id="semana-badge" class="badge-semana"></span>
+  </div>
   <div class="tabla-wrap">
     <table>
       <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th></tr></thead>
@@ -68,49 +91,76 @@
   </div>
 </div>
 
-<!-- Estado de confirmaciones -->
-<div class="card" id="estado-wrap">
+<!-- Semanas registradas -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title-inline">Semanas registradas</span>
+    <button type="button" class="btn-sm" onclick="cargarSemanas()">Actualizar</button>
+  </div>
+  <div id="semanas-body"><div class="vacio">Cargando…</div></div>
+</div>
+
+<!-- Panel de links de una semana -->
+<div class="card hidden" id="links-panel">
+  <div class="card-header">
+    <span class="card-title-inline" id="links-panel-titulo"></span>
+    <button type="button" class="btn-sm" onclick="document.getElementById('links-panel').classList.add('hidden')">Cerrar ×</button>
+  </div>
+  <div id="links-panel-info" class="info-ok hidden"></div>
+  <div class="tabla-wrap">
+    <table>
+      <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Link</th><th></th></tr></thead>
+      <tbody id="tbody-links"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Estado confirmaciones (sesión activa) -->
+<div class="card hidden" id="estado-wrap">
   <div class="card-header">
     <span class="card-title-inline">Estado de confirmaciones</span>
     <button type="button" class="btn-sm" onclick="cargarEstado()">Actualizar</button>
   </div>
   <div class="tabla-wrap">
     <table>
-      <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
+      <thead><tr><th>Sem.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
       <tbody id="tbody-estado"></tbody>
     </table>
   </div>
 </div>
 
 <script>
+// ─── Procesar nuevo XLS ──────────────────────────
 async function procesar() {
-  const file = document.getElementById('csv').files[0];
-  const errEl  = document.getElementById('error');
-  const loadEl = document.getElementById('loading');
-  errEl.style.display = 'none';
+  const file  = document.getElementById('csv').files[0];
+  const errEl = document.getElementById('error');
+  const loadEl= document.getElementById('loading');
+  errEl.classList.add('hidden');
 
   if (!file) {
     errEl.textContent = 'Seleccioná un archivo primero.';
-    errEl.style.display = 'block';
+    errEl.classList.remove('hidden');
     return;
   }
-
-  loadEl.style.display = 'block';
-  document.getElementById('resultado').style.display = 'none';
+  loadEl.classList.remove('hidden');
+  document.getElementById('resultado').classList.add('hidden');
 
   const fd = new FormData();
   fd.append('csv', file);
 
   try {
-    const res  = await fetch('/procesar', { method: 'POST', body: fd });
+    const res  = await fetch('/procesar', { method:'POST', body:fd });
     const data = await res.json();
-    loadEl.style.display = 'none';
+    loadEl.classList.add('hidden');
 
     if (data.error) {
       errEl.textContent = '⚠ ' + data.error;
-      errEl.style.display = 'block';
+      errEl.classList.remove('hidden');
       return;
     }
+
+    document.getElementById('semana-badge').textContent =
+      `Semana ${data.semana}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
 
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
@@ -120,26 +170,144 @@ async function procesar() {
         <td>${e.legajo}</td>
         <td>${e.nombre}</td>
         <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
-        <td><button class="copy-btn" data-url="${e.url}" onclick="copiar(this)">Copiar</button></td>
+        <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
       `;
       tbody.appendChild(tr);
     });
 
-    document.getElementById('resultado').style.display = 'block';
-    document.getElementById('estado-wrap').style.display = 'block';
+    document.getElementById('resultado').classList.remove('hidden');
+    cargarSemanas();
     cargarEstado();
 
-  } catch (ex) {
-    loadEl.style.display = 'none';
+  } catch(ex) {
+    loadEl.classList.add('hidden');
     errEl.textContent = 'Error de conexión con el servidor.';
-    errEl.style.display = 'block';
+    errEl.classList.remove('hidden');
   }
 }
 
+// ─── Semanas ─────────────────────────────────────
+async function cargarSemanas() {
+  const body = document.getElementById('semanas-body');
+  try {
+    const res  = await fetch('/semanas');
+    const data = await res.json();
+    if (!data.length) {
+      body.innerHTML = '<div class="vacio">No hay semanas registradas todavía.</div>';
+      return;
+    }
+    let html = '<div class="tabla-wrap"><table><thead><tr><th>Semana</th><th>Fechas</th><th>Confirmaciones</th><th>Acciones</th></tr></thead><tbody>';
+    data.forEach(s => {
+      const pct = s.total ? Math.round(s.confirmados / s.total * 100) : 0;
+      html += `<tr>
+        <td>
+          <span class="sem-n">Sem. ${s.numero}</span>
+          <span class="sem-fecha">${s.fecha_upload || ''}</span>
+        </td>
+        <td class="td-fechas">${s.fecha_desde || '—'}<br>${s.fecha_hasta || ''}</td>
+        <td>
+          <div class="progress-wrap">
+            <div class="progress-bar-bg"><div class="progress-bar" style="width:${pct}%"></div></div>
+            <div class="progress-text">${s.confirmados} / ${s.total} confirmaron</div>
+          </div>
+        </td>
+        <td>
+          <div class="actions-cell">
+            <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
+            <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+  } catch(ex) {
+    body.innerHTML = '<div class="vacio">Error al cargar semanas.</div>';
+  }
+}
+
+// ─── Ver links de una semana ──────────────────────
+async function verLinks(n) {
+  const panel = document.getElementById('links-panel');
+  const titulo= document.getElementById('links-panel-titulo');
+  const info  = document.getElementById('links-panel-info');
+  const tbody = document.getElementById('tbody-links');
+
+  titulo.textContent = `Links — Semana ${n}`;
+  info.classList.add('hidden');
+  tbody.innerHTML = `<tr><td colspan="5" class="td-cargando">Cargando…</td></tr>`;
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior:'smooth' });
+
+  const res  = await fetch(`/semanas/${n}/links`);
+  const data = await res.json();
+
+  tbody.innerHTML = '';
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="td-vacio">Sin datos disponibles</td></tr>`;
+    return;
+  }
+  data.forEach(e => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${e.legajo}</td>
+      <td>${e.nombre}</td>
+      <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>
+      <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
+      <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── Regenerar links ──────────────────────────────
+async function regenerarLinks(n) {
+  if (!confirm(`¿Regenerar links de la semana ${n}?\n\nLos links pendientes quedarán inválidos y se crearán nuevos.\nLos empleados que ya confirmaron no se tocan.`)) return;
+
+  const res  = await fetch(`/semanas/${n}/regenerar`, { method:'POST' });
+  const data = await res.json();
+  if (data.error) { alert('Error: ' + data.error); return; }
+
+  const panel = document.getElementById('links-panel');
+  const titulo= document.getElementById('links-panel-titulo');
+  const info  = document.getElementById('links-panel-info');
+  const tbody = document.getElementById('tbody-links');
+
+  titulo.textContent = `Links regenerados — Semana ${n}`;
+  if (data.ya_confirmados) {
+    info.textContent = `${data.ya_confirmados} empleado(s) ya confirmaron y mantienen su estado.`;
+    info.classList.remove('hidden');
+  } else {
+    info.classList.add('hidden');
+  }
+
+  tbody.innerHTML = '';
+  if (!data.empleados.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="td-vacio">Todos ya confirmaron.</td></tr>`;
+  } else {
+    data.empleados.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${e.legajo}</td>
+        <td>${e.nombre}</td>
+        <td><span class="pend">⏳ Pendiente</span></td>
+        <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
+        <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior:'smooth' });
+  cargarSemanas();
+}
+
+// ─── Estado de confirmaciones ────────────────────
 async function cargarEstado() {
   try {
     const res  = await fetch('/estado');
     const data = await res.json();
+    if (!data.length) return;
     const tbody = document.getElementById('tbody-estado');
     tbody.innerHTML = '';
     data.forEach(e => {
@@ -148,6 +316,7 @@ async function cargarEstado() {
       ).join('');
       const tr = document.createElement('tr');
       tr.innerHTML = `
+        <td>${e.semana || '—'}</td>
         <td>${e.legajo}</td>
         <td>${e.nombre}</td>
         <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>
@@ -155,15 +324,22 @@ async function cargarEstado() {
       `;
       tbody.appendChild(tr);
     });
+    document.getElementById('estado-wrap').classList.remove('hidden');
   } catch(ex) { /* silencioso */ }
 }
 
-function copiar(btn) {
-  navigator.clipboard.writeText(btn.dataset.url).then(() => {
+// ─── Copiar ──────────────────────────────────────
+function copiar(btn, url) {
+  navigator.clipboard.writeText(url).then(() => {
+    const prev = btn.textContent;
     btn.textContent = '✓ Copiado';
-    setTimeout(() => btn.textContent = 'Copiar', 1800);
+    setTimeout(() => btn.textContent = prev, 1800);
   });
 }
+
+// ─── Init ────────────────────────────────────────
+cargarSemanas();
+cargarEstado();
 </script>
 </body>
 </html>

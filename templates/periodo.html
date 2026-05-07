@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Períodos</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:14px}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
+    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
+    .card-title-inline{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
+    .selector{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+    .field{display:flex;flex-direction:column;gap:4px}
+    label{font-size:.82rem;font-weight:600;color:#555}
+    select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;min-width:240px}
+    select:focus{outline:none;border-color:#1a1a2e}
+    .btn{padding:11px 28px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;align-self:flex-end}
+    .btn:hover{background:#2d2d4e}
+    .btn-danger{padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}
+    .btn-danger:hover{background:#b91c1c}
+    .tabla-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:.85rem}
+    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    .ot50{color:#d97706;font-weight:600}
+    .ot100{color:#dc2626;font-weight:600}
+    .emp-nombre{font-weight:600}
+    .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
+    .hidden{display:none}
+    .aviso{font-size:.82rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+    .totales-row td{font-weight:700;border-top:2px solid #e5e7eb;background:#f8f9fb}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Gestión de períodos</h1>
+  <div class="nav">
+    <a href="/">← Panel principal</a>
+    <a href="/historial">Historial</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+<!-- Selector de período -->
+<div class="card">
+  <div class="card-title">Visualizar y cerrar período</div>
+
+  {% if semanas %}
+  <div class="selector">
+    <div class="field">
+      <label for="desde">Desde semana</label>
+      <select id="desde">
+        {% for s in semanas %}
+        <option value="{{ s.numero }}">Sem. {{ s.numero }} ({{ s.fecha_desde or '?' }} → {{ s.fecha_hasta or '?' }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="hasta">Hasta semana</label>
+      <select id="hasta">
+        {% for s in semanas %}
+        <option value="{{ s.numero }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }} ({{ s.fecha_desde or '?' }} → {{ s.fecha_hasta or '?' }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="button" class="btn" onclick="previsualizar()">Ver resumen</button>
+  </div>
+  {% else %}
+  <div class="vacio">No hay semanas registradas. Procesá un archivo desde el panel principal.</div>
+  {% endif %}
+</div>
+
+<!-- Resumen del período -->
+<div class="card hidden" id="resumen-wrap">
+  <div class="card-header">
+    <span class="card-title-inline" id="resumen-titulo">Resumen del período</span>
+    <button type="button" class="btn-danger" onclick="cerrarPeriodo()">Cerrar período ✓</button>
+  </div>
+  <div class="aviso" id="aviso-incompleto" hidden>
+    Hay empleados sin confirmar en este rango. El cierre incluirá solo las confirmaciones recibidas.
+  </div>
+  <div id="resumen-body"></div>
+</div>
+
+<script>
+let _desde = 1, _hasta = 1;
+
+async function previsualizar() {
+  _desde = parseInt(document.getElementById('desde').value);
+  _hasta = parseInt(document.getElementById('hasta').value);
+  if (_hasta < _desde) {
+    alert('La semana "hasta" debe ser mayor o igual a "desde".');
+    return;
+  }
+
+  const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}`);
+  const data = await res.json();
+  const wrap = document.getElementById('resumen-wrap');
+  const body = document.getElementById('resumen-body');
+
+  document.getElementById('resumen-titulo').textContent =
+    `Período: semanas ${_desde} a ${_hasta}`;
+
+  if (!data.length) {
+    body.innerHTML = '<div class="vacio">Sin confirmaciones en este rango.</div>';
+    document.getElementById('aviso-incompleto').hidden = true;
+    wrap.classList.remove('hidden');
+    return;
+  }
+
+  let totOt50 = 0, totOt100 = 0, totComidas = 0, totFrancos = 0, totTardanzas = 0;
+
+  let html = `<div class="tabla-wrap"><table>
+    <thead><tr>
+      <th>Legajo</th><th>Nombre</th><th>Depto.</th>
+      <th>OT 50%</th><th>OT 100%</th>
+      <th>Comidas</th><th>Francos</th><th>Tardanzas</th><th>Semanas</th>
+    </tr></thead><tbody>`;
+
+  data.forEach(e => {
+    totComidas   += e.comidas   || 0;
+    totFrancos   += e.francos   || 0;
+    totTardanzas += e.tardanzas || 0;
+    html += `<tr>
+      <td>${e.legajo}</td>
+      <td class="emp-nombre">${e.nombre}</td>
+      <td>${e.departamento || '—'}</td>
+      <td class="ot50">${e.ot50  || '0h'}</td>
+      <td class="ot100">${e.ot100 || '0h'}</td>
+      <td>${e.comidas   || 0}</td>
+      <td>${e.francos   || 0}</td>
+      <td>${e.tardanzas || 0}</td>
+      <td>${(e.semanas || []).join(', ')}</td>
+    </tr>`;
+  });
+
+  html += `<tr class="totales-row">
+    <td colspan="3">TOTALES (${data.length} empleados)</td>
+    <td class="ot50">—</td>
+    <td class="ot100">—</td>
+    <td>${totComidas}</td>
+    <td>${totFrancos}</td>
+    <td>${totTardanzas}</td>
+    <td>—</td>
+  </tr>`;
+
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+  document.getElementById('aviso-incompleto').hidden = true;
+  wrap.classList.remove('hidden');
+  wrap.scrollIntoView({ behavior:'smooth' });
+}
+
+async function cerrarPeriodo() {
+  if (!confirm(
+    `¿Cerrar el período semanas ${_desde} a ${_hasta}?\n\n` +
+    `• El período quedará archivado.\n` +
+    `• El contador de semanas se reiniciará a 1.\n\n` +
+    `Esta acción no se puede deshacer.`
+  )) return;
+
+  const fd = new FormData();
+  fd.append('desde', _desde);
+  fd.append('hasta', _hasta);
+
+  const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
+  const data = await res.json();
+
+  if (data.error) { alert('Error: ' + data.error); return; }
+
+  alert(
+    `Período archivado correctamente.\n` +
+    `Archivo: ${data.periodo_archivado}\n\n` +
+    `El contador de semanas se reinició a 1.`
+  );
+  window.location.href = '/';
+}
+</script>
+</body>
+</html>

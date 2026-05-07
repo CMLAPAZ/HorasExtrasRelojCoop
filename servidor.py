@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os
+import os, re
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for
 import pandas as pd
 import secrets
@@ -11,16 +11,18 @@ import socket
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "cm_horas_secret_2026")
+app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
+SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
 
-SESION_FILE      = Path("sesion.json")
-CONFIRM_DIR      = Path("confirmaciones")
-SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS", "cm2026")
+SESION_FILE  = Path("sesion.json")
+CONFIRM_DIR  = Path("confirmaciones")
+SEMANAS_DIR  = Path("semanas")
+PERIODOS_DIR = Path("periodos")
 
 
-# ─────────────────────────────────────────────
-# Auth
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════
+# AUTH
+# ═══════════════════════════════════════════════
 def _autenticado():
     return session.get("auth") is True
 
@@ -28,9 +30,9 @@ def _requiere_auth():
     return redirect(url_for("login", next=request.path))
 
 
-# ─────────────────────────────────────────────
-# Persistencia de sesión en disco
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════
+# PERSISTENCIA
+# ═══════════════════════════════════════════════
 def _cargar_sesion():
     if SESION_FILE.exists():
         try:
@@ -42,18 +44,61 @@ def _cargar_sesion():
 def _guardar_sesion(s):
     SESION_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _cargar_metadata():
+    f = SEMANAS_DIR / "metadata.json"
+    if f.exists():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"semana_actual": 0, "semanas": []}
+
+def _guardar_metadata(m):
+    SEMANAS_DIR.mkdir(exist_ok=True)
+    (SEMANAS_DIR / "metadata.json").write_text(
+        json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+def _guardar_semana_csv(n, df):
+    SEMANAS_DIR.mkdir(exist_ok=True)
+    df.to_csv(SEMANAS_DIR / f"semana_{n}.csv", index=False, encoding="utf-8")
+
+def _cargar_semana_csv(n):
+    f = SEMANAS_DIR / f"semana_{n}.csv"
+    return pd.read_csv(f, encoding="utf-8") if f.exists() else None
+
+def _leer_historial(semana=None):
+    CONFIRM_DIR.mkdir(exist_ok=True)
+    items = []
+    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if semana is None or data.get("semana") == semana:
+                items.append(data)
+        except Exception:
+            continue
+    return items
+
 _sesion = _cargar_sesion()
 
 
-# ─────────────────────────────────────────────
-# Utilidades
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════
+# UTILIDADES
+# ═══════════════════════════════════════════════
 def _parse_td(s):
     if not s or s == "00:00:00":
         return timedelta(0)
-    h, m, sec = map(int, s.split(":"))
+    parts = s.split(":")
+    h, m, sec = int(parts[0]), int(parts[1]), int(parts[2])
     return timedelta(hours=h, minutes=m, seconds=sec)
 
+def _parse_hm(s):
+    """'3h 45m' o '3h' → timedelta"""
+    if not s or s == "0h":
+        return timedelta(0)
+    h = int(re.search(r'(\d+)h', s).group(1)) if re.search(r'(\d+)h', s) else 0
+    m = int(re.search(r'(\d+)m', s).group(1)) if re.search(r'(\d+)m', s) else 0
+    return timedelta(hours=h, minutes=m)
 
 def _fmt_hm(td):
     total = int(td.total_seconds())
@@ -63,109 +108,104 @@ def _fmt_hm(td):
     m = (total % 3600) // 60
     return f"{h}h {m:02d}m" if m else f"{h}h"
 
-
 def _preparar_dias(registros):
     dias_dict = {}
     dias_order = []
-
     for r in registros:
         fecha = r["Fecha"]
         if fecha not in dias_dict:
             dias_order.append(fecha)
             tiene_ot = (
-                r["50%"]  != "00:00:00" or
-                r["100%"] != "00:00:00" or
-                int(r.get("FRANCO", 0)) > 0 or
-                int(r.get("COMIDA", 0)) > 0
+                r["50%"]  != "00:00:00" or r["100%"] != "00:00:00" or
+                int(r.get("FRANCO", 0)) > 0 or int(r.get("COMIDA", 0)) > 0
             )
             obs = r.get("Observaciones", "") or ""
-            if "FER" in obs:
-                tipo_dia = "feriado"
-            elif "SAB" in obs:
-                tipo_dia = "sabado"
-            elif "DOM" in obs:
-                tipo_dia = "domingo"
-            elif "PARO" in obs:
-                tipo_dia = "paro"
-            else:
-                tipo_dia = "normal"
+            if   "FER"  in obs: tipo_dia = "feriado"
+            elif "SAB"  in obs: tipo_dia = "sabado"
+            elif "DOM"  in obs: tipo_dia = "domingo"
+            elif "PARO" in obs: tipo_dia = "paro"
+            else:               tipo_dia = "normal"
             dias_dict[fecha] = {
-                "fecha":       fecha,
-                "fecha_fmt":   fecha[5:],
-                "tramos":      [],
-                "normales":    r["Normales"],
-                "ot50":        r["50%"],
-                "ot100":       r["100%"],
-                "comida":      int(r.get("COMIDA", 0)),
-                "franco":      int(r.get("FRANCO", 0)),
-                "tarde":       int(r.get("Tarde",  0)),
-                "tiene_ot":    tiene_ot,
-                "tipo_dia":    tipo_dia,
-                "descripcion": "",
+                "fecha": fecha, "fecha_fmt": fecha[5:],
+                "tramos": [],
+                "normales": r["Normales"], "ot50": r["50%"], "ot100": r["100%"],
+                "comida": int(r.get("COMIDA",0)), "franco": int(r.get("FRANCO",0)),
+                "tarde":  int(r.get("Tarde", 0)),
+                "tiene_ot": tiene_ot, "tipo_dia": tipo_dia, "descripcion": "",
             }
-        entrada = r.get("Entrada", "")
-        salida  = r.get("Salida",  "")
-        if entrada:
-            dias_dict[fecha]["tramos"].append({
-                "entrada": entrada[:5],
-                "salida":  salida[:5] if salida else "—",
-            })
-
+        e, s = r.get("Entrada",""), r.get("Salida","")
+        if e:
+            dias_dict[fecha]["tramos"].append({"entrada": e[:5], "salida": s[:5] if s else "—"})
     return [dias_dict[f] for f in dias_order]
 
-
-def _leer_archivo(file_storage):
-    nombre = (file_storage.filename or "").lower()
-    if nombre.endswith(".xlsx"):
-        return pd.read_excel(file_storage, engine="openpyxl")
-    if nombre.endswith(".xls"):
-        return pd.read_excel(file_storage, engine="xlrd")
-    for enc in ("utf-8", "latin-1", "cp1252"):
-        for sep in (";", ","):
+def _leer_archivo(fs):
+    nombre = (fs.filename or "").lower()
+    if nombre.endswith(".xlsx"): return pd.read_excel(fs, engine="openpyxl")
+    if nombre.endswith(".xls"):  return pd.read_excel(fs, engine="xlrd")
+    for enc in ("utf-8","latin-1","cp1252"):
+        for sep in (";",","):
             try:
-                file_storage.seek(0)
-                return pd.read_csv(file_storage, sep=sep, encoding=enc)
+                fs.seek(0)
+                return pd.read_csv(fs, sep=sep, encoding=enc)
             except Exception:
                 continue
-    raise ValueError("No se pudo leer el archivo — usá .xls, .xlsx o .csv.")
-
+    raise ValueError("No se pudo leer el archivo.")
 
 def _normalizar_columnas(df):
     aliases = {
-        "Nro. de usuario":  "Legajo",
-        "Fecha/Hora":       "FechaHora",
-        "Tipo de registro": "Tipo",
-        "Fecha_Hora":       "FechaHora",
-        "Fecha/hora":       "FechaHora",
-        "fecha_hora":       "FechaHora",
-        "Depto":            "Departamento",
-        "depto":            "Departamento",
-        "departamento":     "Departamento",
-        "nro_usuario":      "Legajo",
-        "legajo":           "Legajo",
-        "nombre":           "Nombre",
-        "tipo":             "Tipo",
+        "Nro. de usuario":"Legajo","Fecha/Hora":"FechaHora","Tipo de registro":"Tipo",
+        "Fecha_Hora":"FechaHora","Fecha/hora":"FechaHora","fecha_hora":"FechaHora",
+        "Depto":"Departamento","depto":"Departamento","departamento":"Departamento",
+        "nro_usuario":"Legajo","legajo":"Legajo","nombre":"Nombre","tipo":"Tipo",
     }
-    return df.rename(columns={k: v for k, v in aliases.items() if k in df.columns})
+    return df.rename(columns={k:v for k,v in aliases.items() if k in df.columns})
+
+def _procesar_empleados(df):
+    """Procesa DataFrame y devuelve (empleados, fecha_desde, fecha_hasta)."""
+    resultados = procesar_fichadas(df)
+    empleados  = aplanar_registros_por_tramo(resultados)
+    todas_fechas = [r["Fecha"] for emp in empleados for r in emp["registros"] if r["Fecha"]]
+    fecha_desde = min(todas_fechas) if todas_fechas else ""
+    fecha_hasta = max(todas_fechas) if todas_fechas else ""
+    return empleados, fecha_desde, fecha_hasta
+
+def _crear_tokens(empleados, semana_n, base_url):
+    tokens_creados = []
+    links = []
+    for emp in empleados:
+        token = secrets.token_urlsafe(10)
+        tokens_creados.append(token)
+        ot50 = ot100 = timedelta(0)
+        comidas = francos = tardanzas = 0
+        vistos = set()
+        for r in emp["registros"]:
+            f = r["Fecha"]
+            if f in vistos: continue
+            vistos.add(f)
+            ot50      += _parse_td(r["50%"])
+            ot100     += _parse_td(r["100%"])
+            comidas   += int(r.get("COMIDA",0))
+            francos   += int(r.get("FRANCO",0))
+            tardanzas += int(r.get("Tarde",0))
+        _sesion[token] = {
+            "legajo": emp["legajo"], "nombre": emp["nombre"],
+            "departamento": emp["departamento"],
+            "dias": _preparar_dias(emp["registros"]),
+            "totales": {
+                "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
+                "comidas": comidas, "francos": francos, "tardanzas": tardanzas,
+            },
+            "confirmado": False, "confirmado_en": None,
+            "semana": semana_n,
+        }
+        links.append({"legajo": emp["legajo"], "nombre": emp["nombre"],
+                       "url": f"{base_url}/e/{token}"})
+    return tokens_creados, links
 
 
-def _leer_historial():
-    """Lee todos los JSON de confirmaciones y devuelve lista ordenada por fecha desc."""
-    CONFIRM_DIR.mkdir(exist_ok=True)
-    items = []
-    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            data["_archivo"] = f.name
-            items.append(data)
-        except Exception:
-            continue
-    return items
-
-
-# ─────────────────────────────────────────────
-# Rutas públicas (empleados)
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════
+# RUTAS PÚBLICAS (empleados)
+# ═══════════════════════════════════════════════
 @app.route("/e/<token>")
 def empleado(token):
     data = _sesion.get(token)
@@ -173,54 +213,41 @@ def empleado(token):
         return render_template("error.html", mensaje="Link inválido o expirado."), 404
     return render_template("empleado.html", data=data, token=token)
 
-
 @app.route("/e/<token>/confirmar", methods=["POST"])
 def confirmar(token):
     data = _sesion.get(token)
     if not data:
         return render_template("error.html", mensaje="Token inválido."), 404
-
     for dia in data["dias"]:
         if dia["tiene_ot"]:
             dia["descripcion"] = request.form.get(f"desc_{dia['fecha']}", "").strip()
-
     data["confirmado"]    = True
     data["confirmado_en"] = datetime.now().isoformat()
     _guardar_sesion(_sesion)
-
     CONFIRM_DIR.mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = CONFIRM_DIR / f"{data['legajo']}_{ts}.json"
-    out_file.write_text(
+    (CONFIRM_DIR / f"{data['legajo']}_{ts}.json").write_text(
         json.dumps({
-            "legajo":        data["legajo"],
-            "nombre":        data["nombre"],
-            "departamento":  data["departamento"],
+            "legajo": data["legajo"], "nombre": data["nombre"],
+            "departamento": data["departamento"],
             "confirmado_en": data["confirmado_en"],
-            "totales":       data["totales"],
+            "semana": data.get("semana", 0),
+            "totales": data["totales"],
             "dias": [
-                {
-                    "fecha":       d["fecha"],
-                    "ot50":        d["ot50"],
-                    "ot100":       d["ot100"],
-                    "franco":      d.get("franco", 0),
-                    "comida":      d.get("comida", 0),
-                    "tipo_dia":    d.get("tipo_dia", "normal"),
-                    "descripcion": d.get("descripcion", ""),
-                }
+                {"fecha": d["fecha"], "ot50": d["ot50"], "ot100": d["ot100"],
+                 "franco": d.get("franco",0), "comida": d.get("comida",0),
+                 "tipo_dia": d.get("tipo_dia","normal"), "descripcion": d.get("descripcion","")}
                 for d in data["dias"] if d["tiene_ot"]
             ],
-        }, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        }, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-
     return render_template("confirmado.html", nombre=data["nombre"])
 
 
-# ─────────────────────────────────────────────
-# Login / Logout
-# ─────────────────────────────────────────────
-@app.route("/login", methods=["GET", "POST"])
+# ═══════════════════════════════════════════════
+# LOGIN / LOGOUT
+# ═══════════════════════════════════════════════
+@app.route("/login", methods=["GET","POST"])
 def login():
     error = None
     if request.method == "POST":
@@ -230,137 +257,233 @@ def login():
         error = "Contraseña incorrecta."
     return render_template("login.html", error=error)
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
 
-# ─────────────────────────────────────────────
-# Rutas protegidas (supervisor)
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════
+# RUTAS SUPERVISOR (protegidas)
+# ═══════════════════════════════════════════════
 @app.route("/")
 def index():
-    if not _autenticado():
-        return _requiere_auth()
+    if not _autenticado(): return _requiere_auth()
     return render_template("supervisor.html")
 
 
 @app.route("/procesar", methods=["POST"])
 def procesar():
-    if not _autenticado():
-        return jsonify({"error": "No autorizado"}), 401
-
-    if "csv" not in request.files:
-        return jsonify({"error": "No se recibió archivo"}), 400
-
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    if "csv" not in request.files: return jsonify({"error":"No se recibió archivo"}), 400
     try:
-        df = _leer_archivo(request.files["csv"])
-        df = _normalizar_columnas(df)
+        df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
     except Exception as e:
         return jsonify({"error": str(e)}), 400
-
     try:
-        resultados = procesar_fichadas(df)
-        empleados  = aplanar_registros_por_tramo(resultados)
+        empleados, fecha_desde, fecha_hasta = _procesar_empleados(df)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    meta = _cargar_metadata()
+    n = meta["semana_actual"] + 1
+    meta["semana_actual"] = n
+
+    _guardar_semana_csv(n, df)
     base_url = request.host_url.rstrip("/")
-
-    for emp in empleados:
-        token = secrets.token_urlsafe(10)
-        ot50 = ot100 = timedelta(0)
-        comidas = francos = tardanzas = 0
-        vistos = set()
-        for r in emp["registros"]:
-            f = r["Fecha"]
-            if f in vistos:
-                continue
-            vistos.add(f)
-            ot50      += _parse_td(r["50%"])
-            ot100     += _parse_td(r["100%"])
-            comidas   += int(r.get("COMIDA", 0))
-            francos   += int(r.get("FRANCO", 0))
-            tardanzas += int(r.get("Tarde", 0))
-
-        _sesion[token] = {
-            "legajo":       emp["legajo"],
-            "nombre":       emp["nombre"],
-            "departamento": emp["departamento"],
-            "dias":         _preparar_dias(emp["registros"]),
-            "totales": {
-                "ot50":      _fmt_hm(ot50),
-                "ot100":     _fmt_hm(ot100),
-                "comidas":   comidas,
-                "francos":   francos,
-                "tardanzas": tardanzas,
-            },
-            "confirmado":    False,
-            "confirmado_en": None,
-        }
-
+    tokens_creados, links = _crear_tokens(empleados, n, base_url)
     _guardar_sesion(_sesion)
 
-    links = []
-    for emp in empleados:
-        token = next(
-            t for t, d in _sesion.items()
-            if d["legajo"] == emp["legajo"] and d["nombre"] == emp["nombre"]
-            and not d["confirmado"]
-        )
-        links.append({
-            "legajo": emp["legajo"],
-            "nombre": emp["nombre"],
-            "url":    f"{base_url}/e/{token}",
-        })
+    meta["semanas"].append({
+        "numero": n, "fecha_upload": datetime.now().isoformat(),
+        "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+        "tokens": tokens_creados,
+    })
+    _guardar_metadata(meta)
 
-    return jsonify({"empleados": links})
+    return jsonify({"empleados": links, "semana": n,
+                    "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta})
+
+
+@app.route("/semanas")
+def semanas():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    meta = _cargar_metadata()
+    base_url = request.host_url.rstrip("/")
+    resultado = []
+    for s in meta.get("semanas", []):
+        n = s["numero"]
+        tokens = [t for t in s.get("tokens",[]) if t in _sesion]
+        total      = len(tokens)
+        confirmados = sum(1 for t in tokens if _sesion[t].get("confirmado"))
+        resultado.append({
+            "numero":       n,
+            "fecha_desde":  s.get("fecha_desde",""),
+            "fecha_hasta":  s.get("fecha_hasta",""),
+            "fecha_upload": s.get("fecha_upload","")[:10],
+            "total":        total,
+            "confirmados":  confirmados,
+        })
+    return jsonify(resultado)
+
+
+@app.route("/semanas/<int:n>/links")
+def semana_links(n):
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    base_url = request.host_url.rstrip("/")
+    links = [
+        {"legajo": d["legajo"], "nombre": d["nombre"],
+         "confirmado": d["confirmado"], "url": f"{base_url}/e/{t}"}
+        for t, d in _sesion.items() if d.get("semana") == n
+    ]
+    links.sort(key=lambda x: (x["confirmado"], x["nombre"]))
+    return jsonify(links)
+
+
+@app.route("/semanas/<int:n>/regenerar", methods=["POST"])
+def regenerar_semana(n):
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    df = _cargar_semana_csv(n)
+    if df is None: return jsonify({"error": f"No hay datos guardados para la semana {n}"}), 404
+    try:
+        empleados, _, _ = _procesar_empleados(_normalizar_columnas(df))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    # Legajos que ya confirmaron esta semana → no regenerar
+    ya_confirmados = {
+        d["legajo"] for t, d in _sesion.items()
+        if d.get("semana") == n and d.get("confirmado")
+    }
+    # Eliminar tokens pendientes de esta semana
+    pendientes = [t for t, d in _sesion.items()
+                  if d.get("semana") == n and not d.get("confirmado")]
+    for t in pendientes:
+        del _sesion[t]
+
+    empleados_pendientes = [e for e in empleados if e["legajo"] not in ya_confirmados]
+    base_url = request.host_url.rstrip("/")
+    tokens_nuevos, links = _crear_tokens(empleados_pendientes, n, base_url)
+    _guardar_sesion(_sesion)
+
+    # Actualizar tokens en metadata
+    meta = _cargar_metadata()
+    for s in meta["semanas"]:
+        if s["numero"] == n:
+            tokens_vivos = [t for t in s.get("tokens",[])
+                            if t in _sesion and _sesion[t].get("confirmado")]
+            s["tokens"] = tokens_vivos + tokens_nuevos
+            break
+    _guardar_metadata(meta)
+
+    return jsonify({"empleados": links, "semana": n,
+                    "ya_confirmados": len(ya_confirmados)})
 
 
 @app.route("/estado")
 def estado():
-    if not _autenticado():
-        return jsonify({"error": "No autorizado"}), 401
-    resultado = []
-    for data in _sesion.values():
-        resultado.append({
-            "legajo":     data["legajo"],
-            "nombre":     data["nombre"],
-            "confirmado": data["confirmado"],
-            "dias": [
-                {
-                    "fecha":       d["fecha"],
-                    "ot50":        d["ot50"],
-                    "ot100":       d["ot100"],
-                    "descripcion": d.get("descripcion", ""),
-                }
-                for d in data["dias"] if d["tiene_ot"]
-            ] if data["confirmado"] else [],
-        })
-    resultado.sort(key=lambda x: (not x["confirmado"], x["nombre"]))
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    resultado = [
+        {"legajo": d["legajo"], "nombre": d["nombre"],
+         "semana": d.get("semana",0), "confirmado": d["confirmado"],
+         "dias": [
+             {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
+              "descripcion": x.get("descripcion","")}
+             for x in d["dias"] if x["tiene_ot"]
+         ] if d["confirmado"] else []}
+        for d in _sesion.values()
+    ]
+    resultado.sort(key=lambda x: (x["semana"], not x["confirmado"], x["nombre"]))
     return jsonify(resultado)
 
 
 @app.route("/historial")
 def historial():
-    if not _autenticado():
-        return _requiere_auth()
-    items = _leer_historial()
-    return render_template("historial.html", items=items)
+    if not _autenticado(): return _requiere_auth()
+    return render_template("historial.html", items=_leer_historial())
 
 
-# ─────────────────────────────────────────────
-# Arranque local
-# ─────────────────────────────────────────────
+@app.route("/periodo")
+def periodo():
+    if not _autenticado(): return _requiere_auth()
+    meta = _cargar_metadata()
+    return render_template("periodo.html", semanas=meta.get("semanas",[]),
+                           semana_actual=meta.get("semana_actual", 0))
+
+
+@app.route("/periodo/resumen")
+def periodo_resumen():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    desde = int(request.args.get("desde", 1))
+    hasta = int(request.args.get("hasta", 1))
+
+    items = [c for c in _leer_historial() if desde <= c.get("semana",0) <= hasta]
+
+    por_empleado = {}
+    for c in items:
+        legajo = c["legajo"]
+        if legajo not in por_empleado:
+            por_empleado[legajo] = {
+                "legajo": legajo, "nombre": c["nombre"],
+                "departamento": c.get("departamento",""),
+                "ot50": timedelta(0), "ot100": timedelta(0),
+                "comidas":0, "francos":0, "tardanzas":0,
+                "semanas":[], "dias":[],
+            }
+        e = por_empleado[legajo]
+        e["ot50"]      += _parse_hm(c["totales"]["ot50"])
+        e["ot100"]     += _parse_hm(c["totales"]["ot100"])
+        e["comidas"]   += c["totales"].get("comidas",0)
+        e["francos"]   += c["totales"].get("francos",0)
+        e["tardanzas"] += c["totales"].get("tardanzas",0)
+        e["semanas"].append(c.get("semana","?"))
+        e["dias"].extend(c.get("dias",[]))
+
+    resultado = sorted([
+        {"legajo": e["legajo"], "nombre": e["nombre"], "departamento": e["departamento"],
+         "ot50": _fmt_hm(e["ot50"]), "ot100": _fmt_hm(e["ot100"]),
+         "comidas": e["comidas"], "francos": e["francos"], "tardanzas": e["tardanzas"],
+         "semanas": sorted(set(e["semanas"])),
+         "dias": sorted(e["dias"], key=lambda d: d["fecha"])}
+        for e in por_empleado.values()
+    ], key=lambda x: x["nombre"])
+
+    return jsonify(resultado)
+
+
+@app.route("/periodo/cerrar", methods=["POST"])
+def periodo_cerrar():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    desde = int(request.form.get("desde", 1))
+    hasta = int(request.form.get("hasta", 1))
+
+    items = [c for c in _leer_historial() if desde <= c.get("semana",0) <= hasta]
+    PERIODOS_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    (PERIODOS_DIR / f"periodo_{ts}.json").write_text(
+        json.dumps({"cerrado_en": datetime.now().isoformat(),
+                    "semanas": list(range(desde, hasta+1)),
+                    "confirmaciones": items},
+                   ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # Reset semana counter
+    meta = _cargar_metadata()
+    meta["semana_actual"] = 0
+    meta["semanas"] = []
+    _guardar_metadata(meta)
+
+    return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json"})
+
+
+# ═══════════════════════════════════════════════
+# ARRANQUE LOCAL
+# ═══════════════════════════════════════════════
 if __name__ == "__main__":
-    hostname = socket.gethostname()
     try:
-        ip = socket.gethostbyname(hostname)
+        ip = socket.gethostbyname(socket.gethostname())
     except Exception:
         ip = "127.0.0.1"
     print(f"\n  Supervisor:  http://{ip}:5000")
-    print(f"  (también):   http://localhost:5000")
     print(f"  Contraseña:  {SUPERVISOR_PASS}\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
