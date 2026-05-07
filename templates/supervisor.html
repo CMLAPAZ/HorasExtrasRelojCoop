@@ -26,6 +26,9 @@
     .btn-outline:hover{background:#f3f4f6}
     .btn-warn{padding:5px 12px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
     .btn-warn:hover{background:#fffbeb}
+    .btn-del{padding:5px 12px;background:#fff;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+    .btn-del:hover{background:#fee2e2}
+    .warn-dup{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-top:10px}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
     .tabla-wrap{overflow-x:auto}
@@ -73,8 +76,9 @@
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
   <div id="error" class="hidden"></div>
+  <div id="warn-dup" class="warn-dup hidden"></div>
   <div id="loading" class="hidden">⏳ Procesando fichadas…</div>
-  <button type="button" class="btn" onclick="procesar()">Procesar y generar links</button>
+  <button type="button" class="btn" onclick="procesar(false)">Procesar y generar links</button>
 </div>
 
 <!-- Links de la semana recién procesada -->
@@ -131,11 +135,13 @@
 
 <script>
 // ─── Procesar nuevo XLS ──────────────────────────
-async function procesar() {
-  const file  = document.getElementById('csv').files[0];
-  const errEl = document.getElementById('error');
-  const loadEl= document.getElementById('loading');
+async function procesar(force) {
+  const file   = document.getElementById('csv').files[0];
+  const errEl  = document.getElementById('error');
+  const dupEl  = document.getElementById('warn-dup');
+  const loadEl = document.getElementById('loading');
   errEl.classList.add('hidden');
+  dupEl.classList.add('hidden');
 
   if (!file) {
     errEl.textContent = 'Seleccioná un archivo primero.';
@@ -147,6 +153,7 @@ async function procesar() {
 
   const fd = new FormData();
   fd.append('csv', file);
+  if (force) fd.append('force', '1');
 
   try {
     const res  = await fetch('/procesar', { method:'POST', body:fd });
@@ -156,6 +163,15 @@ async function procesar() {
     if (data.error) {
       errEl.textContent = '⚠ ' + data.error;
       errEl.classList.remove('hidden');
+      return;
+    }
+
+    if (data.duplicado) {
+      dupEl.innerHTML = `⚠ ${data.msg}<br>
+        <button type="button" class="btn-outline" style="margin-top:8px" onclick="procesar(true)">
+          Procesar de todos modos (nueva semana)
+        </button>`;
+      dupEl.classList.remove('hidden');
       return;
     }
 
@@ -215,6 +231,7 @@ async function cargarSemanas() {
           <div class="actions-cell">
             <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
             <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
+            <button type="button" class="btn-del"     onclick="eliminarSemana(${s.numero})">Eliminar</button>
           </div>
         </td>
       </tr>`;
@@ -300,6 +317,16 @@ async function regenerarLinks(n) {
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior:'smooth' });
   cargarSemanas();
+}
+
+// ─── Eliminar semana ─────────────────────────────
+async function eliminarSemana(n) {
+  if (!confirm(`¿Eliminar la Semana ${n}?\n\nSe borran los links generados.\nLas confirmaciones ya guardadas no se tocan.`)) return;
+  const res  = await fetch(`/semanas/${n}/eliminar`, { method:'POST' });
+  const data = await res.json();
+  if (data.error) { alert('Error: ' + data.error); return; }
+  cargarSemanas();
+  document.getElementById('links-panel').classList.add('hidden');
 }
 
 // ─── Estado de confirmaciones ────────────────────

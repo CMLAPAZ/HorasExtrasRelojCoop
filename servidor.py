@@ -286,6 +286,19 @@ def procesar():
         return jsonify({"error": str(e)}), 500
 
     meta = _cargar_metadata()
+
+    # Detectar duplicado por rango de fechas
+    if not request.form.get("force"):
+        for s in meta.get("semanas", []):
+            if s.get("fecha_desde") == fecha_desde and s.get("fecha_hasta") == fecha_hasta:
+                return jsonify({
+                    "duplicado": True,
+                    "semana_existente": s["numero"],
+                    "fecha_desde": fecha_desde,
+                    "fecha_hasta": fecha_hasta,
+                    "msg": f"Ya existe la Semana {s['numero']} con las mismas fechas ({fecha_desde} → {fecha_hasta}).",
+                })
+
     n = meta["semana_actual"] + 1
     meta["semana_actual"] = n
 
@@ -338,6 +351,34 @@ def semana_links(n):
     ]
     links.sort(key=lambda x: (x["confirmado"], x["nombre"]))
     return jsonify(links)
+
+
+@app.route("/semanas/<int:n>/eliminar", methods=["POST"])
+def eliminar_semana(n):
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    meta = _cargar_metadata()
+    sem = next((s for s in meta["semanas"] if s["numero"] == n), None)
+    if not sem:
+        return jsonify({"error": f"Semana {n} no encontrada"}), 404
+
+    # Eliminar tokens de esta semana de la sesión
+    tokens = [t for t in sem.get("tokens", []) if t in _sesion]
+    for t in tokens:
+        del _sesion[t]
+    _guardar_sesion(_sesion)
+
+    # Eliminar CSV guardado
+    csv_path = SEMANAS_DIR / f"semana_{n}.csv"
+    if csv_path.exists():
+        csv_path.unlink()
+
+    # Quitar de metadata y reordenar contador si era la última
+    meta["semanas"] = [s for s in meta["semanas"] if s["numero"] != n]
+    if meta["semana_actual"] == n:
+        meta["semana_actual"] = max((s["numero"] for s in meta["semanas"]), default=0)
+    _guardar_metadata(meta)
+
+    return jsonify({"ok": True})
 
 
 @app.route("/semanas/<int:n>/regenerar", methods=["POST"])
