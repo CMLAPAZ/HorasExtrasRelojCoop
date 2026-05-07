@@ -59,7 +59,12 @@ def _preparar_dias(registros):
         fecha = r["Fecha"]
         if fecha not in dias_dict:
             dias_order.append(fecha)
-            tiene_ot = (r["50%"] != "00:00:00" or r["100%"] != "00:00:00")
+            tiene_ot = (
+                r["50%"]  != "00:00:00" or
+                r["100%"] != "00:00:00" or
+                int(r.get("FRANCO", 0)) > 0 or
+                int(r.get("COMIDA", 0)) > 0
+            )
             dias_dict[fecha] = {
                 "fecha":      fecha,
                 "fecha_fmt":  fecha[5:],   # MM-DD
@@ -196,6 +201,28 @@ def procesar():
         })
 
     return jsonify({"empleados": links})
+
+
+@app.route("/estado")
+def estado():
+    resultado = []
+    for data in _sesion.values():
+        resultado.append({
+            "legajo":     data["legajo"],
+            "nombre":     data["nombre"],
+            "confirmado": data["confirmado"],
+            "dias": [
+                {
+                    "fecha":       d["fecha"],
+                    "ot50":        d["ot50"],
+                    "ot100":       d["ot100"],
+                    "descripcion": d.get("descripcion", ""),
+                }
+                for d in data["dias"] if d["tiene_ot"]
+            ] if data["confirmado"] else [],
+        })
+    resultado.sort(key=lambda x: (not x["confirmado"], x["nombre"]))
+    return jsonify(resultado)
 
 
 @app.route("/e/<token>")
