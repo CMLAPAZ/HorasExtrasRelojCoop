@@ -136,7 +136,7 @@
   </div>
   <div class="tabla-wrap">
     <table>
-      <thead><tr><th>Sem.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
+      <thead><tr><th>Sem.</th><th>Depto.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
       <tbody id="tbody-estado"></tbody>
     </table>
   </div>
@@ -387,6 +387,7 @@ async function cargarEstado() {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${e.semana || '—'}</td>
+        <td>${e.departamento || '—'}</td>
         <td>${e.legajo}</td>
         <td>${e.nombre}</td>
         <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>

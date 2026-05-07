@@ -454,6 +454,7 @@ def estado():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     resultado = [
         {"legajo": d["legajo"], "nombre": d["nombre"],
+         "departamento": d.get("departamento",""),
          "semana": d.get("semana",0), "confirmado": d["confirmado"],
          "dias": [
              {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
@@ -572,11 +573,16 @@ def periodo_exportar():
 
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Legajo","Nombre","Departamento","OT 50%","OT 100%",
+    w.writerow(["Departamento","Legajo","Nombre","OT 50%","OT 100%",
                 "Comidas","Francos","Tardanzas","Semanas","Estado"])
-    for e in resultado:
+    dep_actual = None
+    for e in sorted(resultado, key=lambda x: (x["departamento"] or "—", x["nombre"])):
+        dep = e["departamento"] or "—"
+        if dep != dep_actual:
+            dep_actual = dep
+            w.writerow([f"--- {dep} ---", "", "", "", "", "", "", "", "", ""])
         w.writerow([
-            e["legajo"], e["nombre"], e["departamento"],
+            dep, e["legajo"], e["nombre"],
             e["ot50"], e["ot100"],
             e["comidas"], e["francos"], e["tardanzas"],
             " ".join(str(s) for s in e["semanas"]),

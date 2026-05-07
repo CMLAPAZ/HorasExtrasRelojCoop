@@ -40,19 +40,29 @@
     .emp-nombre{font-weight:600}
     .ok{color:#065f46;font-weight:600}
     .pend{color:#92400e}
-    .totales-row td{font-weight:700;border-top:2px solid #e5e7eb;background:#f8f9fb}
+    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;padding:7px 10px}
+    .subtotal-row td{background:#f0fdf4;font-weight:700;font-size:.82rem;color:#065f46;border-top:1px solid #bbf7d0}
+    .total-row td{background:#1a1a2e;color:#fff;font-weight:700;border-top:2px solid #1a1a2e}
+    .total-row .ot50{color:#fcd34d}
+    .total-row .ot100{color:#fca5a5}
     .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
     .hidden{display:none}
     .aviso{font-size:.82rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+    .filtro-deptos{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+    .filtro-label{font-size:.78rem;font-weight:600;color:#555}
+    .depto-btn{padding:4px 12px;border:1px solid #d1d5db;border-radius:20px;font-size:.78rem;cursor:pointer;background:#fff;color:#555}
+    .depto-btn.activo{background:#1a1a2e;color:#fff;border-color:#1a1a2e}
     .print-header{display:none}
 
     @media print {
       body{background:#fff;padding:10px}
-      .topbar,.nav,.selector-card,.acciones,.btn-red{display:none !important}
+      .topbar,.nav,.selector-card,.acciones,.btn-red,.filtro-deptos{display:none !important}
       .card{box-shadow:none;border:1px solid #e5e7eb;margin-bottom:10px}
       .print-header{display:block;margin-bottom:12px}
       .print-header h2{font-size:1rem}
       .print-header p{font-size:.8rem;color:#555;margin-top:3px}
+      .depto-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .total-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     }
   </style>
 </head>
@@ -76,7 +86,7 @@
       <label for="desde">Desde semana</label>
       <select id="desde">
         {% for s in semanas %}
-        <option value="{{ s.numero }}">Sem. {{ s.numero }} ({{ s.fecha_desde or '?' }} → {{ s.fecha_hasta or '?' }})</option>
+        <option value="{{ s.numero }}">Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -84,7 +94,7 @@
       <label for="hasta">Hasta semana</label>
       <select id="hasta">
         {% for s in semanas %}
-        <option value="{{ s.numero }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }} ({{ s.fecha_desde or '?' }} → {{ s.fecha_hasta or '?' }})</option>
+        <option value="{{ s.numero }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -105,16 +115,19 @@
     <span class="card-title-inline" id="resumen-titulo">Resumen del período</span>
     <div class="acciones">
       <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
-      <button type="button" class="btn-green" id="btn-csv" onclick="descargarCSV()">Descargar CSV</button>
+      <button type="button" class="btn-green" onclick="descargarCSV()">Descargar CSV</button>
       <button type="button" class="btn-red" onclick="cerrarPeriodo()">Cerrar período ✓</button>
     </div>
   </div>
   <div class="aviso hidden" id="aviso-pendientes"></div>
+  <div class="filtro-deptos hidden" id="filtro-deptos"></div>
   <div id="resumen-body"></div>
 </div>
 
 <script>
 let _desde = 1, _hasta = 1;
+let _todosEmpleados = [];
+let _deptosActivos  = new Set();
 
 async function previsualizar() {
   _desde = parseInt(document.getElementById('desde').value);
@@ -124,70 +137,142 @@ async function previsualizar() {
   const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}`);
   const data = await res.json();
   const wrap = document.getElementById('resumen-wrap');
-  const body = document.getElementById('resumen-body');
-  const titulo = `Período: semanas ${_desde} a ${_hasta}`;
 
-  document.getElementById('resumen-titulo').textContent  = titulo;
-  document.getElementById('print-titulo').textContent    = `CM Horas Extras — ${titulo}`;
+  document.getElementById('resumen-titulo').textContent  = `Período: semanas ${_desde} a ${_hasta}`;
+  document.getElementById('print-titulo').textContent    = `CM Horas Extras — Período semanas ${_desde} a ${_hasta}`;
   document.getElementById('print-fecha').textContent     = `Generado: ${new Date().toLocaleString('es-AR')}`;
 
   if (!data.length) {
-    body.innerHTML = '<div class="vacio">Sin datos en este rango.</div>';
+    document.getElementById('resumen-body').innerHTML = '<div class="vacio">Sin datos en este rango.</div>';
     document.getElementById('aviso-pendientes').classList.add('hidden');
+    document.getElementById('filtro-deptos').classList.add('hidden');
     wrap.classList.remove('hidden');
     return;
   }
 
+  _todosEmpleados = data;
+
+  // Departamentos disponibles
+  const deptos = [...new Set(data.map(e => e.departamento || '—'))].sort();
+  _deptosActivos = new Set(deptos);
+  renderFiltroDeptos(deptos);
+
   const pendientes = data.filter(e => !e.confirmado);
   const avisoEl = document.getElementById('aviso-pendientes');
   if (pendientes.length) {
-    avisoEl.textContent = `${pendientes.length} empleado(s) aún no confirmaron — sus totales se incluyen pero sin descripciones.`;
+    avisoEl.textContent = `${pendientes.length} empleado(s) aún no confirmaron — sus totales se incluyen sin descripciones.`;
     avisoEl.classList.remove('hidden');
   } else {
     avisoEl.classList.add('hidden');
   }
 
-  let totComidas = 0, totFrancos = 0, totTardanzas = 0;
+  renderTabla();
+  wrap.classList.remove('hidden');
+  wrap.scrollIntoView({ behavior:'smooth' });
+}
+
+function renderFiltroDeptos(deptos) {
+  const el = document.getElementById('filtro-deptos');
+  if (deptos.length <= 1) { el.classList.add('hidden'); return; }
+  el.innerHTML = '<span class="filtro-label">Filtrar:</span>';
+  deptos.forEach(d => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'depto-btn activo';
+    btn.textContent = d;
+    btn.dataset.depto = d;
+    btn.onclick = () => {
+      if (_deptosActivos.has(d)) {
+        if (_deptosActivos.size === 1) return;
+        _deptosActivos.delete(d);
+        btn.classList.remove('activo');
+      } else {
+        _deptosActivos.add(d);
+        btn.classList.add('activo');
+      }
+      renderTabla();
+    };
+    el.appendChild(btn);
+  });
+  el.classList.remove('hidden');
+}
+
+function renderTabla() {
+  const body = document.getElementById('resumen-body');
+  const data = _todosEmpleados.filter(e => _deptosActivos.has(e.departamento || '—'));
+
+  if (!data.length) {
+    body.innerHTML = '<div class="vacio">Sin empleados para los departamentos seleccionados.</div>';
+    return;
+  }
+
+  // Agrupar por departamento
+  const grupos = {};
+  data.forEach(e => {
+    const d = e.departamento || '—';
+    if (!grupos[d]) grupos[d] = [];
+    grupos[d].push(e);
+  });
+
+  let totGenComidas = 0, totGenFrancos = 0, totGenTardanzas = 0;
+  let totGenEmp = 0;
+
   let html = `<div class="tabla-wrap"><table>
     <thead><tr>
-      <th>Legajo</th><th>Nombre</th><th>Depto.</th>
+      <th>Legajo</th><th>Nombre</th>
       <th>OT 50%</th><th>OT 100%</th>
       <th>Comidas</th><th>Francos</th><th>Tardanzas</th>
       <th>Semanas</th><th>Estado</th>
     </tr></thead><tbody>`;
 
-  data.forEach(e => {
-    totComidas   += e.comidas   || 0;
-    totFrancos   += e.francos   || 0;
-    totTardanzas += e.tardanzas || 0;
-    const estado = e.confirmado
-      ? '<span class="ok">✓ Confirmado</span>'
-      : '<span class="pend">⏳ Pendiente</span>';
-    html += `<tr>
-      <td>${e.legajo}</td>
-      <td class="emp-nombre">${e.nombre}</td>
-      <td>${e.departamento || '—'}</td>
-      <td class="ot50">${e.ot50  || '0h'}</td>
-      <td class="ot100">${e.ot100 || '0h'}</td>
-      <td>${e.comidas   || 0}</td>
-      <td>${e.francos   || 0}</td>
-      <td>${e.tardanzas || 0}</td>
-      <td>${(e.semanas || []).join(', ')}</td>
-      <td>${estado}</td>
+  Object.keys(grupos).sort().forEach(depto => {
+    const empleados = grupos[depto];
+    totGenEmp += empleados.length;
+    let subComidas = 0, subFrancos = 0, subTardanzas = 0;
+
+    html += `<tr class="depto-header"><td colspan="9">${depto} — ${empleados.length} empleado(s)</td></tr>`;
+
+    empleados.forEach(e => {
+      subComidas   += e.comidas   || 0;
+      subFrancos   += e.francos   || 0;
+      subTardanzas += e.tardanzas || 0;
+      const estado = e.confirmado
+        ? '<span class="ok">✓</span>'
+        : '<span class="pend">⏳</span>';
+      html += `<tr>
+        <td>${e.legajo}</td>
+        <td class="emp-nombre">${e.nombre}</td>
+        <td class="ot50">${e.ot50  || '0h'}</td>
+        <td class="ot100">${e.ot100 || '0h'}</td>
+        <td>${e.comidas   || 0}</td>
+        <td>${e.francos   || 0}</td>
+        <td>${e.tardanzas || 0}</td>
+        <td>${(e.semanas || []).join(', ')}</td>
+        <td>${estado}</td>
+      </tr>`;
+    });
+
+    totGenComidas   += subComidas;
+    totGenFrancos   += subFrancos;
+    totGenTardanzas += subTardanzas;
+
+    html += `<tr class="subtotal-row">
+      <td colspan="2">Subtotal ${depto}</td>
+      <td class="ot50">—</td><td class="ot100">—</td>
+      <td>${subComidas}</td><td>${subFrancos}</td><td>${subTardanzas}</td>
+      <td colspan="2">${empleados.length} emp.</td>
     </tr>`;
   });
 
-  html += `<tr class="totales-row">
-    <td colspan="3">TOTALES — ${data.length} empleados</td>
+  html += `<tr class="total-row">
+    <td colspan="2">TOTAL GENERAL — ${totGenEmp} empleados</td>
     <td class="ot50">—</td><td class="ot100">—</td>
-    <td>${totComidas}</td><td>${totFrancos}</td><td>${totTardanzas}</td>
+    <td>${totGenComidas}</td><td>${totGenFrancos}</td><td>${totGenTardanzas}</td>
     <td colspan="2">—</td>
   </tr>`;
 
   html += '</tbody></table></div>';
   body.innerHTML = html;
-  wrap.classList.remove('hidden');
-  wrap.scrollIntoView({ behavior:'smooth' });
 }
 
 function descargarCSV() {
@@ -208,7 +293,6 @@ async function cerrarPeriodo() {
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
-
   alert(`Período archivado.\nArchivo: ${data.periodo_archivado}\nEl contador se reinició a 1.`);
   window.location.href = '/';
 }
