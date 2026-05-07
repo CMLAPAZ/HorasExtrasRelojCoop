@@ -29,6 +29,11 @@
     .btn-del{padding:5px 12px;background:#fff;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
     .btn-del:hover{background:#fee2e2}
     .warn-dup{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-top:10px}
+    .deptos-label{font-size:.82rem;font-weight:600;color:#555;margin:12px 0 8px}
+    .deptos-checks{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .depto-check{display:flex;align-items:center;gap:5px;font-size:.88rem;background:#f8f9fb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 10px;cursor:pointer}
+    .depto-check input{cursor:pointer}
+    .badge-depto{font-size:.7rem;background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:20px;font-weight:600;margin-left:4px}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
     .tabla-wrap{overflow-x:auto}
@@ -75,10 +80,14 @@
   <div class="card-title">Nueva semana</div>
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
+  <div id="deptos-wrap" class="hidden">
+    <div class="deptos-label">Seleccioná los departamentos a incluir:</div>
+    <div id="deptos-checks" class="deptos-checks"></div>
+  </div>
   <div id="error" class="hidden"></div>
   <div id="warn-dup" class="warn-dup hidden"></div>
   <div id="loading" class="hidden">⏳ Procesando fichadas…</div>
-  <button type="button" class="btn" onclick="procesar(false)">Procesar y generar links</button>
+  <button type="button" class="btn" id="btn-procesar" onclick="procesar(false)" disabled>Procesar y generar links</button>
 </div>
 
 <!-- Links de la semana recién procesada -->
@@ -134,6 +143,37 @@
 </div>
 
 <script>
+// ─── Detectar departamentos al seleccionar archivo ──
+document.getElementById('csv').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  const wrap   = document.getElementById('deptos-wrap');
+  const checks = document.getElementById('deptos-checks');
+  const btn    = document.getElementById('btn-procesar');
+  wrap.classList.add('hidden');
+  checks.innerHTML = '';
+  btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('csv', file);
+  try {
+    const res  = await fetch('/detectar-departamentos', { method:'POST', body:fd });
+    const data = await res.json();
+    if (data.error || !data.departamentos.length) { btn.disabled = false; return; }
+
+    data.departamentos.forEach(d => {
+      const lbl = document.createElement('label');
+      lbl.className = 'depto-check';
+      lbl.innerHTML = `<input type="checkbox" name="dep" value="${d}" checked> ${d}`;
+      checks.appendChild(lbl);
+    });
+    wrap.classList.remove('hidden');
+    btn.disabled = false;
+  } catch(ex) {
+    btn.disabled = false;
+  }
+});
+
 // ─── Procesar nuevo XLS ──────────────────────────
 async function procesar(force) {
   const file   = document.getElementById('csv').files[0];
@@ -154,6 +194,8 @@ async function procesar(force) {
   const fd = new FormData();
   fd.append('csv', file);
   if (force) fd.append('force', '1');
+  document.querySelectorAll('#deptos-checks input[name="dep"]:checked')
+    .forEach(cb => fd.append('departamentos', cb.value));
 
   try {
     const res  = await fetch('/procesar', { method:'POST', body:fd });
@@ -176,7 +218,7 @@ async function procesar(force) {
     }
 
     document.getElementById('semana-badge').textContent =
-      `Semana ${data.semana}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
+      `Semana ${data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
 
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
@@ -218,6 +260,7 @@ async function cargarSemanas() {
       html += `<tr>
         <td>
           <span class="sem-n">Sem. ${s.numero}</span>
+          ${s.departamento && s.departamento !== 'Todos' ? `<span class="badge-depto">${s.departamento}</span>` : ''}
           <span class="sem-fecha">${s.fecha_upload || ''}</span>
         </td>
         <td class="td-fechas">${s.fecha_desde || '—'}<br>${s.fecha_hasta || ''}</td>

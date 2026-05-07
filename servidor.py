@@ -160,10 +160,13 @@ def _normalizar_columnas(df):
     }
     return df.rename(columns={k:v for k,v in aliases.items() if k in df.columns})
 
-def _procesar_empleados(df):
-    """Procesa DataFrame y devuelve (empleados, fecha_desde, fecha_hasta)."""
+def _procesar_empleados(df, departamentos=None):
+    """Procesa DataFrame y devuelve (empleados, fecha_desde, fecha_hasta).
+    departamentos: lista de nombres a incluir; None = todos."""
     resultados = procesar_fichadas(df)
     empleados  = aplanar_registros_por_tramo(resultados)
+    if departamentos:
+        empleados = [e for e in empleados if e.get("departamento","") in departamentos]
     todas_fechas = [r["Fecha"] for emp in empleados for r in emp["registros"] if r["Fecha"]]
     fecha_desde = min(todas_fechas) if todas_fechas else ""
     fecha_hasta = max(todas_fechas) if todas_fechas else ""
@@ -272,6 +275,20 @@ def index():
     return render_template("supervisor.html")
 
 
+@app.route("/detectar-departamentos", methods=["POST"])
+def detectar_departamentos():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    if "csv" not in request.files: return jsonify({"error":"No se recibió archivo"}), 400
+    try:
+        df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
+        resultados = procesar_fichadas(df)
+        empleados  = aplanar_registros_por_tramo(resultados)
+        deptos = sorted(set(e.get("departamento","—") for e in empleados))
+        return jsonify({"departamentos": deptos})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/procesar", methods=["POST"])
 def procesar():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
@@ -280,23 +297,31 @@ def procesar():
         df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+    departamentos = request.form.getlist("departamentos") or None
+
     try:
-        empleados, fecha_desde, fecha_hasta = _procesar_empleados(df)
+        empleados, fecha_desde, fecha_hasta = _procesar_empleados(df, departamentos)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    meta = _cargar_metadata()
+    if not empleados:
+        return jsonify({"error": "No se encontraron empleados para los departamentos seleccionados."}), 400
 
-    # Detectar duplicado por rango de fechas
+    meta = _cargar_metadata()
+    depto_label = ", ".join(departamentos) if departamentos else "Todos"
+
+    # Detectar duplicado por fechas + departamento
     if not request.form.get("force"):
         for s in meta.get("semanas", []):
-            if s.get("fecha_desde") == fecha_desde and s.get("fecha_hasta") == fecha_hasta:
+            if s.get("fecha_desde") == fecha_desde and s.get("fecha_hasta") == fecha_hasta \
+               and s.get("departamento", "Todos") == depto_label:
                 return jsonify({
                     "duplicado": True,
                     "semana_existente": s["numero"],
                     "fecha_desde": fecha_desde,
                     "fecha_hasta": fecha_hasta,
-                    "msg": f"Ya existe la Semana {s['numero']} con las mismas fechas ({fecha_desde} → {fecha_hasta}).",
+                    "msg": f"Ya existe la Semana {s['numero']} con las mismas fechas y departamento ({fecha_desde} → {fecha_hasta} / {depto_label}).",
                 })
 
     n = meta["semana_actual"] + 1
@@ -310,12 +335,14 @@ def procesar():
     meta["semanas"].append({
         "numero": n, "fecha_upload": datetime.now().isoformat(),
         "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+        "departamento": depto_label,
         "tokens": tokens_creados,
     })
     _guardar_metadata(meta)
 
     return jsonify({"empleados": links, "semana": n,
-                    "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta})
+                    "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+                    "departamento": depto_label})
 
 
 @app.route("/semanas")
@@ -331,6 +358,7 @@ def semanas():
         confirmados = sum(1 for t in tokens if _sesion[t].get("confirmado"))
         resultado.append({
             "numero":       n,
+            "departamento": s.get("departamento","Todos"),
             "fecha_desde":  s.get("fecha_desde",""),
             "fecha_hasta":  s.get("fecha_hasta",""),
             "fecha_upload": s.get("fecha_upload","")[:10],
