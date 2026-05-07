@@ -65,17 +65,29 @@ def _preparar_dias(registros):
                 int(r.get("FRANCO", 0)) > 0 or
                 int(r.get("COMIDA", 0)) > 0
             )
+            obs = r.get("Observaciones", "") or ""
+            if "FER" in obs:
+                tipo_dia = "feriado"
+            elif "SAB" in obs:
+                tipo_dia = "sabado"
+            elif "DOM" in obs:
+                tipo_dia = "domingo"
+            elif "PARO" in obs:
+                tipo_dia = "paro"
+            else:
+                tipo_dia = "normal"
             dias_dict[fecha] = {
-                "fecha":      fecha,
-                "fecha_fmt":  fecha[5:],   # MM-DD
-                "tramos":     [],
-                "normales":   r["Normales"],
-                "ot50":       r["50%"],
-                "ot100":      r["100%"],
-                "comida":     int(r.get("COMIDA", 0)),
-                "franco":     int(r.get("FRANCO", 0)),
-                "tarde":      int(r.get("Tarde",  0)),
-                "tiene_ot":   tiene_ot,
+                "fecha":       fecha,
+                "fecha_fmt":   fecha[5:],
+                "tramos":      [],
+                "normales":    r["Normales"],
+                "ot50":        r["50%"],
+                "ot100":       r["100%"],
+                "comida":      int(r.get("COMIDA", 0)),
+                "franco":      int(r.get("FRANCO", 0)),
+                "tarde":       int(r.get("Tarde",  0)),
+                "tiene_ot":    tiene_ot,
+                "tipo_dia":    tipo_dia,
                 "descripcion": "",
             }
         entrada = r.get("Entrada", "")
