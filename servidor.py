@@ -13,7 +13,7 @@ from procesador import procesar_fichadas, aplanar_registros_por_tramo
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
 SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
-FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola")
+FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola Martin")
 
 SESION_FILE  = Path("sesion.json")
 CONFIRM_DIR  = Path("confirmaciones")
