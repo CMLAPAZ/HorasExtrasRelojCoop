@@ -19,24 +19,41 @@
     .selector{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
     .field{display:flex;flex-direction:column;gap:4px}
     label{font-size:.82rem;font-weight:600;color:#555}
-    select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;min-width:240px}
+    select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;min-width:260px}
     select:focus{outline:none;border-color:#1a1a2e}
-    .btn{padding:11px 28px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;align-self:flex-end}
+    .btn{padding:11px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;align-self:flex-end}
     .btn:hover{background:#2d2d4e}
-    .btn-danger{padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}
-    .btn-danger:hover{background:#b91c1c}
+    .btn-red{padding:8px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
+    .btn-red:hover{background:#b91c1c}
+    .btn-green{padding:8px 16px;background:#059669;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
+    .btn-green:hover{background:#047857}
+    .btn-print{padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
+    .btn-print:hover{background:#4b5563}
+    .acciones{display:flex;gap:8px;flex-wrap:wrap}
     .tabla-wrap{overflow-x:auto}
     table{width:100%;border-collapse:collapse;font-size:.85rem}
     th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
     tr:last-child td{border-bottom:none}
     .ot50{color:#d97706;font-weight:600}
     .ot100{color:#dc2626;font-weight:600}
     .emp-nombre{font-weight:600}
+    .ok{color:#065f46;font-weight:600}
+    .pend{color:#92400e}
+    .totales-row td{font-weight:700;border-top:2px solid #e5e7eb;background:#f8f9fb}
     .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
     .hidden{display:none}
     .aviso{font-size:.82rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;margin-bottom:14px}
-    .totales-row td{font-weight:700;border-top:2px solid #e5e7eb;background:#f8f9fb}
+    .print-header{display:none}
+
+    @media print {
+      body{background:#fff;padding:10px}
+      .topbar,.nav,.selector-card,.acciones,.btn-red{display:none !important}
+      .card{box-shadow:none;border:1px solid #e5e7eb;margin-bottom:10px}
+      .print-header{display:block;margin-bottom:12px}
+      .print-header h2{font-size:1rem}
+      .print-header p{font-size:.8rem;color:#555;margin-top:3px}
+    }
   </style>
 </head>
 <body>
@@ -50,10 +67,9 @@
   </div>
 </div>
 
-<!-- Selector de período -->
-<div class="card">
-  <div class="card-title">Visualizar y cerrar período</div>
-
+<!-- Selector -->
+<div class="card selector-card">
+  <div class="card-title">Seleccionar período</div>
   {% if semanas %}
   <div class="selector">
     <div class="field">
@@ -79,15 +95,21 @@
   {% endif %}
 </div>
 
-<!-- Resumen del período -->
+<!-- Resumen -->
 <div class="card hidden" id="resumen-wrap">
+  <div class="print-header">
+    <h2 id="print-titulo"></h2>
+    <p id="print-fecha"></p>
+  </div>
   <div class="card-header">
     <span class="card-title-inline" id="resumen-titulo">Resumen del período</span>
-    <button type="button" class="btn-danger" onclick="cerrarPeriodo()">Cerrar período ✓</button>
+    <div class="acciones">
+      <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
+      <button type="button" class="btn-green" id="btn-csv" onclick="descargarCSV()">Descargar CSV</button>
+      <button type="button" class="btn-red" onclick="cerrarPeriodo()">Cerrar período ✓</button>
+    </div>
   </div>
-  <div class="aviso" id="aviso-incompleto" hidden>
-    Hay empleados sin confirmar en este rango. El cierre incluirá solo las confirmaciones recibidas.
-  </div>
+  <div class="aviso hidden" id="aviso-pendientes"></div>
   <div id="resumen-body"></div>
 </div>
 
@@ -97,39 +119,50 @@ let _desde = 1, _hasta = 1;
 async function previsualizar() {
   _desde = parseInt(document.getElementById('desde').value);
   _hasta = parseInt(document.getElementById('hasta').value);
-  if (_hasta < _desde) {
-    alert('La semana "hasta" debe ser mayor o igual a "desde".');
-    return;
-  }
+  if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return; }
 
   const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}`);
   const data = await res.json();
   const wrap = document.getElementById('resumen-wrap');
   const body = document.getElementById('resumen-body');
+  const titulo = `Período: semanas ${_desde} a ${_hasta}`;
 
-  document.getElementById('resumen-titulo').textContent =
-    `Período: semanas ${_desde} a ${_hasta}`;
+  document.getElementById('resumen-titulo').textContent  = titulo;
+  document.getElementById('print-titulo').textContent    = `CM Horas Extras — ${titulo}`;
+  document.getElementById('print-fecha').textContent     = `Generado: ${new Date().toLocaleString('es-AR')}`;
 
   if (!data.length) {
-    body.innerHTML = '<div class="vacio">Sin confirmaciones en este rango.</div>';
-    document.getElementById('aviso-incompleto').hidden = true;
+    body.innerHTML = '<div class="vacio">Sin datos en este rango.</div>';
+    document.getElementById('aviso-pendientes').classList.add('hidden');
     wrap.classList.remove('hidden');
     return;
   }
 
-  let totOt50 = 0, totOt100 = 0, totComidas = 0, totFrancos = 0, totTardanzas = 0;
+  const pendientes = data.filter(e => !e.confirmado);
+  const avisoEl = document.getElementById('aviso-pendientes');
+  if (pendientes.length) {
+    avisoEl.textContent = `${pendientes.length} empleado(s) aún no confirmaron — sus totales se incluyen pero sin descripciones.`;
+    avisoEl.classList.remove('hidden');
+  } else {
+    avisoEl.classList.add('hidden');
+  }
 
+  let totComidas = 0, totFrancos = 0, totTardanzas = 0;
   let html = `<div class="tabla-wrap"><table>
     <thead><tr>
       <th>Legajo</th><th>Nombre</th><th>Depto.</th>
       <th>OT 50%</th><th>OT 100%</th>
-      <th>Comidas</th><th>Francos</th><th>Tardanzas</th><th>Semanas</th>
+      <th>Comidas</th><th>Francos</th><th>Tardanzas</th>
+      <th>Semanas</th><th>Estado</th>
     </tr></thead><tbody>`;
 
   data.forEach(e => {
     totComidas   += e.comidas   || 0;
     totFrancos   += e.francos   || 0;
     totTardanzas += e.tardanzas || 0;
+    const estado = e.confirmado
+      ? '<span class="ok">✓ Confirmado</span>'
+      : '<span class="pend">⏳ Pendiente</span>';
     html += `<tr>
       <td>${e.legajo}</td>
       <td class="emp-nombre">${e.nombre}</td>
@@ -140,24 +173,25 @@ async function previsualizar() {
       <td>${e.francos   || 0}</td>
       <td>${e.tardanzas || 0}</td>
       <td>${(e.semanas || []).join(', ')}</td>
+      <td>${estado}</td>
     </tr>`;
   });
 
   html += `<tr class="totales-row">
-    <td colspan="3">TOTALES (${data.length} empleados)</td>
-    <td class="ot50">—</td>
-    <td class="ot100">—</td>
-    <td>${totComidas}</td>
-    <td>${totFrancos}</td>
-    <td>${totTardanzas}</td>
-    <td>—</td>
+    <td colspan="3">TOTALES — ${data.length} empleados</td>
+    <td class="ot50">—</td><td class="ot100">—</td>
+    <td>${totComidas}</td><td>${totFrancos}</td><td>${totTardanzas}</td>
+    <td colspan="2">—</td>
   </tr>`;
 
   html += '</tbody></table></div>';
   body.innerHTML = html;
-  document.getElementById('aviso-incompleto').hidden = true;
   wrap.classList.remove('hidden');
   wrap.scrollIntoView({ behavior:'smooth' });
+}
+
+function descargarCSV() {
+  window.location.href = `/periodo/exportar?desde=${_desde}&hasta=${_hasta}`;
 }
 
 async function cerrarPeriodo() {
@@ -171,17 +205,11 @@ async function cerrarPeriodo() {
   const fd = new FormData();
   fd.append('desde', _desde);
   fd.append('hasta', _hasta);
-
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
-
   if (data.error) { alert('Error: ' + data.error); return; }
 
-  alert(
-    `Período archivado correctamente.\n` +
-    `Archivo: ${data.periodo_archivado}\n\n` +
-    `El contador de semanas se reinició a 1.`
-  );
+  alert(`Período archivado.\nArchivo: ${data.periodo_archivado}\nEl contador se reinició a 1.`);
   window.location.href = '/';
 }
 </script>

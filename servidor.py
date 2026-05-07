@@ -411,44 +411,115 @@ def periodo():
                            semana_actual=meta.get("semana_actual", 0))
 
 
+def _calcular_periodo(desde, hasta):
+    """Acumula totales del período incluyendo no confirmados."""
+    por_empleado = {}
+
+    for c in _leer_historial():
+        if not (desde <= c.get("semana", 0) <= hasta):
+            continue
+        legajo = c["legajo"]
+        if legajo not in por_empleado:
+            por_empleado[legajo] = {
+                "legajo": legajo, "nombre": c["nombre"],
+                "departamento": c.get("departamento", ""),
+                "ot50": timedelta(0), "ot100": timedelta(0),
+                "comidas": 0, "francos": 0, "tardanzas": 0,
+                "semanas": [], "dias": [],
+                "conf_sem": set(), "pend_sem": set(),
+            }
+        e = por_empleado[legajo]
+        e["ot50"]      += _parse_hm(c["totales"]["ot50"])
+        e["ot100"]     += _parse_hm(c["totales"]["ot100"])
+        e["comidas"]   += c["totales"].get("comidas", 0)
+        e["francos"]   += c["totales"].get("francos", 0)
+        e["tardanzas"] += c["totales"].get("tardanzas", 0)
+        sem = c.get("semana", 0)
+        if sem not in e["semanas"]: e["semanas"].append(sem)
+        e["dias"].extend(c.get("dias", []))
+        e["conf_sem"].add(sem)
+
+    for token, d in _sesion.items():
+        sem = d.get("semana", 0)
+        if not (desde <= sem <= hasta) or d.get("confirmado"):
+            continue
+        legajo = d["legajo"]
+        tot = d.get("totales", {})
+        if legajo not in por_empleado:
+            por_empleado[legajo] = {
+                "legajo": legajo, "nombre": d["nombre"],
+                "departamento": d.get("departamento", ""),
+                "ot50": timedelta(0), "ot100": timedelta(0),
+                "comidas": 0, "francos": 0, "tardanzas": 0,
+                "semanas": [], "dias": [],
+                "conf_sem": set(), "pend_sem": set(),
+            }
+        e = por_empleado[legajo]
+        if sem in e["conf_sem"]:
+            continue
+        e["ot50"]      += _parse_hm(tot.get("ot50", "0h"))
+        e["ot100"]     += _parse_hm(tot.get("ot100", "0h"))
+        e["comidas"]   += tot.get("comidas", 0)
+        e["francos"]   += tot.get("francos", 0)
+        e["tardanzas"] += tot.get("tardanzas", 0)
+        if sem not in e["semanas"]: e["semanas"].append(sem)
+        e["pend_sem"].add(sem)
+
+    return sorted([
+        {
+            "legajo":      e["legajo"],
+            "nombre":      e["nombre"],
+            "departamento": e["departamento"],
+            "ot50":        _fmt_hm(e["ot50"]),
+            "ot100":       _fmt_hm(e["ot100"]),
+            "comidas":     e["comidas"],
+            "francos":     e["francos"],
+            "tardanzas":   e["tardanzas"],
+            "semanas":     sorted(set(e["semanas"])),
+            "confirmado":  len(e["pend_sem"]) == 0,
+            "pendientes":  sorted(e["pend_sem"]),
+            "dias":        sorted(e["dias"], key=lambda d: d["fecha"]),
+        }
+        for e in por_empleado.values()
+    ], key=lambda x: x["nombre"])
+
+
 @app.route("/periodo/resumen")
 def periodo_resumen():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     desde = int(request.args.get("desde", 1))
     hasta = int(request.args.get("hasta", 1))
+    return jsonify(_calcular_periodo(desde, hasta))
 
-    items = [c for c in _leer_historial() if desde <= c.get("semana",0) <= hasta]
 
-    por_empleado = {}
-    for c in items:
-        legajo = c["legajo"]
-        if legajo not in por_empleado:
-            por_empleado[legajo] = {
-                "legajo": legajo, "nombre": c["nombre"],
-                "departamento": c.get("departamento",""),
-                "ot50": timedelta(0), "ot100": timedelta(0),
-                "comidas":0, "francos":0, "tardanzas":0,
-                "semanas":[], "dias":[],
-            }
-        e = por_empleado[legajo]
-        e["ot50"]      += _parse_hm(c["totales"]["ot50"])
-        e["ot100"]     += _parse_hm(c["totales"]["ot100"])
-        e["comidas"]   += c["totales"].get("comidas",0)
-        e["francos"]   += c["totales"].get("francos",0)
-        e["tardanzas"] += c["totales"].get("tardanzas",0)
-        e["semanas"].append(c.get("semana","?"))
-        e["dias"].extend(c.get("dias",[]))
+@app.route("/periodo/exportar")
+def periodo_exportar():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    import csv, io
+    from flask import Response
+    desde = int(request.args.get("desde", 1))
+    hasta = int(request.args.get("hasta", 1))
+    resultado = _calcular_periodo(desde, hasta)
 
-    resultado = sorted([
-        {"legajo": e["legajo"], "nombre": e["nombre"], "departamento": e["departamento"],
-         "ot50": _fmt_hm(e["ot50"]), "ot100": _fmt_hm(e["ot100"]),
-         "comidas": e["comidas"], "francos": e["francos"], "tardanzas": e["tardanzas"],
-         "semanas": sorted(set(e["semanas"])),
-         "dias": sorted(e["dias"], key=lambda d: d["fecha"])}
-        for e in por_empleado.values()
-    ], key=lambda x: x["nombre"])
-
-    return jsonify(resultado)
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Legajo","Nombre","Departamento","OT 50%","OT 100%",
+                "Comidas","Francos","Tardanzas","Semanas","Estado"])
+    for e in resultado:
+        w.writerow([
+            e["legajo"], e["nombre"], e["departamento"],
+            e["ot50"], e["ot100"],
+            e["comidas"], e["francos"], e["tardanzas"],
+            " ".join(str(s) for s in e["semanas"]),
+            "Confirmado" if e["confirmado"] else "Pendiente",
+        ])
+    out.seek(0)
+    nombre_archivo = f"periodo_sem{desde}-{hasta}.csv"
+    return Response(
+        "﻿" + out.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
 
 
 @app.route("/periodo/cerrar", methods=["POST"])
