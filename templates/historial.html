@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Historial</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:10px}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
+    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+    .emp-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px}
+    .emp-nombre{font-weight:700;font-size:1rem}
+    .emp-info{font-size:.78rem;color:#888;margin-top:2px}
+    .emp-fecha{font-size:.75rem;color:#888}
+    .totales{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 8px}
+    .tot{background:#f8f9fb;border-radius:8px;padding:8px 12px;text-align:center;min-width:70px}
+    .tot-val{font-size:1rem;font-weight:700}
+    .tot-lbl{font-size:.65rem;color:#888;margin-top:2px}
+    .ot50{color:#d97706}
+    .ot100{color:#dc2626}
+    .dias-list{margin-top:8px}
+    .dia-item{padding:7px 10px;border-radius:6px;margin-bottom:4px;font-size:.82rem}
+    .dia-item.feriado{background:#fff7ed;border-left:3px solid #f97316}
+    .dia-item.sabado {background:#eff6ff;border-left:3px solid #3b82f6}
+    .dia-item.domingo{background:#f5f3ff;border-left:3px solid #8b5cf6}
+    .dia-item.paro   {background:#f0fdf4;border-left:3px solid #22c55e}
+    .dia-item.normal {background:#f8f9fb;border-left:3px solid #d1d5db}
+    .dia-fecha{font-weight:700;margin-right:8px}
+    .dia-horas{color:#555;font-size:.78rem}
+    .dia-desc{color:#374151;margin-top:3px;font-style:italic}
+    .sin-desc{color:#9ca3af;font-style:italic}
+    .badge-ok{display:inline-block;background:#d1fae5;color:#065f46;font-size:.7rem;padding:2px 8px;border-radius:20px;font-weight:600}
+    .vacio{text-align:center;color:#888;padding:40px;font-size:.9rem}
+    .tipo-tag{font-size:.6rem;font-weight:700;text-transform:uppercase;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+    .feriado .tipo-tag{background:#fed7aa;color:#9a3412}
+    .sabado  .tipo-tag{background:#bfdbfe;color:#1e40af}
+    .domingo .tipo-tag{background:#ddd6fe;color:#5b21b6}
+    .paro    .tipo-tag{background:#bbf7d0;color:#166534}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Historial de confirmaciones</h1>
+  <div class="nav">
+    <a href="/">← Volver</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+{% if not items %}
+<div class="vacio">No hay confirmaciones registradas todavía.</div>
+{% else %}
+
+{% for c in items %}
+<div class="card">
+  <div class="emp-head">
+    <div>
+      <div class="emp-nombre">{{ c.nombre }}</div>
+      <div class="emp-info">Legajo {{ c.legajo }}{% if c.departamento %} · {{ c.departamento }}{% endif %}</div>
+    </div>
+    <div>
+      <span class="badge-ok">✓ Confirmado</span>
+      <div class="emp-fecha">{{ c.confirmado_en[:16].replace('T',' ') if c.confirmado_en else '' }}</div>
+    </div>
+  </div>
+
+  <div class="totales">
+    <div class="tot"><div class="tot-val ot50">{{ c.totales.ot50 }}</div><div class="tot-lbl">50%</div></div>
+    <div class="tot"><div class="tot-val ot100">{{ c.totales.ot100 }}</div><div class="tot-lbl">100%</div></div>
+    {% if c.totales.comidas %}<div class="tot"><div class="tot-val">{{ c.totales.comidas }}</div><div class="tot-lbl">Comidas</div></div>{% endif %}
+    {% if c.totales.francos %}<div class="tot"><div class="tot-val">{{ c.totales.francos }}</div><div class="tot-lbl">Francos</div></div>{% endif %}
+    {% if c.totales.tardanzas %}<div class="tot"><div class="tot-val">{{ c.totales.tardanzas }}</div><div class="tot-lbl">Tardanzas</div></div>{% endif %}
+  </div>
+
+  {% if c.dias %}
+  <div class="dias-list">
+    {% for d in c.dias %}
+    {% set tipo = d.get('tipo_dia','normal') %}
+    <div class="dia-item {{ tipo }}">
+      <span class="dia-fecha">{{ d.fecha[5:] }}{% if tipo != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sábado','domingo':'Domingo','paro':'Paro'}.get(tipo,'') }}</span>{% endif %}</span>
+      <span class="dia-horas">
+        {% if d.ot50  != '00:00:00' %}+{{ d.ot50[:5] }} 50%{% endif %}
+        {% if d.ot100 != '00:00:00' %} +{{ d.ot100[:5] }} 100%{% endif %}
+        {% if d.get('franco') %} · Franco{% endif %}
+        {% if d.get('comida') %} · Comida{% endif %}
+      </span>
+      <div>{% if d.descripcion %}<span class="dia-desc">"{{ d.descripcion }}"</span>{% else %}<span class="sin-desc">Sin descripción</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endif %}
+</body>
+</html>

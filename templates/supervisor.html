@@ -7,7 +7,11 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
-    h1{font-size:1.3rem;margin-bottom:20px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:14px}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
     .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
     .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
     label{display:block;font-weight:600;margin-bottom:8px;font-size:.9rem}
@@ -36,7 +40,13 @@
 </head>
 <body>
 
-<h1>CM Horas Extras</h1>
+<div class="topbar">
+  <h1>CM Horas Extras</h1>
+  <div class="nav">
+    <a href="/historial">Ver historial</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
 
 <!-- Upload -->
 <div class="card">

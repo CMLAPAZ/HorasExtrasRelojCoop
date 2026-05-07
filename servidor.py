@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, request, render_template, jsonify
+import os
+from flask import Flask, request, render_template, jsonify, session, redirect, url_for
 import pandas as pd
 import secrets
 import json
@@ -10,8 +11,21 @@ import socket
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "cm_horas_secret_2026")
 
-SESION_FILE = Path("sesion.json")
+SESION_FILE      = Path("sesion.json")
+CONFIRM_DIR      = Path("confirmaciones")
+SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS", "cm2026")
+
+
+# ─────────────────────────────────────────────
+# Auth
+# ─────────────────────────────────────────────
+def _autenticado():
+    return session.get("auth") is True
+
+def _requiere_auth():
+    return redirect(url_for("login", next=request.path))
 
 
 # ─────────────────────────────────────────────
@@ -25,8 +39,8 @@ def _cargar_sesion():
             pass
     return {}
 
-def _guardar_sesion(sesion):
-    SESION_FILE.write_text(json.dumps(sesion, ensure_ascii=False, indent=2), encoding="utf-8")
+def _guardar_sesion(s):
+    SESION_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
 
 _sesion = _cargar_sesion()
 
@@ -51,7 +65,6 @@ def _fmt_hm(td):
 
 
 def _preparar_dias(registros):
-    """Devuelve una lista de días con tramos, totales, y campo para descripción."""
     dias_dict = {}
     dias_order = []
 
@@ -136,16 +149,109 @@ def _normalizar_columnas(df):
     return df.rename(columns={k: v for k, v in aliases.items() if k in df.columns})
 
 
+def _leer_historial():
+    """Lee todos los JSON de confirmaciones y devuelve lista ordenada por fecha desc."""
+    CONFIRM_DIR.mkdir(exist_ok=True)
+    items = []
+    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_archivo"] = f.name
+            items.append(data)
+        except Exception:
+            continue
+    return items
+
+
 # ─────────────────────────────────────────────
-# Rutas
+# Rutas públicas (empleados)
+# ─────────────────────────────────────────────
+@app.route("/e/<token>")
+def empleado(token):
+    data = _sesion.get(token)
+    if not data:
+        return render_template("error.html", mensaje="Link inválido o expirado."), 404
+    return render_template("empleado.html", data=data, token=token)
+
+
+@app.route("/e/<token>/confirmar", methods=["POST"])
+def confirmar(token):
+    data = _sesion.get(token)
+    if not data:
+        return render_template("error.html", mensaje="Token inválido."), 404
+
+    for dia in data["dias"]:
+        if dia["tiene_ot"]:
+            dia["descripcion"] = request.form.get(f"desc_{dia['fecha']}", "").strip()
+
+    data["confirmado"]    = True
+    data["confirmado_en"] = datetime.now().isoformat()
+    _guardar_sesion(_sesion)
+
+    CONFIRM_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_file = CONFIRM_DIR / f"{data['legajo']}_{ts}.json"
+    out_file.write_text(
+        json.dumps({
+            "legajo":        data["legajo"],
+            "nombre":        data["nombre"],
+            "departamento":  data["departamento"],
+            "confirmado_en": data["confirmado_en"],
+            "totales":       data["totales"],
+            "dias": [
+                {
+                    "fecha":       d["fecha"],
+                    "ot50":        d["ot50"],
+                    "ot100":       d["ot100"],
+                    "franco":      d.get("franco", 0),
+                    "comida":      d.get("comida", 0),
+                    "tipo_dia":    d.get("tipo_dia", "normal"),
+                    "descripcion": d.get("descripcion", ""),
+                }
+                for d in data["dias"] if d["tiene_ot"]
+            ],
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return render_template("confirmado.html", nombre=data["nombre"])
+
+
+# ─────────────────────────────────────────────
+# Login / Logout
+# ─────────────────────────────────────────────
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if request.form.get("password") == SUPERVISOR_PASS:
+            session["auth"] = True
+            return redirect(request.args.get("next") or url_for("index"))
+        error = "Contraseña incorrecta."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ─────────────────────────────────────────────
+# Rutas protegidas (supervisor)
 # ─────────────────────────────────────────────
 @app.route("/")
 def index():
+    if not _autenticado():
+        return _requiere_auth()
     return render_template("supervisor.html")
 
 
 @app.route("/procesar", methods=["POST"])
 def procesar():
+    if not _autenticado():
+        return jsonify({"error": "No autorizado"}), 401
+
     if "csv" not in request.files:
         return jsonify({"error": "No se recibió archivo"}), 400
 
@@ -163,10 +269,8 @@ def procesar():
 
     base_url = request.host_url.rstrip("/")
 
-    links = []
     for emp in empleados:
         token = secrets.token_urlsafe(10)
-
         ot50 = ot100 = timedelta(0)
         comidas = francos = tardanzas = 0
         vistos = set()
@@ -199,8 +303,8 @@ def procesar():
 
     _guardar_sesion(_sesion)
 
+    links = []
     for emp in empleados:
-        # encontrar el token recién creado para este empleado
         token = next(
             t for t, d in _sesion.items()
             if d["legajo"] == emp["legajo"] and d["nombre"] == emp["nombre"]
@@ -217,6 +321,8 @@ def procesar():
 
 @app.route("/estado")
 def estado():
+    if not _autenticado():
+        return jsonify({"error": "No autorizado"}), 401
     resultado = []
     for data in _sesion.values():
         resultado.append({
@@ -237,60 +343,16 @@ def estado():
     return jsonify(resultado)
 
 
-@app.route("/e/<token>")
-def empleado(token):
-    data = _sesion.get(token)
-    if not data:
-        return render_template("error.html", mensaje="Link inválido o expirado."), 404
-    return render_template("empleado.html", data=data, token=token)
-
-
-@app.route("/e/<token>/confirmar", methods=["POST"])
-def confirmar(token):
-    data = _sesion.get(token)
-    if not data:
-        return render_template("error.html", mensaje="Token inválido."), 404
-
-    # Guardar descripción por día
-    for dia in data["dias"]:
-        if dia["tiene_ot"]:
-            key = f"desc_{dia['fecha']}"
-            dia["descripcion"] = request.form.get(key, "").strip()
-
-    data["confirmado"]    = True
-    data["confirmado_en"] = datetime.now().isoformat()
-    _guardar_sesion(_sesion)
-
-    # Guardar confirmación en archivo
-    out_dir = Path("confirmaciones")
-    out_dir.mkdir(exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = out_dir / f"{data['legajo']}_{ts}.json"
-    out_file.write_text(
-        json.dumps({
-            "legajo":        data["legajo"],
-            "nombre":        data["nombre"],
-            "departamento":  data["departamento"],
-            "confirmado_en": data["confirmado_en"],
-            "totales":       data["totales"],
-            "dias": [
-                {
-                    "fecha":       d["fecha"],
-                    "ot50":        d["ot50"],
-                    "ot100":       d["ot100"],
-                    "descripcion": d.get("descripcion", ""),
-                }
-                for d in data["dias"] if d["tiene_ot"]
-            ],
-        }, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    return render_template("confirmado.html", nombre=data["nombre"])
+@app.route("/historial")
+def historial():
+    if not _autenticado():
+        return _requiere_auth()
+    items = _leer_historial()
+    return render_template("historial.html", items=items)
 
 
 # ─────────────────────────────────────────────
-# Arranque
+# Arranque local
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     hostname = socket.gethostname()
@@ -299,5 +361,6 @@ if __name__ == "__main__":
     except Exception:
         ip = "127.0.0.1"
     print(f"\n  Supervisor:  http://{ip}:5000")
-    print(f"  (también):   http://localhost:5000\n")
+    print(f"  (también):   http://localhost:5000")
+    print(f"  Contraseña:  {SUPERVISOR_PASS}\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
