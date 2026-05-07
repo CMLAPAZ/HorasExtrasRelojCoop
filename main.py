@@ -23,6 +23,7 @@ import os
 import sys
 import ctypes
 import datetime
+import webbrowser
 from datetime import timedelta
 
 import tkinter as tk
@@ -1343,6 +1344,13 @@ tk.Button(
     command=abrir_gestor_feriados,
     font=FONT_BASE,
     bg=C_OK, fg="black", width=22
+).pack(pady=(0, 10))
+
+tk.Button(
+    marco, text="🌐  Confirmaciones web",
+    command=lambda: webbrowser.open("https://cmhoras.pythonanywhere.com"),
+    font=FONT_BASE,
+    bg="#dbeafe", fg="#1e3a5f", width=22
 ).pack(pady=(0, 10))
 
 # ── Salir ────────────────────────────────────────────────────────────────────
