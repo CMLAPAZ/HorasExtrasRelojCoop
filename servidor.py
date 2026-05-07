@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re
+import os, re, urllib.parse
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for
 import pandas as pd
 import secrets
@@ -15,10 +15,15 @@ app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
 SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
 FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola Martin")
 
-SESION_FILE  = Path("sesion.json")
-CONFIRM_DIR  = Path("confirmaciones")
-SEMANAS_DIR  = Path("semanas")
-PERIODOS_DIR = Path("periodos")
+SESION_FILE    = Path("sesion.json")
+CONFIRM_DIR    = Path("confirmaciones")
+SEMANAS_DIR    = Path("semanas")
+PERIODOS_DIR   = Path("periodos")
+TELEFONOS_FILE = Path("recursos/telefonos.json")
+
+# Prefijos de área por legajo (excepciones a la regla general)
+_AREA_CODES = {100: "343", 141: "3435"}
+_AREA_DEFAULT = "3437"
 
 
 # ═══════════════════════════════════════════════
@@ -79,6 +84,27 @@ def _leer_historial(semana=None):
         except Exception:
             continue
     return items
+
+def _cargar_telefonos():
+    if TELEFONOS_FILE.exists():
+        try:
+            return json.loads(TELEFONOS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+def _guardar_telefonos(t):
+    Path("recursos").mkdir(exist_ok=True)
+    TELEFONOS_FILE.write_text(json.dumps(t, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _wa_url(legajo, nombre, url):
+    tel = _cargar_telefonos()
+    phone = re.sub(r'\D', '', str(tel.get(str(legajo), "")))
+    if not phone:
+        return ""
+    area = _AREA_CODES.get(int(legajo), _AREA_DEFAULT)
+    msg  = urllib.parse.quote(f"Hola {nombre.split()[0]}, confirmá tus horas extras en este link: {url}")
+    return f"https://wa.me/549{area}{phone}?text={msg}"
 
 _sesion = _cargar_sesion()
 
@@ -202,8 +228,10 @@ def _crear_tokens(empleados, semana_n, base_url):
             "confirmado": False, "confirmado_en": None,
             "semana": semana_n,
         }
+        emp_url = f"{base_url}/e/{token}"
         links.append({"legajo": emp["legajo"], "nombre": emp["nombre"],
-                       "url": f"{base_url}/e/{token}"})
+                       "url": emp_url,
+                       "wa_url": _wa_url(emp["legajo"], emp["nombre"], emp_url)})
     return tokens_creados, links
 
 
@@ -274,6 +302,27 @@ def logout():
 def index():
     if not _autenticado(): return _requiere_auth()
     return render_template("supervisor.html")
+
+
+@app.route("/telefonos/upload", methods=["POST"])
+def telefonos_upload():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    if "archivo" not in request.files: return jsonify({"error":"No se recibió archivo"}), 400
+    try:
+        df = _leer_archivo(request.files["archivo"])
+        df.columns = [str(c).strip() for c in df.columns]
+        leg_col = next((c for c in df.columns if "legajo" in c.lower()), df.columns[0])
+        tel_col = next((c for c in df.columns if "tel" in c.lower() or "cel" in c.lower()), df.columns[-1])
+        telefonos = {}
+        for _, row in df.iterrows():
+            leg = str(row[leg_col]).strip().split(".")[0]
+            tel = str(row[tel_col]).strip().split(".")[0]
+            if leg and leg not in ("nan","") and tel and tel not in ("nan",""):
+                telefonos[leg] = tel
+        _guardar_telefonos(telefonos)
+        return jsonify({"ok": True, "total": len(telefonos)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/detectar-departamentos", methods=["POST"])
@@ -381,7 +430,8 @@ def semana_links(n):
     base_url = request.host_url.rstrip("/")
     links = [
         {"legajo": d["legajo"], "nombre": d["nombre"],
-         "confirmado": d["confirmado"], "url": f"{base_url}/e/{t}"}
+         "confirmado": d["confirmado"], "url": f"{base_url}/e/{t}",
+         "wa_url": _wa_url(d["legajo"], d["nombre"], f"{base_url}/e/{t}")}
         for t, d in _sesion.items() if d.get("semana") == n
     ]
     links.sort(key=lambda x: (x["confirmado"], x["nombre"]))

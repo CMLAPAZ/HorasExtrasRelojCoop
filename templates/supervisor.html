@@ -34,6 +34,14 @@
     .depto-check{display:flex;align-items:center;gap:5px;font-size:.88rem;background:#f8f9fb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 10px;cursor:pointer}
     .depto-check input{cursor:pointer}
     .badge-depto{font-size:.7rem;background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:20px;font-weight:600;margin-left:4px}
+    .wa-btn{display:inline-block;background:#25d366;color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:4px;text-decoration:none;white-space:nowrap}
+    .wa-btn:hover{background:#1da851}
+    .tel-ok{font-size:.75rem;color:#065f46;background:#d1fae5;padding:3px 10px;border-radius:4px}
+    .depto-field{margin-top:12px}
+    .depto-hint{font-weight:400;color:#888}
+    .depto-input{width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;margin-top:4px}
+    .tel-error{color:#dc2626;font-size:.85rem;margin-top:8px}
+    .btn-sm-mt{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:12px}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
     .tabla-wrap{overflow-x:auto}
@@ -80,9 +88,9 @@
   <div class="card-title">Nueva semana</div>
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
-  <div style="margin-top:12px">
-    <label for="depto-manual">Departamento <span style="font-weight:400;color:#888">(escribí el nombre, ej: Redes)</span></label>
-    <input type="text" id="depto-manual" placeholder="Redes / Administracion / Todos…" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;margin-top:4px">
+  <div class="depto-field">
+    <label for="depto-manual">Departamento <span class="depto-hint">(escribí el nombre, ej: Redes)</span></label>
+    <input type="text" id="depto-manual" class="depto-input" placeholder="Redes / Administracion / Todos…">
   </div>
   <div id="deptos-wrap" class="hidden">
     <div class="deptos-label">Seleccioná los departamentos a incluir:</div>
@@ -102,10 +110,22 @@
   </div>
   <div class="tabla-wrap">
     <table>
-      <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th></tr></thead>
+      <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
+</div>
+
+<!-- Lista de teléfonos -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title-inline">Lista de teléfonos</span>
+    <span id="tel-estado" class="tel-ok hidden"></span>
+  </div>
+  <label for="tel-archivo">Subí el Excel con legajos y teléfonos (una sola vez, se guarda)</label>
+  <input type="file" id="tel-archivo" accept=".xls,.xlsx,.csv">
+  <div id="tel-error" class="tel-error hidden"></div>
+  <button type="button" class="btn-sm-mt" onclick="subirTelefonos()">Cargar teléfonos</button>
 </div>
 
 <!-- Semanas registradas -->
@@ -126,7 +146,7 @@
   <div id="links-panel-info" class="info-ok hidden"></div>
   <div class="tabla-wrap">
     <table>
-      <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Link</th><th></th></tr></thead>
+      <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
       <tbody id="tbody-links"></tbody>
     </table>
   </div>
@@ -147,6 +167,27 @@
 </div>
 
 <script>
+// ─── Subir lista de teléfonos ────────────────────
+async function subirTelefonos() {
+  const file  = document.getElementById('tel-archivo').files[0];
+  const errEl = document.getElementById('tel-error');
+  const okEl  = document.getElementById('tel-estado');
+  errEl.classList.add('hidden');
+  if (!file) { errEl.textContent = 'Seleccioná el archivo primero.'; errEl.classList.remove('hidden'); return; }
+  const fd = new FormData();
+  fd.append('archivo', file);
+  try {
+    const res  = await fetch('/telefonos/upload', { method:'POST', body:fd });
+    const data = await res.json();
+    if (data.error) { errEl.textContent = '⚠ ' + data.error; errEl.classList.remove('hidden'); return; }
+    okEl.textContent = `✓ ${data.total} teléfonos cargados`;
+    okEl.classList.remove('hidden');
+  } catch(ex) {
+    errEl.textContent = 'Error de conexión.';
+    errEl.classList.remove('hidden');
+  }
+}
+
 // ─── Detectar departamentos al seleccionar archivo ──
 document.getElementById('csv').addEventListener('change', async function() {
   const file = this.files[0];
@@ -235,6 +276,7 @@ async function procesar(force) {
         <td>${e.nombre}</td>
         <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
         <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+        <td>${e.wa_url ? `<a class="wa-btn" href="${e.wa_url}" target="_blank">WhatsApp</a>` : '—'}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -321,6 +363,7 @@ async function verLinks(n) {
       <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>
       <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
       <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+      <td>${e.wa_url ? `<a class="wa-btn" href="${e.wa_url}" target="_blank">WhatsApp</a>` : '—'}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -359,6 +402,7 @@ async function regenerarLinks(n) {
         <td><span class="pend">⏳ Pendiente</span></td>
         <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
         <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+        <td>${e.wa_url ? `<a class="wa-btn" href="${e.wa_url}" target="_blank">WhatsApp</a>` : '—'}</td>
       `;
       tbody.appendChild(tr);
     });
