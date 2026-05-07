@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Supervisor</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    h1{font-size:1.3rem;margin-bottom:20px}
+    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+    label{display:block;font-weight:600;margin-bottom:8px;font-size:.9rem}
+    input[type=file]{width:100%;padding:10px;border:2px dashed #d1d5db;border-radius:8px;cursor:pointer;font-size:.9rem}
+    .btn{padding:11px 28px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:14px}
+    .btn:hover{background:#2d2d4e}
+    #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
+    #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
+    #resultado{display:none}
+    .tabla-wrap{overflow-x:auto;margin-top:12px}
+    table{width:100%;border-collapse:collapse;font-size:.85rem}
+    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    .link-url{word-break:break-all;color:#1d4ed8;font-size:.8rem}
+    .copy-btn{font-size:.75rem;padding:3px 10px;background:#e5e7eb;border:none;border-radius:4px;cursor:pointer;white-space:nowrap}
+    .copy-btn:hover{background:#d1d5db}
+    .badge-ok{color:#065f46;font-size:.75rem}
+  </style>
+</head>
+<body>
+
+<h1>CM Horas Extras</h1>
+
+<div class="card">
+  <label for="csv">Archivo de fichadas (CSV del CrossCheck)</label>
+  <input type="file" id="csv" accept=".xls,.xlsx,.csv">
+  <div id="error"></div>
+  <div id="loading">⏳ Procesando fichadas…</div>
+  <button type="button" class="btn" onclick="procesar()">Generar links</button>
+</div>
+
+<div class="card" id="resultado">
+  <strong>Links para enviar por WhatsApp</strong>
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function procesar() {
+  const file = document.getElementById('csv').files[0];
+  const errEl  = document.getElementById('error');
+  const loadEl = document.getElementById('loading');
+  errEl.style.display = 'none';
+
+  if (!file) {
+    errEl.textContent = 'Seleccioná un archivo CSV primero.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  loadEl.style.display = 'block';
+  document.getElementById('resultado').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('csv', file);
+
+  try {
+    const res  = await fetch('/procesar', { method: 'POST', body: fd });
+    const data = await res.json();
+    loadEl.style.display = 'none';
+
+    if (data.error) {
+      errEl.textContent = '⚠ ' + data.error;
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    data.empleados.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${e.legajo}</td>
+        <td>${e.nombre}</td>
+        <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
+        <td><button class="copy-btn" data-url="${e.url}" onclick="copiar(this)">Copiar</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('resultado').style.display = 'block';
+
+  } catch (ex) {
+    loadEl.style.display = 'none';
+    errEl.textContent = 'Error de conexión con el servidor.';
+    errEl.style.display = 'block';
+  }
+}
+
+function copiar(btn) {
+  navigator.clipboard.writeText(btn.dataset.url).then(() => {
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1800);
+  });
+}
+</script>
+</body>
+</html>

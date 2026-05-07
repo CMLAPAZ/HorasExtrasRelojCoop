@@ -10,10 +10,16 @@
 from datetime import datetime, timedelta, time, date
 from collections import defaultdict
 from pathlib import Path
+import sys
 import pandas as pd
 import json
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
+# Cuando corre como .exe (frozen), config.json vive junto al ejecutable,
+# no en el directorio temporal _MEIPASS que PyInstaller usa para el bundle.
+if getattr(sys, 'frozen', False):
+    CONFIG_PATH = Path(sys.executable).parent / "config.json"
+else:
+    CONFIG_PATH = Path(__file__).parent / "config.json"
 
 # =========================================================
 # CONFIG
@@ -523,7 +529,12 @@ def _calcular_por_dia(
                 es_paro=es_paro,
                 legajo=legajo
             )
-
+        if str(legajo) == "132" and str(d) == "2026-03-13":
+            print(
+                f"[DEBUG DIA] legajo={legajo} fecha={d} "
+                f"dyn_start={dyn_start} "
+                f"horario_fin={(datetime.combine(d, dyn_start) + JORNADA_NORMAL).time()}"
+            )
         normal_start_dt = datetime.combine(d, dyn_start)
         horario_fin = normal_start_dt + JORNADA_NORMAL
         corte_21 = datetime.combine(d, OT100_NIGHT_START)
@@ -685,7 +696,7 @@ def _calcular_por_dia(
 
             total_50 = total_50_red
             total_100 = total_100_red
-
+        
         # =====================================================
         # FRANCO
         # =====================================================

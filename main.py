@@ -125,26 +125,29 @@ if __name__ == "__main__":
 # DIRECTORIOS
 # =============================================================================
 if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    BASE_DIR      = os.path.dirname(sys.executable)
+    _BUNDLE_DIR   = sys._MEIPASS          # archivos bundleados dentro del exe
 else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+    _BUNDLE_DIR   = BASE_DIR
+
+def _resource(relpath):
+    """Ruta a un recurso bundleado (logo, fuentes). Funciona frozen y en dev."""
+    return os.path.join(_BUNDLE_DIR, relpath)
 
 CARPETA_ARCHIVOS = os.path.join(BASE_DIR, "archivos")
 CARPETA_REPORTES = os.path.join(BASE_DIR, "reportes")
 
-# Recursos (recomendado)
-CARPETA_RECURSOS = os.path.join(BASE_DIR, "recursos")
-ICON_ICO = os.path.join(CARPETA_RECURSOS, "logo.ico")
-ICON_PNG = os.path.join(CARPETA_RECURSOS, "logo.png")
+# Recursos bundleados (icono de ventana/taskbar y logo de pantalla)
+CARPETA_RECURSOS = _resource("recursos")
+ICON_ICO = _resource(os.path.join("recursos", "logo.ico"))
+ICON_PNG = _resource(os.path.join("recursos", "logo.png"))
 
-# Carpeta logo (compatibilidad con tu estructura previa)
-CARPETA_LOGO = os.path.join(BASE_DIR, "logo")
-LOGO_PATH = os.path.join(CARPETA_LOGO, "logo.png")
+# Logo de pantalla (usa el bundleado en recursos/)
+LOGO_PATH = _resource(os.path.join("recursos", "logo.png"))
 
 os.makedirs(CARPETA_ARCHIVOS, exist_ok=True)
 os.makedirs(CARPETA_REPORTES, exist_ok=True)
-os.makedirs(CARPETA_RECURSOS, exist_ok=True)
-os.makedirs(CARPETA_LOGO, exist_ok=True)
 
 # =============================================================================
 # APP ID (Windows taskbar icon)

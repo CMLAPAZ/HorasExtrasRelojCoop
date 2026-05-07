@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 from fpdf import FPDF
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os
 
 # --- Utilidades robustas ---
 def _td_from_any(x):
-    """Convierte a timedelta: timedelta | 'HH:MM:SS' | número (segundos) | vacío."""
+    """Convierte a timedelta: timedelta | 'HH:MM:SS' | número | vacío."""
     if isinstance(x, timedelta):
         return x
     if isinstance(x, (int, float)):
@@ -14,236 +14,439 @@ def _td_from_any(x):
         s = x.strip()
         if not s:
             return timedelta(0)
-        parts = s.split(":")
-        if len(parts) == 3:
-            h, m, s = parts
-            return timedelta(hours=int(h), minutes=int(m), seconds=int(float(s)))
+        # Formato HH:MM:SS
+        try:
+            h, m, s2 = s.split(":")
+            return timedelta(hours=int(h), minutes=int(m), seconds=int(float(s2)))
+        except Exception:
+            pass
+        # Segundos sueltos
+        try:
+            return timedelta(seconds=float(s))
+        except Exception:
+            return timedelta(0)
     return timedelta(0)
 
 def formato_horas(td):
-    td = _td_from_any(td)
-    total_seconds = int(td.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    return f"{hours:02}:{minutes:02}:{seconds:02}"
+    if not isinstance(td, timedelta):
+        td = _td_from_any(td)
+    total_seg = int(td.total_seconds())
+    if total_seg < 0:
+        total_seg = 0
+    h = total_seg // 3600
+    m = (total_seg % 3600) // 60
+    s = total_seg % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 def _round_to_hour(td):
-    """Redondea a horas enteras (≥30' hacia arriba)."""
-    td = _td_from_any(td)
+    if not isinstance(td, timedelta):
+        td = _td_from_any(td)
     if td <= timedelta(0):
         return timedelta(0)
-    minutes = td.total_seconds() / 60.0
-    hours = int(minutes // 60)
-    rem = minutes - hours * 60
-    if rem >= 30:
-        hours += 1
-    return timedelta(hours=hours)
+    total_min = td.total_seconds() / 60.0
+    horas = int(total_min // 60)
+    resto = total_min - horas * 60
+    if resto >= 30:
+        horas += 1
+    return timedelta(hours=horas)
 
-# ---------------- PDF ----------------
+def _parse_fecha(s):
+    if not s:
+        return None
+    s = str(s).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            pass
+    return None
+
+def _resource_path(*relative):
+    base = getattr(os, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *relative)
+
+# ------------------ Clase PDF ------------------
 class PDFGeneral(FPDF):
     def __init__(self):
         super().__init__(orientation='P', unit='mm', format='A4')
         self.set_auto_page_break(auto=True, margin=15)
 
-        # 👉 Ruta fija donde están las fuentes
-        base_path = r"C:\Users\USUARIO\OneDrive\Apps\CM_HorasExtras\dejavu-fonts-ttf-2.37\dejavu-fonts-ttf-2.37\ttf"
+        self._unicode = False
+        fonts_folder = _resource_path('recursos', 'fonts')
+        reg = os.path.join(fonts_folder, 'DejaVuSans.ttf')
+        bold = os.path.join(fonts_folder, 'DejaVuSans-Bold.ttf')
+        ital = os.path.join(fonts_folder, 'DejaVuSans-Oblique.ttf')
 
-        # 👉 Registrar las variantes de DejaVu
-        self.add_font("DejaVu", "", os.path.join(base_path, "DejaVuSans.ttf"), uni=True)
-        self.add_font("DejaVu", "B", os.path.join(base_path, "DejaVuSans-Bold.ttf"), uni=True)
-        self.add_font("DejaVu", "I", os.path.join(base_path, "DejaVuSans-Oblique.ttf"), uni=True)
-
-        # Fuente por defecto
-        self.set_font("DejaVu", "", 7)
+        if os.path.exists(reg) and os.path.exists(bold) and os.path.exists(ital):
+            try:
+                self.add_font("DejaVu", "", reg, uni=True)
+                self.add_font("DejaVu", "B", bold, uni=True)
+                self.add_font("DejaVu", "I", ital, uni=True)
+                self.set_font("DejaVu", "", 7)
+                self._unicode = True
+            except Exception:
+                self.set_font("Helvetica", "", 7)
+        else:
+            self.set_font("Helvetica", "", 7)
 
         self.titulo = ""
         self.columnas = []
         self.anchos = []
+        self.feriados = set()
+        self.grosor_linea_lunes = 0.6
+        self.grosor_linea_normal = 0.2
 
+    # -------------------------------------------  
+    # HEADER  
+    # -------------------------------------------  
     def header(self):
-        self.set_font("DejaVu", "B", 12)
+        fam = "DejaVu" if self._unicode else "Helvetica"
+        self.set_font(fam, "B", 12)
         self.cell(0, 10, self.titulo, ln=1, align="C")
         self.ln(3)
 
+    # -------------------------------------------  
+    # FOOTER  
+    # -------------------------------------------  
     def footer(self):
+        fam = "DejaVu" if self._unicode else "Helvetica"
         self.set_y(-15)
-        self.set_font("DejaVu", "I", 8)
+        self.set_font(fam, "I", 8)
         self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "L")
+
         self.set_y(-15)
         self.set_x(-70)
-        self.set_font("DejaVu", "I", 7)
+        self.set_font(fam, "I", 7)
         self.cell(60, 10, "Realizado por CM_Carola", 0, 0, "R")
 
+    # -------------------------------------------  
+    # PORTADA ELEGANTE  
+    # -------------------------------------------  
+    def portada_abreviaciones(self, mes=""):
+        fam = "DejaVu" if self._unicode else "Helvetica"
+        self.add_page()
+
+        # Título general
+        self.set_font(fam, "B", 18)
+        self.cell(0, 15, "Informe de Fichadas", ln=1, align="C")
+
+        # Subtítulo
+        self.set_font(fam, "", 11)
+        if mes:
+            self.cell(0, 7, f"Período: {mes}", ln=1, align="C")
+        self.ln(8)
+
+        # Título de sección
+        self.set_font(fam, "B", 13)
+        self.cell(0, 10, "Leyenda de símbolos y abreviaturas", ln=1)
+        self.ln(3)
+
+        self.set_font(fam, "", 10)
+
+        items = [
+    "★ FER : Día feriado trabajado (todas las horas se liquidan al 100%).",
+    "◆ SAB / ◆ DOM : Sábado / Domingo trabajado (fila gris clara; horas al 100%).",
+    "✦ FR : Franco compensatorio generado (total diario redondeado ≥ 4 h al 100%).",
+    "↘ EA : Entrada anticipada recortada (no se computa el tiempo previo al horario normal).",
+    "✌ SA : Salida anticipada (no se cumplen las 7 h normales del día).",
+    "△ INC : Fichada inconclusa (falta SALIDA o tramo inválido; el sistema asigna 0 h).",
+    "COMIDA : Cantidad de comidas reconocidas según jornada continua.",
+    "FRANCO : Cantidad de francos compensatorios generados (0 o 1 por día).",
+    "Tarde : Llegada tarde (1 si la primera entrada fue ≥ hora límite configurada).",
+    "Observaciones : Puede contener múltiples símbolos separados por '|'."
+]
+
+
+        for txt in items:
+            self.multi_cell(0, 6, f"• {txt}")
+            self.ln(1)
+
+        self.ln(6)
+        self.set_font(fam, "I", 9)
+        self.multi_cell(
+            0, 5,
+            "Este informe es de uso interno. La interpretación depende del convenio de Luz y Fuerza."
+        )
+
+        self.ln(18)
+        self.set_font(fam, "I", 10)
+        self.set_text_color(80, 80, 80)
+        self.cell(0, 6, "Desarrollado por CM_Carola", ln=1, align="R")
+        self.set_text_color(0, 0, 0)
+
+    # -------------------------------------------  
+    # Encabezado por empleado  
+    # -------------------------------------------  
     def encabezado_empleado(self, legajo, nombre="", departamento=""):
-        self.set_font("DejaVu", "B", 10)
-        texto = f"Legajo: {legajo}"
+        fam = "DejaVu" if self._unicode else "Helvetica"
+        self.set_font(fam, "B", 10)
+        partes = [f"Legajo: {legajo}"]
         if nombre:
-            texto += f"   |   Nombre: {nombre}"
+            partes.append(f"Nombre: {nombre}")
         if departamento:
-            texto += f"   |   Departamento: {departamento}"
-        self.cell(0, 8, texto, ln=1)
+            partes.append(f"Departamento: {departamento}")
+        self.cell(0, 8, "   |   ".join(partes), ln=1)
         self.ln(1)
 
+    # -------------------------------------------  
+    # Títulos de tabla  
+    # -------------------------------------------  
     def _titulos_columnas(self, columnas, anchos):
-        self.set_font("DejaVu", "B", 8)
+        fam = "DejaVu" if self._unicode else "Helvetica"
+        self.set_font(fam, "B", 8)
         for col, ancho in zip(columnas, anchos):
             self.cell(ancho, 6, col, 1, 0, 'C')
         self.ln()
-        self.set_font("DejaVu", "", 7)
+        self.set_font(fam, "", 7)
 
+    # -------------------------------------------  
+    # Decorador observaciones  
+    # -------------------------------------------  
     def _decorar_observacion(self, texto):
-        """Agrega símbolos bonitos a la observación según el caso."""
         if not texto:
             return ""
+        if not self._unicode:
+            return texto
+
+        # Si ya empieza con un símbolo, no lo duplicamos
+        primer = texto.strip()[:1]
+        if primer in ("↘", "✌", "✦", "★", "◆", "☹"):
+            return texto
+
         t = texto.lower()
-        if "break" in t:
-            return f"✌ {texto}"
         if "tarde" in t:
             return f"☹ {texto}"
-        if "temprano" in t or "salida anticipada" in t:
-            return f"☺ {texto}"
-        if "error" in t or "inconsistencia" in t:
-            return f"✘ {texto}"
+        if "ea" in t:
+            return f"↘ {texto}"
+        if "sa" in t:
+            return f"✌ {texto}"
+        if "fr" in t:
+            return f"✦ {texto}"
+        if "fer" in t:
+            return f"★ {texto}"
+        if "sab" in t or "dom" in t:
+            return f"◆ {texto}"
         return texto
-
+    # -------------------------------------------  
+    # TABLA COMPLETA DE REGISTROS  
+    # -------------------------------------------  
     def tabla_registros(self, registros):
-        columnas = ["Fecha", "Entrada", "Salida", "Normales", "50%", "100%", "COMIDA", "FRANCO", "Tarde", "Observaciones"]
-        anchos   = [16,      16,        16,        18,        16,    16,     12,        12,       10,      48]
+
+        columnas = ["Fecha","Entrada","Salida","Normales","50%","100%","Comida","Franco","Tarde","Observaciones"]
+        anchos = [16,16,16,18,16,16,12,12,12,50]
+
+
         self.columnas = columnas
         self.anchos = anchos
 
         self._titulos_columnas(columnas, anchos)
 
-        # Inicialización correcta
-        total_normal = timedelta(0)
-        total_50     = timedelta(0)
-        total_100    = timedelta(0)
-        total_tarde  = 0
-        total_franco = 0
-        total_comida = 0
+        fam = "DejaVu" if self._unicode else "Helvetica"
+
+        tot_norm = timedelta(0)
+        tot50 = timedelta(0)
+        tot100 = timedelta(0)
+        tot_com = 0
+        tot_fr = 0
+        tot_tarde = 0
 
         for r in registros:
-            normales  = _td_from_any(r.get("Normales", "00:00:00"))
-            extras50  = _td_from_any(r.get("50%", "00:00:00"))
-            extras100 = _td_from_any(r.get("100%", "00:00:00"))
-            obs = self._decorar_observacion(r.get("Observaciones", ""))
+            fecha = r.get("Fecha","")
+            d = _parse_fecha(fecha)
+            es_feriado = False
+            es_finde = False
 
-            self.cell(anchos[0], 6, r.get("Fecha", ""), 1)
-            self.cell(anchos[1], 6, str(r.get("Entrada", "")), 1)
-            self.cell(anchos[2], 6, str(r.get("Salida", "")), 1)
-            self.cell(anchos[3], 6, formato_horas(normales), 1)
-            self.cell(anchos[4], 6, formato_horas(extras50), 1)
-            self.cell(anchos[5], 6, formato_horas(extras100), 1)
-            self.cell(anchos[6], 6, str(int(r.get("COMIDA", 0))), 1)
-            self.cell(anchos[7], 6, str(int(r.get("FRANCO", 0))), 1)
-            self.cell(anchos[8], 6, str(int(r.get("Tarde", 0))), 1)
-            self.cell(anchos[9], 6, obs, 1)
+            if d:
+                if d.strftime("%Y-%m-%d") in self.feriados or fecha in self.feriados:
+                    es_feriado = True
+                if d.weekday() in (5,6):
+                    es_finde = True
+
+                if d.weekday() == 0:  # lunes línea gruesa
+                    y = self.get_y()
+                    x = self.get_x()
+                    self.set_line_width(self.grosor_linea_lunes)
+                    self.line(x, y, x + sum(anchos), y)
+                    self.set_line_width(self.grosor_linea_normal)
+
+            # FERIADO = texto rojo  
+            if es_feriado:
+                self.set_text_color(200,0,0)
+
+            # FINDE = fondo gris suave
+            if es_finde and not es_feriado:
+                self.set_fill_color(235,235,235)
+                fill_row = True
+            else:
+                fill_row = False
+
+            # Datos del registro
+            norm  = _td_from_any(r.get("Normales","00:00:00"))
+            e50   = _td_from_any(r.get("50%","00:00:00"))
+            e100  = _td_from_any(r.get("100%","00:00:00"))
+            raw_obs = r.get("Observaciones","")
+            obs = self._decorar_observacion(raw_obs)
+
+            # Celdas
+            self.cell(anchos[0],6,fecha,1,0,'',fill_row)
+            self.cell(anchos[1],6,str(r.get("Entrada","")),1,0,'',fill_row)
+            self.cell(anchos[2],6,str(r.get("Salida","")),1,0,'',fill_row)
+            self.cell(anchos[3],6,formato_horas(norm),1,0,'C',fill_row)
+            self.cell(anchos[4],6,formato_horas(e50),1,0,'C',fill_row)
+            self.cell(anchos[5],6,formato_horas(e100),1,0,'C',fill_row)
+            self.cell(anchos[6],6,str(int(r.get("COMIDA",0))),1,0,'C',fill_row)
+            self.cell(anchos[7],6,str(int(r.get("FRANCO",0))),1,0,'C',fill_row)
+            self.cell(anchos[8],6,str(int(r.get("Tarde",0))),1,0,'C',fill_row)
+
+            # Colores observaciones
+            if self._unicode and raw_obs:
+                u = raw_obs.upper()
+                if "FER" in u:
+                    self.set_text_color(200,0,0)
+                elif "SAB" in u or "DOM" in u:
+                    self.set_text_color(0,60,130)
+                elif "FR" in u:
+                    self.set_text_color(180,120,0)
+                elif "EA" in u:
+                    self.set_text_color(90,90,90)
+                elif "SA" in u:
+                    self.set_text_color(200,120,0)
+                elif "TARDE" in u:
+                    self.set_text_color(160,0,160)
+
+            self.cell(anchos[9],6,obs,1,0,'',fill_row)
+
+            self.set_text_color(0,0,0)
+            if es_finde and not es_feriado:
+                self.set_fill_color(255,255,255)
+
             self.ln()
 
-            # Acumular totales
-            total_normal += normales
-            total_50     += extras50
-            total_100    += extras100
-            total_tarde  += int(r.get("Tarde", 0))
-            total_franco += int(r.get("FRANCO", 0))
-            total_comida += int(r.get("COMIDA", 0))
+            # Totales
+            tot_norm += norm
+            tot50 += e50
+            tot100 += e100
+            tot_com += int(r.get("COMIDA",0))
+            tot_fr += int(r.get("FRANCO",0))
+            tot_tarde += int(r.get("Tarde",0))
 
         # Totales
-        self.set_font("DejaVu", "B", 8)
-        self.cell(0, 6, "Totales del mes:", ln=1)
-        self.cell(0, 6, f"Horas Normales: {formato_horas(total_normal)}", ln=1)
-        self.cell(0, 6, f"Horas 50%: {formato_horas(_round_to_hour(total_50))}", ln=1)
-        self.cell(0, 6, f"Horas 100%: {formato_horas(_round_to_hour(total_100))}", ln=1)
-        self.cell(0, 6, f"Comidas: {total_comida}", ln=1)
-        self.cell(0, 6, f"Francos: {total_franco}", ln=1)
-        self.cell(0, 6, f"Llegadas tarde: {total_tarde}", ln=1)
+        self.set_font(fam,"B",8)
+        self.cell(0,6,"Totales del mes:",ln=1)
+        self.cell(0,6,f"Horas Normales: {formato_horas(tot_norm)}",ln=1)
+        self.cell(0,6,f"Horas 50%: {formato_horas(_round_to_hour(tot50))}",ln=1)
+        self.cell(0,6,f"Horas 100%: {formato_horas(_round_to_hour(tot100))}",ln=1)
+        self.cell(0,6,f"Comidas: {tot_com}",ln=1)
+        self.cell(0,6,f"Francos: {tot_fr}",ln=1)
+        self.cell(0,6,f"Llegadas tarde: {tot_tarde}",ln=1)
         self.ln(4)
 
-# ------------ Funciones de generación ----------------
-def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf"):
+# --------------------------------------------  
+# GENERAR PDF GENERAL  
+# --------------------------------------------
+def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Informe de Fichadas - {mes}"
+    pdf.feriados = set(feriados or [])
+    pdf.grosor_linea_lunes = grosor_lunes
+
+    pdf.portada_abreviaciones(mes)
+
     for empleado in data:
         pdf.add_page()
-        legajo = empleado.get("legajo", "")
-        nombre = empleado.get("nombre", "")
-        departamento = empleado.get("departamento", "")
-        pdf.encabezado_empleado(legajo, nombre, departamento)
-        pdf.tabla_registros(empleado.get("registros", []))
+        pdf.encabezado_empleado(
+            empleado.get("legajo",""),
+            empleado.get("nombre",""),
+            empleado.get("departamento","")
+        )
+        pdf.tabla_registros(empleado.get("registros",[]))
+
     pdf.output(salida)
     return os.path.abspath(salida)
 
-def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf"):
+# --------------------------------------------  
+# GENERAR PDF RESUMEN  
+# --------------------------------------------
+def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Resumen de Totales - {mes}"
-    pdf.columnas = ["Legajo", "Nombre", "Normales", "50%", "100%", "COMIDA", "FRANCO", "Tarde"]
-    pdf.anchos   = [20,       40,        20,         20,    20,     15,        15,       15]
+    pdf.feriados = set(feriados or [])
+    pdf.grosor_linea_lunes = grosor_lunes
+
+    columnas = ["Legajo","Nombre","Normales","50%","100%","COMIDA","FRANCO","Tarde"]
+    anchos   = [20,40,20,20,20,15,15,15]
+    pdf.columnas = columnas
+    pdf.anchos = anchos
 
     pdf.add_page()
-    pdf.set_font("DejaVu", "B", 8)
-    for col, ancho in zip(pdf.columnas, pdf.anchos):
-        pdf.cell(ancho, 7, col, 1, 0, 'C')
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+    pdf.set_font(fam,"B",8)
+
+    for col, ancho in zip(columnas, anchos):
+        pdf.cell(ancho,7,col,1,0,'C')
     pdf.ln()
 
-    total_normal = timedelta(0)
-    total_50     = timedelta(0)
-    total_100    = timedelta(0)
-    total_tarde  = 0
-    total_franco = 0
-    total_comida = 0
+    totN=tot50=tot100=tim=com=fr=tar=0
+    tot_norm = timedelta(0)
+    tot_50   = timedelta(0)
+    tot_100  = timedelta(0)
+    tot_com  = 0
+    tot_fr   = 0
+    tot_tar  = 0
 
     for emp in data:
-        legajo = emp.get("legajo", "")
-        nombre = emp.get("nombre", "")
-        registros = emp.get("registros", [])
+        leg = emp.get("legajo","")
+        nom = emp.get("nombre","")
+        regs = emp.get("registros",[])
 
-        emp_normal = timedelta(0)
-        emp_50     = timedelta(0)
-        emp_100    = timedelta(0)
-        emp_tarde  = 0
-        emp_franco = 0
-        emp_comida = 0
+        e_norm=timedelta(0)
+        e_50  =timedelta(0)
+        e_100 =timedelta(0)
+        e_com =0
+        e_fr  =0
+        e_tar =0
 
-        for r in registros:
-            emp_normal += _td_from_any(r.get("Normales", "00:00:00"))
-            emp_50     += _td_from_any(r.get("50%", "00:00:00"))
-            emp_100    += _td_from_any(r.get("100%", "00:00:00"))
-            emp_comida += int(r.get("COMIDA", 0))
-            emp_franco += int(r.get("FRANCO", 0))
-            emp_tarde  += int(r.get("Tarde", 0))
+        for r in regs:
+            e_norm += _td_from_any(r.get("Normales","00:00:00"))
+            e_50   += _td_from_any(r.get("50%","00:00:00"))
+            e_100  += _td_from_any(r.get("100%","00:00:00"))
+            e_com  += int(r.get("COMIDA",0))
+            e_fr   += int(r.get("FRANCO",0))
+            e_tar  += int(r.get("Tarde",0))
 
-        total_normal += emp_normal
-        total_50     += emp_50
-        total_100    += emp_100
-        total_comida += emp_comida
-        total_franco += emp_franco
-        total_tarde  += emp_tarde
+        tot_norm += e_norm
+        tot_50   += e_50
+        tot_100  += e_100
+        tot_com  += e_com
+        tot_fr   += e_fr
+        tot_tar  += e_tar
 
-        pdf.set_font("DejaVu", "", 7)
+        pdf.set_font(fam,"",7)
         fila = [
-            str(legajo), nombre,
-            formato_horas(emp_normal),
-            formato_horas(_round_to_hour(emp_50)),
-            formato_horas(_round_to_hour(emp_100)),
-            str(emp_comida),
-            str(emp_franco),
-            str(emp_tarde)
+            str(leg),
+            nom,
+            formato_horas(e_norm),
+            formato_horas(_round_to_hour(e_50)),
+            formato_horas(_round_to_hour(e_100)),
+            str(e_com),
+            str(e_fr),
+            str(e_tar),
         ]
-        for dato, ancho in zip(fila, pdf.anchos):
-            pdf.cell(ancho, 6, dato, 1)
+
+        for dato, ancho in zip(fila, anchos):
+            pdf.cell(ancho,6,dato,1)
         pdf.ln()
 
-    # Fila de totales
-    pdf.set_font("DejaVu", "B", 8)
-    pdf.cell(pdf.anchos[0] + pdf.anchos[1], 7, "TOTALES", 1, 0, "R")
-    pdf.cell(pdf.anchos[2], 7, formato_horas(total_normal), 1)
-    pdf.cell(pdf.anchos[3], 7, formato_horas(_round_to_hour(total_50)), 1)
-    pdf.cell(pdf.anchos[4], 7, formato_horas(_round_to_hour(total_100)), 1)
-    pdf.cell(pdf.anchos[5], 7, str(total_comida), 1)
-    pdf.cell(pdf.anchos[6], 7, str(total_franco), 1)
-    pdf.cell(pdf.anchos[7], 7, str(total_tarde), 1)
+    pdf.set_font(fam,"B",8)
+    pdf.cell(anchos[0]+anchos[1],7,"TOTALES",1,0,"R")
+    pdf.cell(anchos[2],7,formato_horas(tot_norm),1)
+    pdf.cell(anchos[3],7,formato_horas(_round_to_hour(tot_50)),1)
+    pdf.cell(anchos[4],7,formato_horas(_round_to_hour(tot_100)),1)
+    pdf.cell(anchos[5],7,str(tot_com),1)
+    pdf.cell(anchos[6],7,str(tot_fr),1)
+    pdf.cell(anchos[7],7,str(tot_tar),1)
     pdf.ln()
 
     pdf.output(salida)
     return os.path.abspath(salida)
+

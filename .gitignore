@@ -1,5 +1,11 @@
 ﻿venv/
+.venv/
 __pycache__/
+sesion.json
+confirmaciones/
+archivos/
+db/
+recursos/cm_horas.db
 *.pyc
 build/
 dist/

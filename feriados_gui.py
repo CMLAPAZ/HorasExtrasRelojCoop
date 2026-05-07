@@ -1,11 +1,16 @@
+import sys
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import messagebox, simpledialog
 from datetime import datetime
+from pathlib import Path
 import json
 import os
 
-CONFIG_PATH = "config.json"
+if getattr(sys, 'frozen', False):
+    CONFIG_PATH = str(Path(sys.executable).parent / "config.json")
+else:
+    CONFIG_PATH = str(Path(__file__).parent / "config.json")
 
 _F      = "Segoe UI"
 _BG     = "#f2faff"
