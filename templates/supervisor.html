@@ -80,6 +80,10 @@
   <div class="card-title">Nueva semana</div>
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
+  <div style="margin-top:12px">
+    <label for="depto-manual">Departamento <span style="font-weight:400;color:#888">(escribí el nombre, ej: Redes)</span></label>
+    <input type="text" id="depto-manual" placeholder="Redes / Administracion / Todos…" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;margin-top:4px">
+  </div>
   <div id="deptos-wrap" class="hidden">
     <div class="deptos-label">Seleccioná los departamentos a incluir:</div>
     <div id="deptos-checks" class="deptos-checks"></div>
@@ -194,6 +198,8 @@ async function procesar(force) {
   const fd = new FormData();
   fd.append('csv', file);
   if (force) fd.append('force', '1');
+  const deptoManual = document.getElementById('depto-manual').value.trim();
+  if (deptoManual) fd.append('depto_override', deptoManual);
   document.querySelectorAll('#deptos-checks input[name="dep"]:checked')
     .forEach(cb => fd.append('departamentos', cb.value));
 

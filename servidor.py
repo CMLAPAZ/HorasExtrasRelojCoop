@@ -298,7 +298,8 @@ def procesar():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    departamentos = request.form.getlist("departamentos") or None
+    departamentos    = request.form.getlist("departamentos") or None
+    depto_override   = request.form.get("depto_override", "").strip()
 
     try:
         empleados, fecha_desde, fecha_hasta = _procesar_empleados(df, departamentos)
@@ -308,8 +309,13 @@ def procesar():
     if not empleados:
         return jsonify({"error": "No se encontraron empleados para los departamentos seleccionados."}), 400
 
+    # Aplicar departamento manual a todos los empleados si se indicó
+    if depto_override:
+        for emp in empleados:
+            emp["departamento"] = depto_override
+
     meta = _cargar_metadata()
-    depto_label = ", ".join(departamentos) if departamentos else "Todos"
+    depto_label = depto_override or (", ".join(departamentos) if departamentos else "Todos")
 
     # Detectar duplicado por fechas + departamento
     if not request.form.get("force"):
