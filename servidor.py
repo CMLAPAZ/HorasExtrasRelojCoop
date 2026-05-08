@@ -209,6 +209,28 @@ def _wa_url(legajo, nombre, url):
 _sesion = _cargar_sesion()
 _init_db()
 
+# Recalcular totales de tokens existentes desde sus días (corrige francos mal contados)
+_changed = False
+for _tok_data in _sesion.values():
+    _dias = _tok_data.get("dias", [])
+    if not _dias:
+        continue
+    _ot50 = _ot100 = timedelta(0)
+    _com = _fra = _tar = 0
+    for _d in _dias:
+        _ot50  += _parse_td(_d.get("ot50",  "00:00:00"))
+        _ot100 += _parse_td(_d.get("ot100", "00:00:00"))
+        _com   += int(_d.get("comida", 0))
+        _fra   += int(_d.get("franco", 0))
+        _tar   += int(_d.get("tarde",  0))
+    _new_t = {"ot50": _fmt_hm(_ot50), "ot100": _fmt_hm(_ot100),
+              "comidas": _com, "francos": _fra, "tardanzas": _tar}
+    if _tok_data.get("totales") != _new_t:
+        _tok_data["totales"] = _new_t
+        _changed = True
+if _changed:
+    _guardar_sesion(_sesion)
+
 # Si no hay semanas activas, limpiar tokens huérfanos de períodos ya cerrados
 _meta_inicio = _cargar_metadata()
 if not _meta_inicio.get("semanas"):
@@ -735,7 +757,7 @@ def _calcular_periodo(desde, hasta):
         e["ot50"]      += _parse_hm(c["totales"]["ot50"])
         e["ot100"]     += _parse_hm(c["totales"]["ot100"])
         e["comidas"]   += c["totales"].get("comidas", 0)
-        e["francos"]   += c["totales"].get("francos", 0)
+        e["francos"]   += sum(1 for dia in c.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += c["totales"].get("tardanzas", 0)
         if sem not in e["semanas"]: e["semanas"].append(sem)
         e["dias"].extend(c.get("dias", []))
@@ -762,7 +784,7 @@ def _calcular_periodo(desde, hasta):
         e["ot50"]      += _parse_hm(tot.get("ot50", "0h"))
         e["ot100"]     += _parse_hm(tot.get("ot100", "0h"))
         e["comidas"]   += tot.get("comidas", 0)
-        e["francos"]   += tot.get("francos", 0)
+        e["francos"]   += sum(1 for dia in d.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += tot.get("tardanzas", 0)
         if sem not in e["semanas"]: e["semanas"].append(sem)
         e["pend_sem"].add(sem)
