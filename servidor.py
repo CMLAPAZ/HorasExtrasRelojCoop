@@ -481,10 +481,20 @@ def regenerar_semana(n):
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     df = _cargar_semana_csv(n)
     if df is None: return jsonify({"error": f"No hay datos guardados para la semana {n}"}), 404
+
+    meta = _cargar_metadata()
+    sem_meta = next((s for s in meta["semanas"] if s["numero"] == n), None)
+    num_depto = sem_meta.get("num_depto", n) if sem_meta else n
+    depto_label = sem_meta.get("departamento", "") if sem_meta else ""
+
     try:
         empleados, _, _ = _procesar_empleados(_normalizar_columnas(df))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    if depto_label:
+        for emp in empleados:
+            emp["departamento"] = depto_label
 
     # Legajos que ya confirmaron esta semana → no regenerar
     ya_confirmados = {
@@ -499,7 +509,7 @@ def regenerar_semana(n):
 
     empleados_pendientes = [e for e in empleados if e["legajo"] not in ya_confirmados]
     base_url = request.host_url.rstrip("/")
-    tokens_nuevos, links = _crear_tokens(empleados_pendientes, n, base_url)
+    tokens_nuevos, links = _crear_tokens(empleados_pendientes, n, num_depto, base_url)
     _guardar_sesion(_sesion)
 
     # Actualizar tokens en metadata
