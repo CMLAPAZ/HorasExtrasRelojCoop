@@ -409,6 +409,7 @@ def procesar():
         "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
         "departamento": depto_label,
         "tokens": tokens_creados,
+        "legajos": [emp["legajo"] for emp in empleados],
     })
     _guardar_metadata(meta)
 
@@ -498,6 +499,12 @@ def regenerar_semana(n):
         empleados, _, _ = _procesar_empleados(_normalizar_columnas(df))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    # Filtrar a los legajos que realmente pertenecen a esta semana.
+    # Necesario porque el CSV guardado puede contener empleados de otros dtos.
+    legajos_semana = set(sem_meta.get("legajos", [])) if sem_meta else set()
+    if legajos_semana:
+        empleados = [e for e in empleados if e["legajo"] in legajos_semana]
 
     if depto_label:
         for emp in empleados:
