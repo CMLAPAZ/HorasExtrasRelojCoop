@@ -14,6 +14,8 @@ app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
 SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
 FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola Martin")
+# URL base para links de WhatsApp — si está vacío usa el host del request
+WA_BASE_URL = os.environ.get("WA_BASE_URL", "https://cmhoras.pythonanywhere.com")
 
 SESION_FILE    = Path("sesion.json")
 CONFIRM_DIR    = Path("confirmaciones")
@@ -103,7 +105,12 @@ def _wa_url(legajo, nombre, url):
     if not phone:
         return ""
     area = _AREA_CODES.get(int(legajo), _AREA_DEFAULT)
-    msg  = urllib.parse.quote(f"Hola {nombre.split()[0]}, confirmá tus horas extras en este link: {url}")
+    # Reemplazar host por WA_BASE_URL para que el link funcione desde el celu
+    if WA_BASE_URL:
+        from urllib.parse import urlparse
+        path = urlparse(url).path
+        url  = WA_BASE_URL.rstrip("/") + path
+    msg = urllib.parse.quote(f"Hola {nombre.split()[0]}, confirmá tus horas extras en este link: {url}")
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
 _sesion = _cargar_sesion()
