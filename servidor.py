@@ -778,7 +778,7 @@ def _calcular_periodo(desde, hasta):
                 "conf_sem": set(), "pend_sem": set(),
             }
         e = por_empleado[legajo]
-        if sem in e["conf_sem"]:
+        if sem in e["conf_sem"] or sem in e["pend_sem"]:
             continue
         _excl = d.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
         if not _excl:
