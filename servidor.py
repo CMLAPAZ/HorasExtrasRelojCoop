@@ -766,13 +766,13 @@ def periodo_cerrar():
     desde = int(request.form.get("desde", 1))
     hasta = int(request.form.get("hasta", 1))
 
-    items = [c for c in _leer_historial() if desde <= c.get("semana",0) <= hasta]
+    resumen = _calcular_periodo(desde, hasta)
     PERIODOS_DIR.mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     (PERIODOS_DIR / f"periodo_{ts}.json").write_text(
         json.dumps({"cerrado_en": datetime.now().isoformat(),
                     "semanas": list(range(desde, hasta+1)),
-                    "confirmaciones": items},
+                    "empleados": resumen},
                    ensure_ascii=False, indent=2), encoding="utf-8"
     )
 

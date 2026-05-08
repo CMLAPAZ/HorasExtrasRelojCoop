@@ -331,9 +331,13 @@ function descargarCSV() {
 }
 
 async function cerrarPeriodo() {
+  // Si todavía no se previsualizó, cargarlo primero
+  if (document.getElementById('resumen-wrap').classList.contains('hidden')) {
+    await previsualizar();
+  }
   if (!confirm(
     `¿Cerrar el período semanas ${_desde} a ${_hasta}?\n\n` +
-    `• El período quedará archivado.\n` +
+    `• Se generará el informe de cierre para imprimir / guardar como PDF.\n` +
     `• El contador de semanas se reiniciará a 1.\n\n` +
     `Esta acción no se puede deshacer.`
   )) return;
@@ -344,8 +348,21 @@ async function cerrarPeriodo() {
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
-  alert(`Período archivado.\nArchivo: ${data.periodo_archivado}\nEl contador se reinició a 1.`);
-  window.location.href = '/';
+
+  // Preparar encabezado de impresión con título de cierre
+  const ahora = new Date().toLocaleString('es-AR');
+  document.getElementById('print-titulo').textContent =
+    `INFORME DE CIERRE — Semanas ${_desde} a ${_hasta}`;
+  document.getElementById('print-fecha').textContent  = `Cerrado: ${ahora}`;
+  document.getElementById('print-fecha-footer').textContent = `Cerrado: ${ahora}`;
+
+  // Ocultar botones para la impresión
+  document.querySelector('.acciones').style.display = 'none';
+  document.getElementById('filtro-deptos').style.display = 'none';
+
+  // Imprimir / guardar PDF y luego volver al inicio
+  window.addEventListener('afterprint', () => { window.location.href = '/'; }, { once: true });
+  window.print();
 }
 </script>
 </body>
