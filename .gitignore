@@ -23,3 +23,4 @@ instaler.exe
 installer*.bat
 uninstall*.bat
 dejavu-fonts-ttf-*
+.server_pid
