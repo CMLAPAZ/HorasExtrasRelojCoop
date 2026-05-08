@@ -228,6 +228,20 @@ function renderFiltroDeptos(deptos) {
   el.classList.remove('hidden');
 }
 
+function parseHM(s) {
+  if (!s || s === '0h') return 0;
+  let mins = 0;
+  const h = s.match(/(\d+)h/), m = s.match(/(\d+)m/);
+  if (h) mins += parseInt(h[1]) * 60;
+  if (m) mins += parseInt(m[1]);
+  return mins;
+}
+function fmtMin(mins) {
+  if (mins <= 0) return '0h';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}h ${String(m).padStart(2,'0')}m` : `${h}h`;
+}
+
 function renderTabla() {
   const body = document.getElementById('resumen-body');
   const data = _todosEmpleados.filter(e => _deptosActivos.has(e.departamento || '—'));
@@ -237,7 +251,6 @@ function renderTabla() {
     return;
   }
 
-  // Agrupar por departamento
   const grupos = {};
   data.forEach(e => {
     const d = e.departamento || '—';
@@ -245,8 +258,7 @@ function renderTabla() {
     grupos[d].push(e);
   });
 
-  let totGenComidas = 0, totGenFrancos = 0, totGenTardanzas = 0;
-  let totGenEmp = 0;
+  let totGen50 = 0, totGen100 = 0, totGenComidas = 0, totGenFrancos = 0, totGenTardanzas = 0, totGenEmp = 0;
 
   let html = `<div class="tabla-wrap"><table>
     <thead><tr>
@@ -259,17 +271,17 @@ function renderTabla() {
   Object.keys(grupos).sort().forEach(depto => {
     const empleados = grupos[depto];
     totGenEmp += empleados.length;
-    let subComidas = 0, subFrancos = 0, subTardanzas = 0;
+    let sub50 = 0, sub100 = 0, subComidas = 0, subFrancos = 0, subTardanzas = 0;
 
     html += `<tr class="depto-header"><td colspan="9">${depto} — ${empleados.length} empleado(s)</td></tr>`;
 
     empleados.forEach(e => {
+      sub50        += parseHM(e.ot50   || '0h');
+      sub100       += parseHM(e.ot100  || '0h');
       subComidas   += e.comidas   || 0;
       subFrancos   += e.francos   || 0;
       subTardanzas += e.tardanzas || 0;
-      const estado = e.confirmado
-        ? '<span class="ok">✓</span>'
-        : '<span class="pend">⏳</span>';
+      const estado = e.confirmado ? '<span class="ok">✓</span>' : '<span class="pend">⏳</span>';
       html += `<tr>
         <td>${e.legajo}</td>
         <td class="emp-nombre">${e.nombre}</td>
@@ -283,22 +295,30 @@ function renderTabla() {
       </tr>`;
     });
 
+    totGen50        += sub50;
+    totGen100       += sub100;
     totGenComidas   += subComidas;
     totGenFrancos   += subFrancos;
     totGenTardanzas += subTardanzas;
 
     html += `<tr class="subtotal-row">
-      <td colspan="2">Subtotal ${depto}</td>
-      <td class="ot50">—</td><td class="ot100">—</td>
-      <td>${subComidas}</td><td>${subFrancos}</td><td>${subTardanzas}</td>
+      <td colspan="2"><strong>Subtotal ${depto}</strong></td>
+      <td class="ot50"><strong>${fmtMin(sub50)}</strong></td>
+      <td class="ot100"><strong>${fmtMin(sub100)}</strong></td>
+      <td><strong>${subComidas}</strong></td>
+      <td><strong>${subFrancos}</strong></td>
+      <td><strong>${subTardanzas}</strong></td>
       <td colspan="2">${empleados.length} emp.</td>
     </tr>`;
   });
 
   html += `<tr class="total-row">
-    <td colspan="2">TOTAL GENERAL — ${totGenEmp} empleados</td>
-    <td class="ot50">—</td><td class="ot100">—</td>
-    <td>${totGenComidas}</td><td>${totGenFrancos}</td><td>${totGenTardanzas}</td>
+    <td colspan="2"><strong>TOTAL GENERAL — ${totGenEmp} empleados</strong></td>
+    <td class="ot50"><strong>${fmtMin(totGen50)}</strong></td>
+    <td class="ot100"><strong>${fmtMin(totGen100)}</strong></td>
+    <td><strong>${totGenComidas}</strong></td>
+    <td><strong>${totGenFrancos}</strong></td>
+    <td><strong>${totGenTardanzas}</strong></td>
     <td colspan="2">—</td>
   </tr>`;
 
