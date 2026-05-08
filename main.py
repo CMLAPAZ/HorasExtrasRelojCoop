@@ -78,6 +78,26 @@ EXCLUIR_TARDANZA = {
     # "5678",  # Ing. Gatti
 }
 
+def _cargar_excluidos_ot():
+    ruta = Path(__file__).parent / "recursos" / "excluidos_ot.json"
+    try:
+        return set(json.load(open(ruta, encoding="utf-8")).get("legajos", []))
+    except Exception:
+        return set()
+
+def _aplicar_exclusiones_ot(resultados_aplanados):
+    excluidos = _cargar_excluidos_ot()
+    if not excluidos:
+        return resultados_aplanados
+    for emp in resultados_aplanados:
+        if str(emp["legajo"]) in excluidos:
+            for r in emp["registros"]:
+                r["50%"]    = "00:00:00"
+                r["100%"]   = "00:00:00"
+                r["FRANCO"] = 0
+                r["COMIDA"] = 0
+    return resultados_aplanados
+
 # =============================================================================
 # CONFIG DE INICIOS (detección multi-bloque por día/depto)
 # =============================================================================
@@ -1115,6 +1135,7 @@ def cargar_archivo():
         resultados = procesar_fichadas(df,inicio_variable=INICIO_VARIABLE,excluir_tardanza=EXCLUIR_TARDANZA)
 
         resultados_aplanados = aplanar_registros_por_tramo(resultados)
+        resultados_aplanados = _aplicar_exclusiones_ot(resultados_aplanados)
 
         # Guardar para menú Ver → Resumen/Gráficos
         ULTIMOS_RESULTADOS_APLANADOS = resultados_aplanados

@@ -200,6 +200,26 @@ def _preparar_dias(registros):
             dias_dict[fecha]["tramos"].append({"entrada": e[:5], "salida": s[:5] if s else "—"})
     return [dias_dict[f] for f in dias_order]
 
+def _cargar_excluidos_ot():
+    ruta = Path("recursos/excluidos_ot.json")
+    try:
+        return set(json.loads(ruta.read_text(encoding="utf-8")).get("legajos", []))
+    except Exception:
+        return set()
+
+def _aplicar_exclusiones_ot(empleados):
+    excluidos = _cargar_excluidos_ot()
+    if not excluidos:
+        return empleados
+    for emp in empleados:
+        if str(emp["legajo"]) in excluidos:
+            for r in emp["registros"]:
+                r["50%"]    = "00:00:00"
+                r["100%"]   = "00:00:00"
+                r["FRANCO"] = 0
+                r["COMIDA"] = 0
+    return empleados
+
 def _leer_archivo(fs):
     nombre = (fs.filename or "").lower()
     if nombre.endswith(".xlsx"): return pd.read_excel(fs, engine="openpyxl")
@@ -229,6 +249,7 @@ def _procesar_empleados(df, departamentos=None):
     empleados  = aplanar_registros_por_tramo(resultados)
     if departamentos:
         empleados = [e for e in empleados if e.get("departamento","") in departamentos]
+    empleados = _aplicar_exclusiones_ot(empleados)
     todas_fechas = [r["Fecha"] for emp in empleados for r in emp["registros"] if r["Fecha"]]
     fecha_desde = min(todas_fechas) if todas_fechas else ""
     fecha_hasta = max(todas_fechas) if todas_fechas else ""
