@@ -62,6 +62,7 @@
       .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:10px}
       .print-header-left h2{font-size:1.1rem;color:#1a1a2e}
       .print-header-left p{font-size:.78rem;color:#555;margin-top:3px}
+      .print-rango{font-size:.85rem;color:#1a1a2e;font-weight:600;margin-top:2px}
       .print-header-right{text-align:right;font-size:.78rem;color:#555}
       .print-header-right strong{display:block;font-size:.9rem;color:#1a1a2e}
       .print-footer{display:flex;justify-content:space-between;margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:.75rem;color:#888}
@@ -91,7 +92,7 @@
       <label for="desde">Desde semana</label>
       <select id="desde">
         {% for s in semanas %}
-        <option value="{{ s.numero }}">Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
+        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}">Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -99,7 +100,7 @@
       <label for="hasta">Hasta semana</label>
       <select id="hasta">
         {% for s in semanas %}
-        <option value="{{ s.numero }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
+        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -115,6 +116,7 @@
   <div class="print-header">
     <div class="print-header-left">
       <h2 id="print-titulo"></h2>
+      <p id="print-rango" class="print-rango"></p>
       <p id="print-fecha"></p>
     </div>
     <div class="print-header-right">
@@ -154,9 +156,22 @@ async function previsualizar() {
 
   document.getElementById('resumen-titulo').textContent  = `Período: semanas ${_desde} a ${_hasta}`;
   const ahora = new Date().toLocaleString('es-AR');
-  document.getElementById('print-titulo').textContent      = `Período semanas ${_desde} a ${_hasta}`;
-  document.getElementById('print-fecha').textContent       = `Generado: ${ahora}`;
+  document.getElementById('print-titulo').textContent       = `Período: Semanas ${_desde} a ${_hasta}`;
+  document.getElementById('print-fecha').textContent        = `Generado: ${ahora}`;
   document.getElementById('print-fecha-footer').textContent = `Generado: ${ahora}`;
+
+  // Calcular rango de fechas real desde los atributos de los <option>
+  let fdMin = '', fhMax = '';
+  document.querySelectorAll('#desde option, #hasta option').forEach(opt => {
+    const n = parseInt(opt.value);
+    if (n >= _desde && n <= _hasta) {
+      const fd = opt.dataset.fd || '', fh = opt.dataset.fh || '';
+      if (fd && (!fdMin || fd < fdMin)) fdMin = fd;
+      if (fh && (!fhMax || fh > fhMax)) fhMax = fh;
+    }
+  });
+  document.getElementById('print-rango').textContent =
+    fdMin ? `${fdMin}  al  ${fhMax}` : '';
 
   if (!data.length) {
     document.getElementById('resumen-body').innerHTML = '<div class="vacio">Sin datos en este rango.</div>';
