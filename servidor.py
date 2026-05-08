@@ -503,6 +503,11 @@ def regenerar_semana(n):
     # Filtrar a los legajos que realmente pertenecen a esta semana.
     # Necesario porque el CSV guardado puede contener empleados de otros dtos.
     legajos_semana = set(sem_meta.get("legajos", [])) if sem_meta else set()
+    if not legajos_semana:
+        # Fallback para semanas antiguas sin campo "legajos": derivar desde
+        # los tokens activos en sesión ANTES de borrar los pendientes.
+        legajos_semana = {d["legajo"] for t, d in _sesion.items()
+                          if d.get("semana") == n}
     if legajos_semana:
         empleados = [e for e in empleados if e["legajo"] in legajos_semana]
 
@@ -526,13 +531,15 @@ def regenerar_semana(n):
     tokens_nuevos, links = _crear_tokens(empleados_pendientes, n, num_depto, base_url)
     _guardar_sesion(_sesion)
 
-    # Actualizar tokens en metadata
+    # Actualizar tokens en metadata (y backfill legajos si faltaba)
     meta = _cargar_metadata()
     for s in meta["semanas"]:
         if s["numero"] == n:
             tokens_vivos = [t for t in s.get("tokens",[])
                             if t in _sesion and _sesion[t].get("confirmado")]
             s["tokens"] = tokens_vivos + tokens_nuevos
+            if not s.get("legajos") and legajos_semana:
+                s["legajos"] = list(legajos_semana)
             break
     _guardar_metadata(meta)
 
