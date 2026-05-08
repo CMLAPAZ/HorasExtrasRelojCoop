@@ -230,7 +230,7 @@ class PDFGeneral(FPDF):
     # -------------------------------------------  
     # TABLA COMPLETA DE REGISTROS  
     # -------------------------------------------  
-    def tabla_registros(self, registros):
+    def tabla_registros(self, registros, excluido_ot=False):
 
         columnas = ["Fecha","Entrada","Salida","Normales","50%","100%","Comida","Franco","Tarde","Observaciones"]
         anchos = [16,16,16,18,16,16,12,12,12,50]
@@ -282,8 +282,8 @@ class PDFGeneral(FPDF):
 
             # Datos del registro
             norm  = _td_from_any(r.get("Normales","00:00:00"))
-            e50   = _td_from_any(r.get("50%","00:00:00"))
-            e100  = _td_from_any(r.get("100%","00:00:00"))
+            e50   = timedelta(0) if excluido_ot else _td_from_any(r.get("50%","00:00:00"))
+            e100  = timedelta(0) if excluido_ot else _td_from_any(r.get("100%","00:00:00"))
             raw_obs = r.get("Observaciones","")
             obs = self._decorar_observacion(raw_obs)
 
@@ -359,7 +359,8 @@ def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None,
             empleado.get("nombre",""),
             empleado.get("departamento","")
         )
-        pdf.tabla_registros(empleado.get("registros",[]))
+        pdf.tabla_registros(empleado.get("registros",[]),
+                            excluido_ot=empleado.get("excluido_ot", False))
 
     pdf.output(salida)
     return os.path.abspath(salida)
@@ -398,6 +399,7 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
         leg = emp.get("legajo","")
         nom = emp.get("nombre","")
         regs = emp.get("registros",[])
+        excl = emp.get("excluido_ot", False)
 
         e_norm=timedelta(0)
         e_50  =timedelta(0)
@@ -408,8 +410,9 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
 
         for r in regs:
             e_norm += _td_from_any(r.get("Normales","00:00:00"))
-            e_50   += _td_from_any(r.get("50%","00:00:00"))
-            e_100  += _td_from_any(r.get("100%","00:00:00"))
+            if not excl:
+                e_50  += _td_from_any(r.get("50%","00:00:00"))
+                e_100 += _td_from_any(r.get("100%","00:00:00"))
             e_com  += int(r.get("COMIDA",0))
             e_fr   += int(r.get("FRANCO",0))
             e_tar  += int(r.get("Tarde",0))

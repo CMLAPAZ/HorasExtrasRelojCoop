@@ -86,14 +86,10 @@ def _cargar_excluidos_ot():
         return set()
 
 def _aplicar_exclusiones_ot(resultados_aplanados):
+    """Marca empleados excluidos sin modificar sus datos."""
     excluidos = _cargar_excluidos_ot()
-    if not excluidos:
-        return resultados_aplanados
     for emp in resultados_aplanados:
-        if str(emp["legajo"]) in excluidos:
-            for r in emp["registros"]:
-                r["50%"]  = "00:00:00"
-                r["100%"] = "00:00:00"
+        emp["excluido_ot"] = str(emp["legajo"]) in excluidos
     return resultados_aplanados
 
 # =============================================================================

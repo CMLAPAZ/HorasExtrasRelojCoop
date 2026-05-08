@@ -303,14 +303,10 @@ def _cargar_excluidos_ot():
         return set()
 
 def _aplicar_exclusiones_ot(empleados):
+    """Marca empleados excluidos sin modificar sus datos."""
     excluidos = _cargar_excluidos_ot()
-    if not excluidos:
-        return empleados
     for emp in empleados:
-        if str(emp["legajo"]) in excluidos:
-            for r in emp["registros"]:
-                r["50%"]  = "00:00:00"
-                r["100%"] = "00:00:00"
+        emp["excluido_ot"] = str(emp["legajo"]) in excluidos
     return empleados
 
 def _leer_archivo(fs):
@@ -357,15 +353,18 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
         dias_prep = _preparar_dias(emp["registros"])
         ot50 = ot100 = timedelta(0)
         comidas = francos = tardanzas = 0
+        excluido = emp.get("excluido_ot", False)
         for d in dias_prep:
-            ot50      += _parse_td(d["ot50"])
-            ot100     += _parse_td(d["ot100"])
+            if not excluido:
+                ot50  += _parse_td(d["ot50"])
+                ot100 += _parse_td(d["ot100"])
             comidas   += int(d.get("comida", 0))
-            francos   += int(d.get("franco", 0))   # solo días con badge franco
+            francos   += int(d.get("franco", 0))
             tardanzas += int(d.get("tarde",  0))
         _sesion[token] = {
             "legajo": emp["legajo"], "nombre": emp["nombre"],
             "departamento": emp["departamento"],
+            "excluido_ot": excluido,
             "dias": dias_prep,
             "totales": {
                 "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
@@ -752,8 +751,10 @@ def _calcular_periodo(desde, hasta):
                 "conf_sem": set(), "pend_sem": set(),
             }
         e = por_empleado[legajo]
-        e["ot50"]      += _parse_hm(c["totales"]["ot50"])
-        e["ot100"]     += _parse_hm(c["totales"]["ot100"])
+        _excl = c.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
+        if not _excl:
+            e["ot50"]  += _parse_hm(c["totales"]["ot50"])
+            e["ot100"] += _parse_hm(c["totales"]["ot100"])
         e["comidas"]   += c["totales"].get("comidas", 0)
         e["francos"]   += sum(1 for dia in c.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += c["totales"].get("tardanzas", 0)
@@ -779,8 +780,10 @@ def _calcular_periodo(desde, hasta):
         e = por_empleado[legajo]
         if sem in e["conf_sem"]:
             continue
-        e["ot50"]      += _parse_hm(tot.get("ot50", "0h"))
-        e["ot100"]     += _parse_hm(tot.get("ot100", "0h"))
+        _excl = d.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
+        if not _excl:
+            e["ot50"]  += _parse_hm(tot.get("ot50", "0h"))
+            e["ot100"] += _parse_hm(tot.get("ot100", "0h"))
         e["comidas"]   += tot.get("comidas", 0)
         e["francos"]   += sum(1 for dia in d.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += tot.get("tardanzas", 0)
