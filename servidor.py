@@ -776,6 +776,13 @@ def periodo_cerrar():
                    ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
+    # Limpiar tokens del período cerrado de _sesion
+    tokens_borrar = [t for t, d in _sesion.items()
+                     if desde <= d.get("semana_depto", d.get("semana", 0)) <= hasta]
+    for t in tokens_borrar:
+        del _sesion[t]
+    _guardar_sesion(_sesion)
+
     # Reset semana counter
     meta = _cargar_metadata()
     meta["semana_actual"] = 0
@@ -783,6 +790,46 @@ def periodo_cerrar():
     _guardar_metadata(meta)
 
     return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json"})
+
+
+@app.route("/periodos/historial")
+def periodos_historial():
+    if not _autenticado(): return _requiere_auth()
+    archivos = sorted(PERIODOS_DIR.glob("periodo_*.json"), reverse=True) if PERIODOS_DIR.exists() else []
+    cierres = []
+    for f in archivos:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            emps = d.get("empleados", d.get("confirmaciones", []))
+            confirmados = sum(1 for e in emps if e.get("confirmado", True))
+            cierres.append({
+                "nombre": f.name,
+                "cerrado_en": d.get("cerrado_en", "")[:16].replace("T", " "),
+                "semanas": d.get("semanas", []),
+                "total": len(emps),
+                "confirmados": confirmados,
+                "pendientes": len(emps) - confirmados,
+            })
+        except Exception:
+            pass
+    return render_template("periodos_historial.html", cierres=cierres)
+
+
+@app.route("/periodos/ver/<nombre>")
+def periodos_ver(nombre):
+    if not _autenticado(): return _requiere_auth()
+    nombre = Path(nombre).name
+    f = PERIODOS_DIR / nombre
+    if not f.exists():
+        return "Período no encontrado", 404
+    d = json.loads(f.read_text(encoding="utf-8"))
+    emps = d.get("empleados", d.get("confirmaciones", []))
+    return render_template("periodo_detalle.html",
+                           nombre=nombre,
+                           cerrado_en=d.get("cerrado_en", "")[:16].replace("T", " "),
+                           semanas=d.get("semanas", []),
+                           empleados=emps,
+                           firma=FIRMA_SUPERVISOR)
 
 
 # ═══════════════════════════════════════════════

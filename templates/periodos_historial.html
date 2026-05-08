@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Historial de cierres</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:14px}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
+    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
+    table{width:100%;border-collapse:collapse;font-size:.88rem}
+    th{background:#f8f9fb;text-align:left;padding:9px 12px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
+    td{padding:10px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    .badge-ok{background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
+    .badge-pend{background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
+    .btn-ver{padding:5px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+    .btn-ver:hover{background:#2d2d4e}
+    .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Historial de cierres</h1>
+  <div class="nav">
+    <a href="/">← Panel principal</a>
+    <a href="/periodo">Períodos</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Períodos cerrados</div>
+  {% if cierres %}
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha de cierre</th>
+        <th>Semanas</th>
+        <th>Empleados</th>
+        <th>Confirmados</th>
+        <th>Pendientes</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cierres %}
+      <tr>
+        <td>{{ c.cerrado_en }}</td>
+        <td>{% if c.semanas %}Sem. {{ c.semanas|join(', ') }}{% else %}—{% endif %}</td>
+        <td>{{ c.total }}</td>
+        <td><span class="badge-ok">✓ {{ c.confirmados }}</span></td>
+        <td>{% if c.pendientes > 0 %}<span class="badge-pend">⏳ {{ c.pendientes }}</span>{% else %}—{% endif %}</td>
+        <td><a class="btn-ver" href="/periodos/ver/{{ c.nombre }}">Ver informe</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="vacio">No hay períodos cerrados todavía.</div>
+  {% endif %}
+</div>
+
+</body>
+</html>

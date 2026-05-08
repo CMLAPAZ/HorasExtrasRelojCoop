@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Informe de cierre</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:14px}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
+    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
+    .btn-print{padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
+    .btn-print:hover{background:#4b5563}
+    .tabla-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:.85rem}
+    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    .ot50{color:#d97706;font-weight:600}
+    .ot100{color:#dc2626;font-weight:600}
+    .emp-nombre{font-weight:600}
+    .ok{color:#065f46;font-weight:600}
+    .pend{color:#92400e}
+    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;padding:7px 10px}
+    .subtotal-row td{background:#f0fdf4;font-weight:700;font-size:.82rem;color:#065f46;border-top:1px solid #bbf7d0}
+    .total-row td{background:#1a1a2e;color:#fff;font-weight:700;border-top:2px solid #1a1a2e}
+    .total-row .ot50{color:#fcd34d}
+    .total-row .ot100{color:#fca5a5}
+    .print-header{display:none}
+    .print-footer{display:none}
+
+    @media print {
+      body{background:#fff;padding:10px}
+      .topbar,.nav,.btn-print{display:none !important}
+      .card{box-shadow:none;border:1px solid #e5e7eb;margin-bottom:10px}
+      .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:10px}
+      .print-header-left h2{font-size:1.1rem;color:#1a1a2e}
+      .print-header-left p{font-size:.78rem;color:#555;margin-top:3px}
+      .print-header-right{text-align:right;font-size:.78rem;color:#555}
+      .print-header-right strong{display:block;font-size:.9rem;color:#1a1a2e}
+      .print-footer{display:flex;justify-content:space-between;margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:.75rem;color:#888}
+      .firma-linea{border-top:1px solid #1a1a2e;width:180px;margin-top:28px;padding-top:4px;font-size:.75rem;color:#1a1a2e;font-weight:600}
+      .depto-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .total-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Informe de cierre</h1>
+  <div class="nav">
+    <a href="/periodos/historial">← Historial</a>
+    <a href="/">Panel principal</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="print-header">
+    <div class="print-header-left">
+      <h2>INFORME DE CIERRE — Semanas {{ semanas|join(', ') }}</h2>
+      <p>Cerrado: {{ cerrado_en }}</p>
+    </div>
+    <div class="print-header-right">
+      <strong>CM Vector Systems</strong>
+    </div>
+  </div>
+  <div class="print-footer">
+    <span>Cerrado: {{ cerrado_en }}</span>
+    <div class="firma-linea">{{ firma }}</div>
+  </div>
+
+  <div class="card-header">
+    <span class="card-title">Semanas {{ semanas|join(', ') }} — Cerrado {{ cerrado_en }}</span>
+    <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
+  </div>
+
+  <div class="tabla-wrap">
+    <table id="tabla-cierre">
+      <thead>
+        <tr>
+          <th>Legajo</th><th>Nombre</th>
+          <th>OT 50%</th><th>OT 100%</th>
+          <th>Comidas</th><th>Francos</th><th>Tardanzas</th>
+          <th>Semanas</th><th>Estado</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const _emps = {{ empleados | tojson }};
+
+function parseHM(s) {
+  if (!s || s === '0h') return 0;
+  let mins = 0;
+  const h = s.match(/(\d+)h/), m = s.match(/(\d+)m/);
+  if (h) mins += parseInt(h[1]) * 60;
+  if (m) mins += parseInt(m[1]);
+  return mins;
+}
+function fmtMin(mins) {
+  if (mins <= 0) return '0h';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}h ${String(m).padStart(2,'0')}m` : `${h}h`;
+}
+
+(function render() {
+  const grupos = {};
+  _emps.forEach(e => {
+    const d = e.departamento || '—';
+    if (!grupos[d]) grupos[d] = [];
+    grupos[d].push(e);
+  });
+
+  let totGen50 = 0, totGen100 = 0, totGenComidas = 0, totGenFrancos = 0, totGenTardanzas = 0, totGenEmp = 0;
+  let html = '';
+
+  Object.keys(grupos).sort().forEach(depto => {
+    const empleados = grupos[depto];
+    totGenEmp += empleados.length;
+    let sub50 = 0, sub100 = 0, subComidas = 0, subFrancos = 0, subTardanzas = 0;
+
+    html += `<tr class="depto-header"><td colspan="9">${depto} — ${empleados.length} empleado(s)</td></tr>`;
+
+    empleados.forEach(e => {
+      sub50        += parseHM(e.ot50   || '0h');
+      sub100       += parseHM(e.ot100  || '0h');
+      subComidas   += e.comidas   || 0;
+      subFrancos   += e.francos   || 0;
+      subTardanzas += e.tardanzas || 0;
+      const estado = e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>';
+      html += `<tr>
+        <td>${e.legajo}</td>
+        <td class="emp-nombre">${e.nombre}</td>
+        <td class="ot50">${e.ot50  || '0h'}</td>
+        <td class="ot100">${e.ot100 || '0h'}</td>
+        <td>${e.comidas   || 0}</td>
+        <td>${e.francos   || 0}</td>
+        <td>${e.tardanzas || 0}</td>
+        <td>${(e.semanas || []).join(', ')}</td>
+        <td>${estado}</td>
+      </tr>`;
+    });
+
+    totGen50        += sub50;
+    totGen100       += sub100;
+    totGenComidas   += subComidas;
+    totGenFrancos   += subFrancos;
+    totGenTardanzas += subTardanzas;
+
+    html += `<tr class="subtotal-row">
+      <td colspan="2"><strong>Subtotal ${depto}</strong></td>
+      <td class="ot50"><strong>${fmtMin(sub50)}</strong></td>
+      <td class="ot100"><strong>${fmtMin(sub100)}</strong></td>
+      <td><strong>${subComidas}</strong></td>
+      <td><strong>${subFrancos}</strong></td>
+      <td><strong>${subTardanzas}</strong></td>
+      <td colspan="2">${empleados.length} emp.</td>
+    </tr>`;
+  });
+
+  html += `<tr class="total-row">
+    <td colspan="2"><strong>TOTAL GENERAL — ${totGenEmp} empleados</strong></td>
+    <td class="ot50"><strong>${fmtMin(totGen50)}</strong></td>
+    <td class="ot100"><strong>${fmtMin(totGen100)}</strong></td>
+    <td><strong>${totGenComidas}</strong></td>
+    <td><strong>${totGenFrancos}</strong></td>
+    <td><strong>${totGenTardanzas}</strong></td>
+    <td colspan="2">—</td>
+  </tr>`;
+
+  document.getElementById('tbody').innerHTML = html;
+})();
+</script>
+</body>
+</html>
