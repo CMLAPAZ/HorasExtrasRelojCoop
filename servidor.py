@@ -960,6 +960,37 @@ def periodos_ver(pid):
                            firma=FIRMA_SUPERVISOR)
 
 
+@app.route("/admin/reset", methods=["POST"])
+def admin_reset():
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    import shutil
+    global _sesion
+
+    # Limpiar sesión en memoria y en disco
+    _sesion.clear()
+    _guardar_sesion(_sesion)
+
+    # Borrar confirmaciones
+    if CONFIRM_DIR.exists():
+        shutil.rmtree(CONFIRM_DIR)
+
+    # Borrar semanas (CSV + metadata)
+    if SEMANAS_DIR.exists():
+        shutil.rmtree(SEMANAS_DIR)
+
+    # Borrar periodos JSON
+    if PERIODOS_DIR.exists():
+        shutil.rmtree(PERIODOS_DIR)
+
+    # Resetear base de datos
+    with _get_db() as conn:
+        conn.execute("DELETE FROM periodo_empleados")
+        conn.execute("DELETE FROM periodos")
+        conn.commit()
+
+    return jsonify({"ok": True})
+
+
 # ═══════════════════════════════════════════════
 # ARRANQUE LOCAL
 # ═══════════════════════════════════════════════

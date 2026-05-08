@@ -82,8 +82,20 @@
     <a href="/periodo">Períodos</a>
     <a href="/periodos/historial">Cierres</a>
     <a href="/logout">Salir</a>
+    <button type="button" onclick="resetTotal()" style="padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px">⚠ Reset total</button>
   </div>
 </div>
+
+<script>
+async function resetTotal() {
+  if (!confirm('¿Borrar TODO?\n\n• Sesión activa\n• Confirmaciones\n• Semanas\n• Cierres de la base de datos\n\nEsta acción no se puede deshacer.')) return;
+  if (!confirm('Confirmar nuevamente: ¿borrar todos los datos?')) return;
+  const r = await fetch('/admin/reset', { method: 'POST' });
+  const d = await r.json();
+  if (d.ok) { alert('Datos borrados. La app quedó limpia.'); location.reload(); }
+  else alert('Error: ' + (d.error || 'desconocido'));
+}
+</script>
 
 <!-- Nueva semana -->
 <div class="card">
