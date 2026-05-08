@@ -78,13 +78,41 @@ def _cargar_semana_csv(n):
 def _leer_historial(semana=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
     items = []
+    vistos = set()  # legajo + semana ya cubiertos por archivos
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             if semana is None or data.get("semana") == semana:
                 items.append(data)
+                vistos.add((str(data["legajo"]), data.get("semana", 0)))
         except Exception:
             continue
+    # Fallback: empleados confirmados en _sesion sin archivo en confirmaciones/
+    for d in _sesion.values():
+        if not d.get("confirmado"):
+            continue
+        key = (str(d["legajo"]), d.get("semana", 0))
+        if key in vistos:
+            continue
+        if semana is not None and d.get("semana") != semana:
+            continue
+        items.append({
+            "legajo":       d["legajo"],
+            "nombre":       d["nombre"],
+            "departamento": d.get("departamento", ""),
+            "confirmado_en": d.get("confirmado_en"),
+            "semana":       d.get("semana", 0),
+            "semana_depto": d.get("semana_depto", d.get("semana", 0)),
+            "totales":      d.get("totales", {}),
+            "dias": [
+                {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
+                 "franco": x.get("franco", 0), "comida": x.get("comida", 0),
+                 "tipo_dia": x.get("tipo_dia", "normal"),
+                 "descripcion": x.get("descripcion", "")}
+                for x in d.get("dias", []) if x.get("tiene_ot")
+            ],
+        })
+        vistos.add(key)
     return items
 
 def _cargar_telefonos():
