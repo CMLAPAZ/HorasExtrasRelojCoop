@@ -347,7 +347,9 @@ async function verLinks(n) {
   const info  = document.getElementById('links-panel-info');
   const tbody = document.getElementById('tbody-links');
 
-  titulo.textContent = `Links — Semana ${n}`;
+  const sem = _semanas.find(s => s.numero === n);
+  const label = sem ? `Sem. ${sem.num_depto || n}${sem.departamento && sem.departamento !== 'Todos' ? ' · ' + sem.departamento : ''}` : `Semana ${n}`;
+  titulo.textContent = `Links — ${label}`;
   info.classList.add('hidden');
   tbody.innerHTML = `<tr><td colspan="5" class="td-cargando">Cargando…</td></tr>`;
   panel.classList.remove('hidden');
@@ -393,8 +395,9 @@ async function regenerarLinks(n) {
   const titulo= document.getElementById('links-panel-titulo');
   const info  = document.getElementById('links-panel-info');
   const tbody = document.getElementById('tbody-links');
+  const label = sem ? `Sem. ${sem.num_depto || n}${sem.departamento && sem.departamento !== 'Todos' ? ' · ' + sem.departamento : ''}` : `Semana ${n}`;
 
-  titulo.textContent = `Links regenerados — Semana ${n}`;
+  titulo.textContent = `Links regenerados — ${label}`;
   if (data.ya_confirmados) {
     info.textContent = `${data.ya_confirmados} empleado(s) ya confirmaron y mantienen su estado.`;
     info.classList.remove('hidden');
