@@ -209,6 +209,13 @@ def _wa_url(legajo, nombre, url):
 _sesion = _cargar_sesion()
 _init_db()
 
+# Si no hay semanas activas, limpiar tokens huérfanos de períodos ya cerrados
+_meta_inicio = _cargar_metadata()
+if not _meta_inicio.get("semanas"):
+    if _sesion:
+        _sesion.clear()
+        _guardar_sesion(_sesion)
+
 
 # ═══════════════════════════════════════════════
 # UTILIDADES
