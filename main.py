@@ -24,8 +24,6 @@ import sys
 import ctypes
 import datetime
 import webbrowser
-import subprocess
-import socket
 from datetime import timedelta
 from pathlib import Path
 
@@ -1356,68 +1354,8 @@ tk.Button(
     bg="#dbeafe", fg="#1e3a5f", width=22
 ).pack(pady=(0, 6))
 
-# ── Servidor local ────────────────────────────────────────────────────────────
-_servidor_proc = None
-_PID_FILE = Path(__file__).parent / ".server_pid"
-
-def _puerto_libre():
-    s = socket.socket()
-    result = s.connect_ex(("127.0.0.1", 5000))
-    s.close()
-    return result != 0
-
-def _iniciar_servidor_local():
-    global _servidor_proc
-    # Ya tenemos un servidor vivo en esta sesión
-    if _servidor_proc and _servidor_proc.poll() is None:
-        webbrowser.open("http://localhost:5000")
-        return
-    # Puerto ocupado: matar servidor de una sesión anterior usando el PID guardado
-    if not _puerto_libre():
-        if _PID_FILE.exists():
-            try:
-                pid = int(_PID_FILE.read_text().strip())
-                subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                               capture_output=True)
-                import time; time.sleep(0.8)
-            except Exception:
-                pass
-            try:
-                _PID_FILE.unlink()
-            except Exception:
-                pass
-        if not _puerto_libre():
-            # Sigue ocupado (proceso ajeno) → abrir igual
-            webbrowser.open("http://localhost:5000")
-            return
-    script = Path(__file__).parent / "servidor.py"
-    if not script.exists():
-        messagebox.showerror("Error", f"No se encontró servidor.py en:\n{script}")
-        return
-    _servidor_proc = subprocess.Popen(
-        [sys.executable, str(script)],
-        creationflags=subprocess.CREATE_NO_WINDOW,
-        cwd=str(script.parent),
-    )
-    _PID_FILE.write_text(str(_servidor_proc.pid))
-    ventana.after(2000, lambda: webbrowser.open("http://localhost:5000"))
-
-tk.Button(
-    marco, text="🖥️  Servidor local",
-    command=_iniciar_servidor_local,
-    font=FONT_BASE,
-    bg="#d1fae5", fg="#065f46", width=22
-).pack(pady=(0, 10))
-
 # ── Salir ────────────────────────────────────────────────────────────────────
 def _salir():
-    global _servidor_proc
-    if _servidor_proc and _servidor_proc.poll() is None:
-        _servidor_proc.terminate()
-    try:
-        _PID_FILE.unlink()
-    except Exception:
-        pass
     ventana.destroy()
 
 tk.Button(
