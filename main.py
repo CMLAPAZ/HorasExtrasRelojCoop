@@ -1101,10 +1101,13 @@ def cargar_archivo():
         mes_ini, anio_ini = MESES_ES[min_fecha.month], int(min_fecha.year)
         mes_fin, anio_fin = MESES_ES[max_fecha.month], int(max_fecha.year)
 
+        fecha_desde_str = min_fecha.strftime("%d/%m/%Y")
+        fecha_hasta_str = max_fecha.strftime("%d/%m/%Y")
+
         mes_completo = (
-            f"{mes_ini} {anio_ini}"
+            f"{mes_ini} {anio_ini}  ({fecha_desde_str} al {fecha_hasta_str})"
             if (mes_ini, anio_ini) == (mes_fin, anio_fin)
-            else f"{mes_ini} {anio_ini} - {mes_fin} {anio_fin}"
+            else f"{mes_ini} {anio_ini} - {mes_fin} {anio_fin}  ({fecha_desde_str} al {fecha_hasta_str})"
         )
         ULTIMO_PERIODO_TEXTO = mes_completo
 
