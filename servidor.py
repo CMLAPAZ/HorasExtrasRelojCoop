@@ -334,22 +334,19 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
     for emp in empleados:
         token = secrets.token_urlsafe(10)
         tokens_creados.append(token)
+        dias_prep = _preparar_dias(emp["registros"])
         ot50 = ot100 = timedelta(0)
         comidas = francos = tardanzas = 0
-        vistos = set()
-        for r in emp["registros"]:
-            f = r["Fecha"]
-            if f in vistos: continue
-            vistos.add(f)
-            ot50      += _parse_td(r["50%"])
-            ot100     += _parse_td(r["100%"])
-            comidas   += int(r.get("COMIDA",0))
-            francos   += int(r.get("FRANCO",0))
-            tardanzas += int(r.get("Tarde",0))
+        for d in dias_prep:
+            ot50      += _parse_td(d["ot50"])
+            ot100     += _parse_td(d["ot100"])
+            comidas   += int(d.get("comida", 0))
+            francos   += int(d.get("franco", 0))   # solo días con badge franco
+            tardanzas += int(d.get("tarde",  0))
         _sesion[token] = {
             "legajo": emp["legajo"], "nombre": emp["nombre"],
             "departamento": emp["departamento"],
-            "dias": _preparar_dias(emp["registros"]),
+            "dias": dias_prep,
             "totales": {
                 "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
                 "comidas": comidas, "francos": francos, "tardanzas": tardanzas,
