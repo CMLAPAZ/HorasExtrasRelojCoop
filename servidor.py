@@ -456,9 +456,9 @@ def eliminar_semana(n):
     if not sem:
         return jsonify({"error": f"Semana {n} no encontrada"}), 404
 
-    # Eliminar tokens de esta semana de la sesión
-    tokens = [t for t in sem.get("tokens", []) if t in _sesion]
-    for t in tokens:
+    # Eliminar TODOS los tokens de esta semana (incluyendo huérfanos)
+    tokens_a_borrar = [t for t, d in _sesion.items() if d.get("semana") == n]
+    for t in tokens_a_borrar:
         del _sesion[t]
     _guardar_sesion(_sesion)
 
