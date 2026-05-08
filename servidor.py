@@ -309,10 +309,8 @@ def _aplicar_exclusiones_ot(empleados):
     for emp in empleados:
         if str(emp["legajo"]) in excluidos:
             for r in emp["registros"]:
-                r["50%"]    = "00:00:00"
-                r["100%"]   = "00:00:00"
-                r["FRANCO"] = 0
-                r["COMIDA"] = 0
+                r["50%"]  = "00:00:00"
+                r["100%"] = "00:00:00"
     return empleados
 
 def _leer_archivo(fs):

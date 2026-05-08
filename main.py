@@ -92,10 +92,8 @@ def _aplicar_exclusiones_ot(resultados_aplanados):
     for emp in resultados_aplanados:
         if str(emp["legajo"]) in excluidos:
             for r in emp["registros"]:
-                r["50%"]    = "00:00:00"
-                r["100%"]   = "00:00:00"
-                r["FRANCO"] = 0
-                r["COMIDA"] = 0
+                r["50%"]  = "00:00:00"
+                r["100%"] = "00:00:00"
     return resultados_aplanados
 
 # =============================================================================
