@@ -47,7 +47,7 @@
         <th>Empleados</th>
         <th>Confirmados</th>
         <th>Pendientes</th>
-        <th></th>
+        <th>Informe</th>
       </tr>
     </thead>
     <tbody>
@@ -58,7 +58,7 @@
         <td>{{ c.total }}</td>
         <td><span class="badge-ok">✓ {{ c.confirmados }}</span></td>
         <td>{% if c.pendientes > 0 %}<span class="badge-pend">⏳ {{ c.pendientes }}</span>{% else %}—{% endif %}</td>
-        <td><a class="btn-ver" href="/periodos/ver/{{ c.nombre }}">Ver informe</a></td>
+        <td><a class="btn-ver" href="/periodos/ver/{{ c.id }}">Ver informe</a></td>
       </tr>
       {% endfor %}
     </tbody>

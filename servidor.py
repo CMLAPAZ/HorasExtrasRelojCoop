@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, urllib.parse
+import os, re, urllib.parse, sqlite3
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for
 import pandas as pd
 import secrets
@@ -21,6 +21,8 @@ SESION_FILE    = Path("sesion.json")
 CONFIRM_DIR    = Path("confirmaciones")
 SEMANAS_DIR    = Path("semanas")
 PERIODOS_DIR   = Path("periodos")
+DATOS_DIR      = Path("datos")
+DB_FILE        = DATOS_DIR / "cierres.db"
 TELEFONOS_FILE = Path("recursos/telefonos.json")
 
 # Prefijos de área por legajo (excepciones a la regla general)
@@ -66,6 +68,69 @@ def _guardar_metadata(m):
     (SEMANAS_DIR / "metadata.json").write_text(
         json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+def _get_db():
+    DATOS_DIR.mkdir(exist_ok=True)
+    conn = sqlite3.connect(str(DB_FILE))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def _init_db():
+    with _get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS periodos (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                cerrado_en  TEXT,
+                semana_desde INTEGER,
+                semana_hasta INTEGER,
+                archivo     TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS periodo_empleados (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                periodo_id  INTEGER REFERENCES periodos(id),
+                legajo      TEXT,
+                nombre      TEXT,
+                departamento TEXT,
+                ot50        TEXT,
+                ot100       TEXT,
+                comidas     INTEGER DEFAULT 0,
+                francos     INTEGER DEFAULT 0,
+                tardanzas   INTEGER DEFAULT 0,
+                semanas     TEXT,
+                confirmado  INTEGER DEFAULT 0
+            )
+        """)
+        conn.commit()
+    # Importar JSON viejos si los hay
+    if PERIODOS_DIR.exists():
+        with _get_db() as conn:
+            ya = {r[0] for r in conn.execute("SELECT archivo FROM periodos").fetchall()}
+            for f in sorted(PERIODOS_DIR.glob("periodo_*.json")):
+                if f.name in ya:
+                    continue
+                try:
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                    emps = d.get("empleados", d.get("confirmaciones", []))
+                    sems = d.get("semanas", [])
+                    cur = conn.execute(
+                        "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo) VALUES (?,?,?,?)",
+                        (d.get("cerrado_en",""), min(sems,default=0), max(sems,default=0), f.name)
+                    )
+                    pid = cur.lastrowid
+                    for e in emps:
+                        conn.execute(
+                            "INSERT INTO periodo_empleados (periodo_id,legajo,nombre,departamento,ot50,ot100,comidas,francos,tardanzas,semanas,confirmado) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                            (pid, str(e.get("legajo","")), e.get("nombre",""), e.get("departamento",""),
+                             e.get("ot50","0h"), e.get("ot100","0h"),
+                             e.get("comidas",0), e.get("francos",0), e.get("tardanzas",0),
+                             json.dumps(e.get("semanas",[])),
+                             1 if e.get("confirmado") else 0)
+                        )
+                    conn.commit()
+                except Exception:
+                    pass
 
 def _guardar_semana_csv(n, df):
     SEMANAS_DIR.mkdir(exist_ok=True)
@@ -142,6 +207,7 @@ def _wa_url(legajo, nombre, url):
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
 _sesion = _cargar_sesion()
+_init_db()
 
 
 # ═══════════════════════════════════════════════
@@ -767,14 +833,36 @@ def periodo_cerrar():
     hasta = int(request.form.get("hasta", 1))
 
     resumen = _calcular_periodo(desde, hasta)
-    PERIODOS_DIR.mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    (PERIODOS_DIR / f"periodo_{ts}.json").write_text(
-        json.dumps({"cerrado_en": datetime.now().isoformat(),
+    ahora = datetime.now().isoformat()
+    archivo = f"periodo_{ts}.json"
+
+    # Guardar JSON de respaldo
+    PERIODOS_DIR.mkdir(exist_ok=True)
+    (PERIODOS_DIR / archivo).write_text(
+        json.dumps({"cerrado_en": ahora,
                     "semanas": list(range(desde, hasta+1)),
                     "empleados": resumen},
                    ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    # Guardar en base de datos
+    with _get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo) VALUES (?,?,?,?)",
+            (ahora, desde, hasta, archivo)
+        )
+        pid = cur.lastrowid
+        for e in resumen:
+            conn.execute(
+                "INSERT INTO periodo_empleados (periodo_id,legajo,nombre,departamento,ot50,ot100,comidas,francos,tardanzas,semanas,confirmado) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, str(e.get("legajo","")), e.get("nombre",""), e.get("departamento",""),
+                 e.get("ot50","0h"), e.get("ot100","0h"),
+                 e.get("comidas",0), e.get("francos",0), e.get("tardanzas",0),
+                 json.dumps(e.get("semanas",[])),
+                 1 if e.get("confirmado") else 0)
+            )
+        conn.commit()
 
     # Limpiar tokens del período cerrado de _sesion
     tokens_borrar = [t for t, d in _sesion.items()
@@ -795,40 +883,54 @@ def periodo_cerrar():
 @app.route("/periodos/historial")
 def periodos_historial():
     if not _autenticado(): return _requiere_auth()
-    archivos = sorted(PERIODOS_DIR.glob("periodo_*.json"), reverse=True) if PERIODOS_DIR.exists() else []
+    with _get_db() as conn:
+        rows = conn.execute("""
+            SELECT p.id, p.cerrado_en, p.semana_desde, p.semana_hasta,
+                   COUNT(pe.id) as total,
+                   SUM(pe.confirmado) as confirmados
+            FROM periodos p
+            LEFT JOIN periodo_empleados pe ON pe.periodo_id = p.id
+            GROUP BY p.id
+            ORDER BY p.id DESC
+        """).fetchall()
     cierres = []
-    for f in archivos:
-        try:
-            d = json.loads(f.read_text(encoding="utf-8"))
-            emps = d.get("empleados", d.get("confirmaciones", []))
-            confirmados = sum(1 for e in emps if e.get("confirmado", True))
-            cierres.append({
-                "nombre": f.name,
-                "cerrado_en": d.get("cerrado_en", "")[:16].replace("T", " "),
-                "semanas": d.get("semanas", []),
-                "total": len(emps),
-                "confirmados": confirmados,
-                "pendientes": len(emps) - confirmados,
-            })
-        except Exception:
-            pass
+    for r in rows:
+        total = r["total"] or 0
+        conf  = r["confirmados"] or 0
+        cierres.append({
+            "id":         r["id"],
+            "cerrado_en": (r["cerrado_en"] or "")[:16].replace("T", " "),
+            "semanas":    list(range(r["semana_desde"], r["semana_hasta"]+1)),
+            "total":      total,
+            "confirmados": conf,
+            "pendientes": total - conf,
+        })
     return render_template("periodos_historial.html", cierres=cierres)
 
 
-@app.route("/periodos/ver/<nombre>")
-def periodos_ver(nombre):
+@app.route("/periodos/ver/<int:pid>")
+def periodos_ver(pid):
     if not _autenticado(): return _requiere_auth()
-    nombre = Path(nombre).name
-    f = PERIODOS_DIR / nombre
-    if not f.exists():
-        return "Período no encontrado", 404
-    d = json.loads(f.read_text(encoding="utf-8"))
-    emps = d.get("empleados", d.get("confirmaciones", []))
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return "Período no encontrado", 404
+        rows = conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, nombre",
+            (pid,)
+        ).fetchall()
+    empleados = []
+    for e in rows:
+        d = dict(e)
+        d["semanas"]   = json.loads(d["semanas"] or "[]")
+        d["confirmado"] = bool(d["confirmado"])
+        empleados.append(d)
+    semanas = list(range(p["semana_desde"], p["semana_hasta"]+1))
     return render_template("periodo_detalle.html",
-                           nombre=nombre,
-                           cerrado_en=d.get("cerrado_en", "")[:16].replace("T", " "),
-                           semanas=d.get("semanas", []),
-                           empleados=emps,
+                           pid=pid,
+                           cerrado_en=(p["cerrado_en"] or "")[:16].replace("T", " "),
+                           semanas=semanas,
+                           empleados=empleados,
                            firma=FIRMA_SUPERVISOR)
 
 
