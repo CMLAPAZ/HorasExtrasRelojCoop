@@ -15,7 +15,7 @@ app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
 SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
 FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola Martin")
 # URL base para links de WhatsApp — si está vacío usa el host del request
-WA_BASE_URL = os.environ.get("WA_BASE_URL", "https://cmhoras.pythonanywhere.com")
+WA_BASE_URL = os.environ.get("WA_BASE_URL", "")
 
 SESION_FILE    = Path("sesion.json")
 CONFIRM_DIR    = Path("confirmaciones")

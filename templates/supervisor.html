@@ -29,6 +29,7 @@
     .btn-del{padding:5px 12px;background:#fff;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
     .btn-del:hover{background:#fee2e2}
     .warn-dup{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-top:10px}
+    .aviso-local{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-bottom:10px}
     .deptos-label{font-size:.82rem;font-weight:600;color:#555;margin:12px 0 8px}
     .deptos-checks{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
     .depto-check{display:flex;align-items:center;gap:5px;font-size:.88rem;background:#f8f9fb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 10px;cursor:pointer}
@@ -108,6 +109,9 @@
     <span class="card-title-inline">Links para enviar</span>
     <span id="semana-badge" class="badge-semana"></span>
   </div>
+  {% if request.host.startswith('localhost') or request.host.startswith('127.') %}
+  <div class="aviso-local">⚠️ Servidor local — los links solo funcionan en esta PC. Para enviar WhatsApp a empleados usá <strong>PythonAnywhere</strong>.</div>
+  {% endif %}
   <div class="tabla-wrap">
     <table>
       <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
