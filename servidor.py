@@ -199,7 +199,7 @@ def _procesar_empleados(df, departamentos=None):
     fecha_hasta = max(todas_fechas) if todas_fechas else ""
     return empleados, fecha_desde, fecha_hasta
 
-def _crear_tokens(empleados, semana_n, base_url):
+def _crear_tokens(empleados, semana_n, semana_depto, base_url):
     tokens_creados = []
     links = []
     for emp in empleados:
@@ -227,6 +227,7 @@ def _crear_tokens(empleados, semana_n, base_url):
             },
             "confirmado": False, "confirmado_en": None,
             "semana": semana_n,
+            "semana_depto": semana_depto,
         }
         emp_url = f"{base_url}/e/{token}"
         links.append({"legajo": emp["legajo"], "nombre": emp["nombre"],
@@ -264,6 +265,7 @@ def confirmar(token):
             "departamento": data["departamento"],
             "confirmado_en": data["confirmado_en"],
             "semana": data.get("semana", 0),
+            "semana_depto": data.get("semana_depto", data.get("semana", 0)),
             "totales": data["totales"],
             "dias": [
                 {"fecha": d["fecha"], "ot50": d["ot50"], "ot100": d["ot100"],
@@ -383,20 +385,25 @@ def procesar():
     n = meta["semana_actual"] + 1
     meta["semana_actual"] = n
 
+    # Número de semana por departamento (independiente del global)
+    num_depto = sum(1 for s in meta.get("semanas", [])
+                    if s.get("departamento", "Todos") == depto_label) + 1
+
     _guardar_semana_csv(n, df)
     base_url = request.host_url.rstrip("/")
-    tokens_creados, links = _crear_tokens(empleados, n, base_url)
+    tokens_creados, links = _crear_tokens(empleados, n, num_depto, base_url)
     _guardar_sesion(_sesion)
 
     meta["semanas"].append({
-        "numero": n, "fecha_upload": datetime.now().isoformat(),
+        "numero": n, "num_depto": num_depto,
+        "fecha_upload": datetime.now().isoformat(),
         "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
         "departamento": depto_label,
         "tokens": tokens_creados,
     })
     _guardar_metadata(meta)
 
-    return jsonify({"empleados": links, "semana": n,
+    return jsonify({"empleados": links, "semana": n, "num_depto": num_depto,
                     "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
                     "departamento": depto_label})
 
@@ -414,6 +421,7 @@ def semanas():
         confirmados = sum(1 for t in tokens if _sesion[t].get("confirmado"))
         resultado.append({
             "numero":       n,
+            "num_depto":    s.get("num_depto", n),
             "departamento": s.get("departamento","Todos"),
             "fecha_desde":  s.get("fecha_desde",""),
             "fecha_hasta":  s.get("fecha_hasta",""),
@@ -512,7 +520,8 @@ def estado():
     resultado = [
         {"legajo": d["legajo"], "nombre": d["nombre"],
          "departamento": d.get("departamento",""),
-         "semana": d.get("semana",0), "confirmado": d["confirmado"],
+         "semana": d.get("semana_depto", d.get("semana",0)),
+         "confirmado": d["confirmado"],
          "dias": [
              {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
               "descripcion": x.get("descripcion","")}
@@ -534,8 +543,21 @@ def historial():
 def periodo():
     if not _autenticado(): return _requiere_auth()
     meta = _cargar_metadata()
-    return render_template("periodo.html", semanas=meta.get("semanas",[]),
-                           semana_actual=meta.get("semana_actual", 0),
+    # Semanas únicas por num_depto para el selector del período
+    seen = {}
+    for s in meta.get("semanas", []):
+        nd = s.get("num_depto", s["numero"])
+        if nd not in seen:
+            seen[nd] = {"numero": nd,
+                        "fecha_desde": s.get("fecha_desde",""),
+                        "fecha_hasta": s.get("fecha_hasta","")}
+        else:
+            if s.get("fecha_desde","") < seen[nd]["fecha_desde"]:
+                seen[nd]["fecha_desde"] = s["fecha_desde"]
+            if s.get("fecha_hasta","") > seen[nd]["fecha_hasta"]:
+                seen[nd]["fecha_hasta"] = s["fecha_hasta"]
+    semanas_selector = sorted(seen.values(), key=lambda x: x["numero"])
+    return render_template("periodo.html", semanas=semanas_selector,
                            firma=FIRMA_SUPERVISOR)
 
 
@@ -544,7 +566,8 @@ def _calcular_periodo(desde, hasta):
     por_empleado = {}
 
     for c in _leer_historial():
-        if not (desde <= c.get("semana", 0) <= hasta):
+        sem = c.get("semana_depto", c.get("semana", 0))
+        if not (desde <= sem <= hasta):
             continue
         legajo = c["legajo"]
         if legajo not in por_empleado:
@@ -562,13 +585,12 @@ def _calcular_periodo(desde, hasta):
         e["comidas"]   += c["totales"].get("comidas", 0)
         e["francos"]   += c["totales"].get("francos", 0)
         e["tardanzas"] += c["totales"].get("tardanzas", 0)
-        sem = c.get("semana", 0)
         if sem not in e["semanas"]: e["semanas"].append(sem)
         e["dias"].extend(c.get("dias", []))
         e["conf_sem"].add(sem)
 
     for token, d in _sesion.items():
-        sem = d.get("semana", 0)
+        sem = d.get("semana_depto", d.get("semana", 0))
         if not (desde <= sem <= hasta) or d.get("confirmado"):
             continue
         legajo = d["legajo"]
@@ -592,6 +614,7 @@ def _calcular_periodo(desde, hasta):
         e["tardanzas"] += tot.get("tardanzas", 0)
         if sem not in e["semanas"]: e["semanas"].append(sem)
         e["pend_sem"].add(sem)
+
 
     return sorted([
         {

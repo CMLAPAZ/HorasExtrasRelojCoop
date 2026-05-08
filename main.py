@@ -24,7 +24,10 @@ import sys
 import ctypes
 import datetime
 import webbrowser
+import subprocess
+import socket
 from datetime import timedelta
+from pathlib import Path
 
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -1351,12 +1354,50 @@ tk.Button(
     command=lambda: webbrowser.open("https://cmhoras.pythonanywhere.com"),
     font=FONT_BASE,
     bg="#dbeafe", fg="#1e3a5f", width=22
+).pack(pady=(0, 6))
+
+# ── Servidor local ────────────────────────────────────────────────────────────
+_servidor_proc = None
+
+def _puerto_libre():
+    s = socket.socket()
+    result = s.connect_ex(("127.0.0.1", 5000))
+    s.close()
+    return result != 0
+
+def _iniciar_servidor_local():
+    global _servidor_proc
+    if not _puerto_libre():
+        webbrowser.open("http://localhost:5000")
+        return
+    script = Path(__file__).parent / "servidor.py"
+    if not script.exists():
+        messagebox.showerror("Error", f"No se encontró servidor.py en:\n{script}")
+        return
+    _servidor_proc = subprocess.Popen(
+        [sys.executable, str(script)],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        cwd=str(script.parent),
+    )
+    ventana.after(2000, lambda: webbrowser.open("http://localhost:5000"))
+
+tk.Button(
+    marco, text="🖥️  Servidor local",
+    command=_iniciar_servidor_local,
+    font=FONT_BASE,
+    bg="#d1fae5", fg="#065f46", width=22
 ).pack(pady=(0, 10))
 
 # ── Salir ────────────────────────────────────────────────────────────────────
+def _salir():
+    global _servidor_proc
+    if _servidor_proc and _servidor_proc.poll() is None:
+        _servidor_proc.terminate()
+    ventana.destroy()
+
 tk.Button(
     ventana, text="Salir del sistema",
-    command=ventana.destroy,
+    command=_salir,
     font=FONT_BOLD, bg=C_DEL, fg="black", width=18
 ).pack(pady=(8, 6))
 

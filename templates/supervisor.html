@@ -265,7 +265,7 @@ async function procesar(force) {
     }
 
     document.getElementById('semana-badge').textContent =
-      `Semana ${data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
+      `Semana ${data.num_depto || data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
 
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
@@ -307,7 +307,7 @@ async function cargarSemanas() {
       const pct = s.total ? Math.round(s.confirmados / s.total * 100) : 0;
       html += `<tr>
         <td>
-          <span class="sem-n">Sem. ${s.numero}</span>
+          <span class="sem-n">Sem. ${s.num_depto || s.numero}</span>
           ${s.departamento && s.departamento !== 'Todos' ? `<span class="badge-depto">${s.departamento}</span>` : ''}
           <span class="sem-fecha">${s.fecha_upload || ''}</span>
         </td>
