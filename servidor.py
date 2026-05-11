@@ -745,20 +745,14 @@ def historial():
 def periodo():
     if not _autenticado(): return _requiere_auth()
     meta = _cargar_metadata()
-    # Semanas únicas por num_depto para el selector del período
-    seen = {}
-    for s in meta.get("semanas", []):
-        nd = s.get("num_depto", s["numero"])
-        if nd not in seen:
-            seen[nd] = {"numero": nd,
-                        "fecha_desde": s.get("fecha_desde",""),
-                        "fecha_hasta": s.get("fecha_hasta","")}
-        else:
-            if s.get("fecha_desde","") < seen[nd]["fecha_desde"]:
-                seen[nd]["fecha_desde"] = s["fecha_desde"]
-            if s.get("fecha_hasta","") > seen[nd]["fecha_hasta"]:
-                seen[nd]["fecha_hasta"] = s["fecha_hasta"]
-    semanas_selector = sorted(seen.values(), key=lambda x: x["numero"])
+    # Una entrada por semana/upload para que el selector las distinga
+    semanas_selector = sorted([
+        {"numero": s["numero"],
+         "departamento": s.get("departamento", ""),
+         "fecha_desde": s.get("fecha_desde", ""),
+         "fecha_hasta": s.get("fecha_hasta", "")}
+        for s in meta.get("semanas", [])
+    ], key=lambda x: x["numero"])
     return render_template("periodo.html", semanas=semanas_selector,
                            firma=FIRMA_SUPERVISOR)
 
@@ -768,7 +762,7 @@ def _calcular_periodo(desde, hasta):
     por_empleado = {}
 
     for c in _leer_historial():
-        sem = c.get("semana_depto", c.get("semana", 0))
+        sem = c.get("semana", 0)
         if not (desde <= sem <= hasta):
             continue
         legajo = c["legajo"]
@@ -794,7 +788,7 @@ def _calcular_periodo(desde, hasta):
         e["conf_sem"].add(sem)
 
     for token, d in _sesion.items():
-        sem = d.get("semana_depto", d.get("semana", 0))
+        sem = d.get("semana", 0)
         if not (desde <= sem <= hasta) or d.get("confirmado"):
             continue
         legajo = d["legajo"]

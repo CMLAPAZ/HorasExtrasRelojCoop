@@ -93,7 +93,7 @@
       <label for="desde">Desde semana</label>
       <select id="desde">
         {% for s in semanas %}
-        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}">Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
+        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}">Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -101,7 +101,7 @@
       <label for="hasta">Hasta semana</label>
       <select id="hasta">
         {% for s in semanas %}
-        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
+        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
       </select>
     </div>
