@@ -415,8 +415,6 @@ def confirmar(token):
     data = _sesion.get(token)
     if not data:
         return render_template("error.html", mensaje="Token inválido."), 404
-    if data.get("confirmado"):
-        return render_template("confirmado.html", nombre=data["nombre"])
     for dia in data["dias"]:
         if dia["tiene_ot"]:
             dia["descripcion"] = request.form.get(f"desc_{dia['fecha']}", "").strip()

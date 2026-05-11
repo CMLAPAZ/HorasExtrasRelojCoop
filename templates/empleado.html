@@ -60,7 +60,7 @@
     .btn-confirm:active{background:#2d2d4e}
 
     /* Ya confirmado */
-    .ya-ok{text-align:center;padding:22px 16px;background:#d1fae5;border-radius:10px;color:#065f46;font-weight:600;font-size:.95rem;margin-top:12px}
+    .ya-ok{text-align:center;padding:22px 16px;background:#d1fae5;border-radius:10px;color:#065f46;font-weight:600;font-size:.95rem;margin-top:12px;margin-bottom:14px}
     .ya-ok small{display:block;font-weight:400;margin-top:4px;font-size:.82rem}
     .sin-ot{font-size:.82rem;color:#888;text-align:center;padding:10px 0}
   </style>
@@ -100,46 +100,15 @@
 </div>
 
 <!-- Detalle y confirmación -->
-{% if data.confirmado %}
-
-<div class="card">
-  <div class="card-title">Detalle por día</div>
-  {% set tiene_dias = [] %}
-  {% for d in data.dias %}{% if d.tiene_ot %}{% set _ = tiene_dias.append(1) %}
-  <div class="dia {{ d.tipo_dia }}">
-    <div class="dia-head">
-      <span class="dia-fecha">{{ d.fecha_fmt }}{% if d.tipo_dia != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sábado','domingo':'Domingo','paro':'Paro'}[d.tipo_dia] }}</span>{% endif %}</span>
-      <div class="dia-horas">
-        {% if d.ot50  != '00:00:00' %}<span class="ot50-t">+{{ d.ot50[:5] }} 50%</span><br>{% endif %}
-        {% if d.ot100 != '00:00:00' %}<span class="ot100-t">+{{ d.ot100[:5] }} 100%</span>{% endif %}
-      </div>
-    </div>
-    {% for t in d.tramos %}<div class="tramo"><span>{{ t.entrada }}</span>→<span>{{ t.salida }}</span></div>{% endfor %}
-    {% if d.comida or d.franco or d.tarde %}
-    <div class="badges">
-      {% if d.comida %}<span class="badge b-comida">comida</span>{% endif %}
-      {% if d.franco %}<span class="badge b-franco">franco</span>{% endif %}
-      {% if d.tarde  %}<span class="badge b-tarde">tardanza</span>{% endif %}
-    </div>
-    {% endif %}
-    {% if d.descripcion %}
-    <div class="desc-label">Tu descripción:</div>
-    <textarea class="confirmado-txt" title="Descripción confirmada" placeholder="Sin descripción" readonly>{{ d.descripcion }}</textarea>
-    {% endif %}
-  </div>
-  {% endif %}{% endfor %}
-  {% if not tiene_dias %}<p class="sin-ot">Sin horas extras en el período.</p>{% endif %}
-  <div class="ya-ok">
-    ✓ Ya confirmaste tus horas.
-    <small>Gracias, {{ data.nombre.split()[0] }}.</small>
-  </div>
-</div>
-
-{% else %}
-
 <form method="POST" action="/e/{{ token }}/confirmar">
 <div class="card">
   <div class="card-title">Detalle y descripción por día</div>
+  {% if data.confirmado %}
+  <div class="ya-ok">
+    ✓ Ya confirmaste tus horas.
+    <small>Si necesitás corregir algo, actualizá y volvé a confirmar.</small>
+  </div>
+  {% endif %}
   {% set tiene_dias = [] %}
   {% for d in data.dias %}{% if d.tiene_ot %}{% set _ = tiene_dias.append(1) %}
   <div class="dia {{ d.tipo_dia }}">
@@ -159,17 +128,15 @@
     </div>
     {% endif %}
     <div class="desc-label">¿Qué trabajo realizaste?</div>
-    <textarea name="desc_{{ d.fecha }}" placeholder="Describí brevemente la tarea del día…"></textarea>
+    <textarea name="desc_{{ d.fecha }}" placeholder="Describí brevemente la tarea del día…">{{ d.descripcion or '' }}</textarea>
   </div>
   {% endif %}{% endfor %}
   {% if not tiene_dias %}<p class="sin-ot">Sin horas extras para confirmar en este período.</p>{% endif %}
 </div>
 
 <div class="card">
-  <button type="submit" class="btn-confirm">Confirmar mis horas ✓</button>
+  <button type="submit" class="btn-confirm">{% if data.confirmado %}Actualizar confirmación ✓{% else %}Confirmar mis horas ✓{% endif %}</button>
 </div>
 </form>
-
-{% endif %}
 </body>
 </html>
