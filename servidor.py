@@ -192,18 +192,36 @@ def _guardar_telefonos(t):
     Path("recursos").mkdir(exist_ok=True)
     TELEFONOS_FILE.write_text(json.dumps(t, ensure_ascii=False, indent=2), encoding="utf-8")
 
-def _wa_url(legajo, nombre, url):
+def _wa_url(legajo, nombre, url, totales=None):
     tel = _cargar_telefonos()
     phone = re.sub(r'\D', '', str(tel.get(str(legajo), "")))
     if not phone:
         return ""
     area = _AREA_CODES.get(int(legajo), _AREA_DEFAULT)
-    # Reemplazar host por WA_BASE_URL para que el link funcione desde el celu
     if WA_BASE_URL:
         from urllib.parse import urlparse
         path = urlparse(url).path
         url  = WA_BASE_URL.rstrip("/") + path
-    msg = urllib.parse.quote(f"Hola {nombre.split()[0]}, confirmá tus horas extras en este link: {url}")
+    nombre_corto = nombre.split()[0]
+    if totales:
+        ot50  = totales.get("ot50",  "0h")
+        ot100 = totales.get("ot100", "0h")
+        fra   = totales.get("francos",  0)
+        com   = totales.get("comidas",  0)
+        tar   = totales.get("tardanzas", 0)
+        lineas = [f"Hola {nombre_corto}, tus horas extras registradas son:"]
+        if ot50  not in ("0h", "0:00", ""): lineas.append(f"• OT 50%: {ot50}")
+        if ot100 not in ("0h", "0:00", ""): lineas.append(f"• OT 100%: {ot100}")
+        if fra: lineas.append(f"• Francos: {fra}")
+        if com: lineas.append(f"• Comidas: {com}")
+        if tar: lineas.append(f"• Tardanzas: {tar}")
+        if len(lineas) == 1:
+            lineas.append("• Sin horas extras este período")
+        lineas.append(f"Podés verlas y confirmarlas en: {url}")
+        texto = "\n".join(lineas)
+    else:
+        texto = f"Hola {nombre_corto}, confirmá tus horas extras en este link: {url}"
+    msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
 _sesion = _cargar_sesion()
@@ -377,7 +395,8 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
         emp_url = f"{base_url}/e/{token}"
         links.append({"legajo": emp["legajo"], "nombre": emp["nombre"],
                        "url": emp_url,
-                       "wa_url": _wa_url(emp["legajo"], emp["nombre"], emp_url)})
+                       "wa_url": _wa_url(emp["legajo"], emp["nombre"], emp_url,
+                                         totales=_sesion[token].get("totales"))})
     return tokens_creados, links
 
 
@@ -587,7 +606,8 @@ def semana_links(n):
     links = [
         {"legajo": d["legajo"], "nombre": d["nombre"],
          "confirmado": d["confirmado"], "url": f"{base_url}/e/{t}",
-         "wa_url": _wa_url(d["legajo"], d["nombre"], f"{base_url}/e/{t}")}
+         "wa_url": _wa_url(d["legajo"], d["nombre"], f"{base_url}/e/{t}",
+                           totales=d.get("totales"))}
         for t, d in _sesion.items() if d.get("semana") == n
     ]
     links.sort(key=lambda x: (x["confirmado"], x["nombre"]))
