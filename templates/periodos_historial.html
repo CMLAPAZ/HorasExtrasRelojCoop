@@ -43,6 +43,7 @@
     <thead>
       <tr>
         <th>Fecha de cierre</th>
+        <th>Período</th>
         <th>Semanas</th>
         <th>Empleados</th>
         <th>Confirmados</th>
@@ -54,6 +55,7 @@
       {% for c in cierres %}
       <tr>
         <td>{{ c.cerrado_en }}</td>
+        <td>{% if c.fecha_desde %}{{ c.fecha_desde }} → {{ c.fecha_hasta }}{% else %}—{% endif %}</td>
         <td>{% if c.semanas %}Sem. {{ c.semanas|join(', ') }}{% else %}—{% endif %}</td>
         <td>{{ c.total }}</td>
         <td><span class="badge-ok">✓ {{ c.confirmados }}</span></td>

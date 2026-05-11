@@ -102,6 +102,12 @@ def _init_db():
                 confirmado  INTEGER DEFAULT 0
             )
         """)
+        # Migración: agregar columnas de fechas si no existen
+        for col in ("fecha_desde TEXT DEFAULT ''", "fecha_hasta TEXT DEFAULT ''"):
+            try:
+                conn.execute(f"ALTER TABLE periodos ADD COLUMN {col}")
+            except Exception:
+                pass
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -882,11 +888,26 @@ def periodo_cerrar():
     ahora = datetime.now().isoformat()
     archivo = f"periodo_{ts}.json"
 
+    # Extraer rango de fechas de las semanas incluidas
+    meta = _cargar_metadata()
+    _fdlist, _fhlist = [], []
+    for s in meta.get("semanas", []):
+        nd = s.get("num_depto", s.get("numero", 0))
+        try:
+            if desde <= int(nd) <= hasta:
+                if s.get("fecha_desde"): _fdlist.append(s["fecha_desde"])
+                if s.get("fecha_hasta"): _fhlist.append(s["fecha_hasta"])
+        except (TypeError, ValueError):
+            pass
+    fecha_desde_p = min(_fdlist) if _fdlist else ""
+    fecha_hasta_p = max(_fhlist) if _fhlist else ""
+
     # Guardar JSON de respaldo
     PERIODOS_DIR.mkdir(exist_ok=True)
     (PERIODOS_DIR / archivo).write_text(
         json.dumps({"cerrado_en": ahora,
                     "semanas": list(range(desde, hasta+1)),
+                    "fecha_desde": fecha_desde_p, "fecha_hasta": fecha_hasta_p,
                     "empleados": resumen},
                    ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -894,8 +915,8 @@ def periodo_cerrar():
     # Guardar en base de datos
     with _get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo) VALUES (?,?,?,?)",
-            (ahora, desde, hasta, archivo)
+            "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, fecha_desde, fecha_hasta) VALUES (?,?,?,?,?,?)",
+            (ahora, desde, hasta, archivo, fecha_desde_p, fecha_hasta_p)
         )
         pid = cur.lastrowid
         for e in resumen:
@@ -931,6 +952,7 @@ def periodos_historial():
     with _get_db() as conn:
         rows = conn.execute("""
             SELECT p.id, p.cerrado_en, p.semana_desde, p.semana_hasta,
+                   p.fecha_desde, p.fecha_hasta,
                    COUNT(pe.id) as total,
                    SUM(pe.confirmado) as confirmados
             FROM periodos p
@@ -943,12 +965,14 @@ def periodos_historial():
         total = r["total"] or 0
         conf  = r["confirmados"] or 0
         cierres.append({
-            "id":         r["id"],
-            "cerrado_en": (r["cerrado_en"] or "")[:16].replace("T", " "),
-            "semanas":    list(range(r["semana_desde"], r["semana_hasta"]+1)),
-            "total":      total,
+            "id":          r["id"],
+            "cerrado_en":  (r["cerrado_en"] or "")[:16].replace("T", " "),
+            "semanas":     list(range(r["semana_desde"], r["semana_hasta"]+1)),
+            "fecha_desde": r["fecha_desde"] or "",
+            "fecha_hasta": r["fecha_hasta"] or "",
+            "total":       total,
             "confirmados": conf,
-            "pendientes": total - conf,
+            "pendientes":  total - conf,
         })
     return render_template("periodos_historial.html", cierres=cierres)
 
