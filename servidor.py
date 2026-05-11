@@ -224,6 +224,29 @@ def _wa_url(legajo, nombre, url, totales=None):
     msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
+def _parse_td(s):
+    if not s or s == "00:00:00":
+        return timedelta(0)
+    parts = s.split(":")
+    h, m, sec = int(parts[0]), int(parts[1]), int(parts[2])
+    return timedelta(hours=h, minutes=m, seconds=sec)
+
+def _parse_hm(s):
+    """'3h 45m' o '3h' → timedelta"""
+    if not s or s == "0h":
+        return timedelta(0)
+    h = int(re.search(r'(\d+)h', s).group(1)) if re.search(r'(\d+)h', s) else 0
+    m = int(re.search(r'(\d+)m', s).group(1)) if re.search(r'(\d+)m', s) else 0
+    return timedelta(hours=h, minutes=m)
+
+def _fmt_hm(td):
+    total = int(td.total_seconds())
+    if total <= 0:
+        return "0h"
+    h = total // 3600
+    m = (total % 3600) // 60
+    return f"{h}h {m:02d}m" if m else f"{h}h"
+
 _sesion = _cargar_sesion()
 _init_db()
 
@@ -260,29 +283,6 @@ if not _meta_inicio.get("semanas"):
 # ═══════════════════════════════════════════════
 # UTILIDADES
 # ═══════════════════════════════════════════════
-def _parse_td(s):
-    if not s or s == "00:00:00":
-        return timedelta(0)
-    parts = s.split(":")
-    h, m, sec = int(parts[0]), int(parts[1]), int(parts[2])
-    return timedelta(hours=h, minutes=m, seconds=sec)
-
-def _parse_hm(s):
-    """'3h 45m' o '3h' → timedelta"""
-    if not s or s == "0h":
-        return timedelta(0)
-    h = int(re.search(r'(\d+)h', s).group(1)) if re.search(r'(\d+)h', s) else 0
-    m = int(re.search(r'(\d+)m', s).group(1)) if re.search(r'(\d+)m', s) else 0
-    return timedelta(hours=h, minutes=m)
-
-def _fmt_hm(td):
-    total = int(td.total_seconds())
-    if total <= 0:
-        return "0h"
-    h = total // 3600
-    m = (total % 3600) // 60
-    return f"{h}h {m:02d}m" if m else f"{h}h"
-
 def _preparar_dias(registros):
     dias_dict = {}
     dias_order = []
