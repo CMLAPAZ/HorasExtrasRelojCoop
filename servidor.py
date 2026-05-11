@@ -148,14 +148,21 @@ def _cargar_semana_csv(n):
 
 def _leer_historial(semana=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
+    # Solo leer confirmaciones del período activo (semanas en metadata)
+    meta = _cargar_metadata()
+    semanas_activas = {s.get("numero") for s in meta.get("semanas", [])}
     items = []
     vistos = set()  # legajo + semana ya cubiertos por archivos
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            if semana is None or data.get("semana") == semana:
+            sem_conf = data.get("semana", 0)
+            # Ignorar confirmaciones de períodos anteriores
+            if semanas_activas and sem_conf not in semanas_activas:
+                continue
+            if semana is None or sem_conf == semana:
                 items.append(data)
-                vistos.add((str(data["legajo"]), data.get("semana", 0)))
+                vistos.add((str(data["legajo"]), sem_conf))
         except Exception:
             continue
     # Fallback: empleados confirmados en _sesion sin archivo en confirmaciones/
@@ -936,6 +943,13 @@ def periodo_cerrar():
     for t in tokens_borrar:
         del _sesion[t]
     _guardar_sesion(_sesion)
+
+    # Archivar confirmaciones para que no interfieran con el próximo período
+    archivo_dir = CONFIRM_DIR / f"periodo_{ts}"
+    if CONFIRM_DIR.exists():
+        archivo_dir.mkdir(exist_ok=True)
+        for f in CONFIRM_DIR.glob("*.json"):
+            f.rename(archivo_dir / f.name)
 
     # Reset semana counter
     meta = _cargar_metadata()
