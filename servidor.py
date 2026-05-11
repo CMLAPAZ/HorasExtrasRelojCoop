@@ -931,24 +931,30 @@ def periodo_cerrar():
             )
         conn.commit()
 
-    # Limpiar tokens del período cerrado de _sesion
+    # Limpiar solo los tokens del rango cerrado
     tokens_borrar = [t for t, d in _sesion.items()
-                     if desde <= d.get("semana_depto", d.get("semana", 0)) <= hasta]
+                     if desde <= d.get("semana", 0) <= hasta]
     for t in tokens_borrar:
         del _sesion[t]
     _guardar_sesion(_sesion)
 
-    # Archivar confirmaciones para que no interfieran con el próximo período
+    # Archivar solo las confirmaciones del rango cerrado
     archivo_dir = CONFIRM_DIR / f"periodo_{ts}"
     if CONFIRM_DIR.exists():
         archivo_dir.mkdir(exist_ok=True)
         for f in CONFIRM_DIR.glob("*.json"):
-            f.rename(archivo_dir / f.name)
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if desde <= data.get("semana", 0) <= hasta:
+                    f.rename(archivo_dir / f.name)
+            except Exception:
+                pass
 
-    # Reset semana counter
+    # Actualizar metadata: solo quitar las semanas cerradas
     meta = _cargar_metadata()
-    meta["semana_actual"] = 0
-    meta["semanas"] = []
+    meta["semanas"] = [s for s in meta.get("semanas", [])
+                       if not (desde <= s.get("numero", 0) <= hasta)]
+    meta["semana_actual"] = max((s.get("numero", 0) for s in meta["semanas"]), default=0)
     _guardar_metadata(meta)
 
     return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json"})
