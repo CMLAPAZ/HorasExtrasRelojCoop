@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, urllib.parse, sqlite3
+import os, re, urllib.parse, sqlite3, unicodedata
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for
 import pandas as pd
 import secrets
@@ -340,6 +340,19 @@ def _aplicar_exclusiones_ot(empleados):
         emp["excluido_ot"] = str(emp["legajo"]) in excluidos
     return empleados
 
+def _normalizar_departamento_web(nombre):
+    texto = (nombre or "").strip()
+    base = unicodedata.normalize("NFKD", texto)
+    base = "".join(c for c in base if not unicodedata.combining(c)).lower()
+    base = re.sub(r"[^a-z0-9]+", " ", base).strip()
+    if base == "redes":
+        return "redes"
+    if base in ("administracion", "admin"):
+        return "administracion"
+    if base == "todos":
+        return "todos"
+    return base
+
 def _leer_archivo(fs):
     nombre = (fs.filename or "").lower()
     if nombre.endswith(".xlsx"): return pd.read_excel(fs, engine="openpyxl")
@@ -527,8 +540,13 @@ def procesar():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    departamentos    = request.form.getlist("departamentos") or None
-    depto_override   = request.form.get("depto_override", "").strip()
+    departamentos = request.form.getlist("departamentos")
+    if len(departamentos) != 1:
+        return jsonify({"error": "Seleccioná un departamento."}), 400
+    depto_original = departamentos[0].strip()
+    depto_label = _normalizar_departamento_web(depto_original)
+    if not depto_label or depto_label == "todos":
+        return jsonify({"error": "Seleccioná un departamento válido."}), 400
 
     try:
         empleados, fecha_desde, fecha_hasta = _procesar_empleados(df, departamentos)
@@ -538,13 +556,10 @@ def procesar():
     if not empleados:
         return jsonify({"error": "No se encontraron empleados para los departamentos seleccionados."}), 400
 
-    # Aplicar departamento manual a todos los empleados si se indicó
-    if depto_override:
-        for emp in empleados:
-            emp["departamento"] = depto_override
+    for emp in empleados:
+        emp["departamento"] = depto_label
 
     meta = _cargar_metadata()
-    depto_label = depto_override or (", ".join(departamentos) if departamentos else "Todos")
 
     # Detectar duplicado por fechas + departamento
     if not request.form.get("force"):

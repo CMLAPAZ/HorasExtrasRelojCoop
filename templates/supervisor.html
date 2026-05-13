@@ -103,8 +103,10 @@ async function resetTotal() {
   <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
   <input type="file" id="csv" accept=".xls,.xlsx,.csv">
   <div class="depto-field">
-    <label for="depto-manual">Departamento <span class="depto-hint">(escribí el nombre, ej: Redes)</span></label>
-    <input type="text" id="depto-manual" class="depto-input" placeholder="Redes / Administracion / Todos…">
+    <label for="depto-manual">Departamento</label>
+    <select id="depto-manual" class="depto-input" required disabled>
+      <option value="">Seleccionar departamento...</option>
+    </select>
   </div>
   <div id="deptos-wrap" class="hidden">
     <div class="deptos-label">Seleccioná los departamentos a incluir:</div>
@@ -221,17 +223,26 @@ document.getElementById('csv').addEventListener('change', async function() {
   try {
     const res  = await fetch('/detectar-departamentos', { method:'POST', body:fd });
     const data = await res.json();
-    if (data.error || !data.departamentos.length) { btn.disabled = false; return; }
+    const select = document.getElementById('depto-manual');
+    const deptos = (data.departamentos && data.departamentos.length)
+      ? data.departamentos
+      : ['Redes', 'Administración'];
+    select.innerHTML = '<option value="">Seleccionar departamento...</option>';
 
-    data.departamentos.forEach(d => {
-      const lbl = document.createElement('label');
-      lbl.className = 'depto-check';
-      lbl.innerHTML = `<input type="checkbox" name="dep" value="${d}" checked> ${d}`;
-      checks.appendChild(lbl);
+    deptos
+      .filter(d => d && String(d).toLowerCase() !== 'todos')
+      .forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = d;
+      select.appendChild(opt);
     });
-    wrap.classList.remove('hidden');
+    select.disabled = false;
     btn.disabled = false;
   } catch(ex) {
+    const select = document.getElementById('depto-manual');
+    select.innerHTML = '<option value="">Seleccionar departamento...</option><option value="Redes">Redes</option><option value="Administración">Administración</option>';
+    select.disabled = false;
     btn.disabled = false;
   }
 });
@@ -256,10 +267,15 @@ async function procesar(force) {
   const fd = new FormData();
   fd.append('csv', file);
   if (force) fd.append('force', '1');
-  const deptoManual = document.getElementById('depto-manual').value.trim();
-  if (deptoManual) fd.append('depto_override', deptoManual);
-  document.querySelectorAll('#deptos-checks input[name="dep"]:checked')
-    .forEach(cb => fd.append('departamentos', cb.value));
+  const departamento = document.getElementById('depto-manual').value;
+  if (!departamento) {
+    loadEl.classList.add('hidden');
+    errEl.textContent = 'Seleccioná un departamento.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  fd.append('departamentos', departamento);
+  fd.append('depto_override', departamento);
 
   try {
     const res  = await fetch('/procesar', { method:'POST', body:fd });

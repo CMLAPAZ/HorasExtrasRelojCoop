@@ -101,17 +101,13 @@
     <div class="field">
       <label for="desde">Desde semana</label>
       <select id="desde" disabled>
-        {% for s in semanas %}
-        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}">Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
-        {% endfor %}
+        <option value="">Primero seleccioná departamento</option>
       </select>
     </div>
     <div class="field">
       <label for="hasta">Hasta semana</label>
       <select id="hasta" disabled>
-        {% for s in semanas %}
-        <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
-        {% endfor %}
+        <option value="">Primero seleccioná departamento</option>
       </select>
     </div>
     <button type="button" class="btn" onclick="previsualizar()">Ver resumen</button>
@@ -157,9 +153,25 @@ let _todosEmpleados = [];
 let _deptosActivos  = new Set();
 const _semanasDisponibles = JSON.parse(document.getElementById('semanas-data').textContent);
 
+function normalizarDepartamento(depto) {
+  return String(depto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function nombreDepartamentoVisible(depto) {
+  const normalizado = normalizarDepartamento(depto);
+  if (normalizado === 'redes' || normalizado === 'rede') return 'Redes';
+  if (normalizado === 'administracion' || normalizado === 'admin') return 'Administración';
+  return depto || '';
+}
+
 function etiquetaSemana(s) {
   const partes = [
-    s.departamento || 'Todos',
+    nombreDepartamentoVisible(s.departamento) || 'Todos',
     `Semana ${s.num_depto || s.numero}`,
   ];
   if (s.fecha_desde || s.fecha_hasta) partes.push(`${s.fecha_desde || ''} al ${s.fecha_hasta || ''}`);
@@ -179,7 +191,7 @@ function cargarOpcionesSemana(selectEl, semanas, seleccionarUltima) {
     opt.value = s.numero;
     opt.dataset.fd = s.fecha_desde || '';
     opt.dataset.fh = s.fecha_hasta || '';
-    opt.dataset.departamento = s.departamento || 'Todos';
+    opt.dataset.departamento = normalizarDepartamento(s.departamento || 'Todos');
     opt.textContent = etiquetaSemana(s);
     if (seleccionarUltima && idx === semanas.length - 1) opt.selected = true;
     selectEl.appendChild(opt);
@@ -188,7 +200,7 @@ function cargarOpcionesSemana(selectEl, semanas, seleccionarUltima) {
 }
 
 function filtrarSemanasPorDepartamento() {
-  const departamento = document.getElementById('departamento').value;
+  const departamento = normalizarDepartamento(document.getElementById('departamento').value);
   const desdeEl = document.getElementById('desde');
   const hastaEl = document.getElementById('hasta');
   document.getElementById('resumen-wrap').classList.add('hidden');
@@ -202,7 +214,7 @@ function filtrarSemanasPorDepartamento() {
   }
 
   const semanas = _semanasDisponibles
-    .filter(s => (s.departamento || 'Todos') === departamento)
+    .filter(s => normalizarDepartamento(s.departamento || 'Todos') === departamento)
     .sort((a, b) => a.numero - b.numero);
   cargarOpcionesSemana(desdeEl, semanas, false);
   cargarOpcionesSemana(hastaEl, semanas, true);
