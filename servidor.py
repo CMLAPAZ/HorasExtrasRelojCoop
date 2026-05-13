@@ -764,25 +764,30 @@ def periodo():
                            firma=FIRMA_SUPERVISOR)
 
 
-def _calcular_periodo(desde, hasta):
+def _calcular_periodo(desde, hasta, departamento=None):
     """Acumula totales del período incluyendo no confirmados."""
+    departamento = (departamento or "").strip()
     por_empleado = {}
 
     for c in _leer_historial():
         sem = c.get("semana", 0)
         if not (desde <= sem <= hasta):
             continue
-        legajo = c["legajo"]
-        if legajo not in por_empleado:
-            por_empleado[legajo] = {
+        depto = c.get("departamento", "") or "Todos"
+        if departamento and depto != departamento:
+            continue
+        legajo = str(c["legajo"])
+        clave = (depto, legajo)
+        if clave not in por_empleado:
+            por_empleado[clave] = {
                 "legajo": legajo, "nombre": c["nombre"],
-                "departamento": c.get("departamento", ""),
+                "departamento": depto,
                 "ot50": timedelta(0), "ot100": timedelta(0),
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
                 "conf_sem": set(), "pend_sem": set(),
             }
-        e = por_empleado[legajo]
+        e = por_empleado[clave]
         _excl = c.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
         if not _excl:
             e["ot50"]  += _parse_hm(c["totales"]["ot50"])
@@ -798,18 +803,22 @@ def _calcular_periodo(desde, hasta):
         sem = d.get("semana", 0)
         if not (desde <= sem <= hasta) or d.get("confirmado"):
             continue
-        legajo = d["legajo"]
+        depto = d.get("departamento", "") or "Todos"
+        if departamento and depto != departamento:
+            continue
+        legajo = str(d["legajo"])
+        clave = (depto, legajo)
         tot = d.get("totales", {})
-        if legajo not in por_empleado:
-            por_empleado[legajo] = {
+        if clave not in por_empleado:
+            por_empleado[clave] = {
                 "legajo": legajo, "nombre": d["nombre"],
-                "departamento": d.get("departamento", ""),
+                "departamento": depto,
                 "ot50": timedelta(0), "ot100": timedelta(0),
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
                 "conf_sem": set(), "pend_sem": set(),
             }
-        e = por_empleado[legajo]
+        e = por_empleado[clave]
         if sem in e["conf_sem"] or sem in e["pend_sem"]:
             continue
         _excl = d.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
@@ -847,7 +856,8 @@ def periodo_resumen():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     desde = int(request.args.get("desde", 1))
     hasta = int(request.args.get("hasta", 1))
-    return jsonify(_calcular_periodo(desde, hasta))
+    departamento = request.args.get("departamento", "").strip()
+    return jsonify(_calcular_periodo(desde, hasta, departamento))
 
 
 @app.route("/periodo/exportar")
@@ -857,7 +867,8 @@ def periodo_exportar():
     from flask import Response
     desde = int(request.args.get("desde", 1))
     hasta = int(request.args.get("hasta", 1))
-    resultado = _calcular_periodo(desde, hasta)
+    departamento = request.args.get("departamento", "").strip()
+    resultado = _calcular_periodo(desde, hasta, departamento)
 
     out = io.StringIO()
     w = csv.writer(out)

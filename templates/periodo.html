@@ -219,7 +219,8 @@ async function previsualizar() {
   _hasta = parseInt(document.getElementById('hasta').value);
   if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return false; }
 
-  const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}`);
+  const deptoParam = encodeURIComponent(departamento);
+  const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}&departamento=${deptoParam}`);
   const data = await res.json();
   const wrap = document.getElementById('resumen-wrap');
 
@@ -399,7 +400,9 @@ function renderTabla() {
 }
 
 function descargarCSV() {
-  window.location.href = `/periodo/exportar?desde=${_desde}&hasta=${_hasta}`;
+  const departamento = document.getElementById('departamento').value;
+  const deptoParam = encodeURIComponent(departamento);
+  window.location.href = `/periodo/exportar?desde=${_desde}&hasta=${_hasta}&departamento=${deptoParam}`;
 }
 
 async function cerrarPeriodo() {
