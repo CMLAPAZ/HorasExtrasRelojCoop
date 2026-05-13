@@ -150,11 +150,12 @@
   <div id="resumen-body"></div>
 </div>
 
+<script id="semanas-data" type="application/json">{{ semanas | tojson }}</script>
 <script>
 let _desde = 1, _hasta = 1;
 let _todosEmpleados = [];
 let _deptosActivos  = new Set();
-const _semanasDisponibles = {{ semanas | tojson }};
+const _semanasDisponibles = JSON.parse(document.getElementById('semanas-data').textContent);
 
 function etiquetaSemana(s) {
   const partes = [
