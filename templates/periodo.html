@@ -159,13 +159,12 @@ const _semanasDisponibles = JSON.parse(document.getElementById('semanas-data').t
 
 function etiquetaSemana(s) {
   const partes = [
-    `Sem. ${s.num_depto || s.numero}`,
     s.departamento || 'Todos',
-    `lote global ${s.numero}`,
+    `Semana ${s.num_depto || s.numero}`,
   ];
-  if (s.fecha_desde || s.fecha_hasta) partes.push(`${s.fecha_desde || ''} -> ${s.fecha_hasta || ''}`);
+  if (s.fecha_desde || s.fecha_hasta) partes.push(`${s.fecha_desde || ''} al ${s.fecha_hasta || ''}`);
   if (s.archivo) partes.push(s.archivo);
-  return partes.join(' · ');
+  return partes.join(' \u2014 ');
 }
 
 function limpiarSelectorSemana(selectEl) {
