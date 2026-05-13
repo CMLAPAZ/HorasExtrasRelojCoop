@@ -796,14 +796,14 @@ def periodo():
 
 def _calcular_periodo(desde, hasta, departamento=None):
     """Acumula totales del período incluyendo no confirmados."""
-    departamento = (departamento or "").strip()
+    departamento = _normalizar_departamento_web(departamento)
     por_empleado = {}
 
     for c in _leer_historial():
         sem = c.get("semana", 0)
         if not (desde <= sem <= hasta):
             continue
-        depto = c.get("departamento", "") or "Todos"
+        depto = _normalizar_departamento_web(c.get("departamento", "") or "Todos")
         if departamento and depto != departamento:
             continue
         legajo = str(c["legajo"])
@@ -811,7 +811,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
         if clave not in por_empleado:
             por_empleado[clave] = {
                 "legajo": legajo, "nombre": c["nombre"],
-                "departamento": depto,
+                "departamento": _nombre_departamento_visible(depto),
                 "ot50": timedelta(0), "ot100": timedelta(0),
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
@@ -833,7 +833,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
         sem = d.get("semana", 0)
         if not (desde <= sem <= hasta) or d.get("confirmado"):
             continue
-        depto = d.get("departamento", "") or "Todos"
+        depto = _normalizar_departamento_web(d.get("departamento", "") or "Todos")
         if departamento and depto != departamento:
             continue
         legajo = str(d["legajo"])
@@ -842,7 +842,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
         if clave not in por_empleado:
             por_empleado[clave] = {
                 "legajo": legajo, "nombre": d["nombre"],
-                "departamento": depto,
+                "departamento": _nombre_departamento_visible(depto),
                 "ot50": timedelta(0), "ot100": timedelta(0),
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
@@ -886,7 +886,11 @@ def periodo_resumen():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     desde = int(request.args.get("desde", 1))
     hasta = int(request.args.get("hasta", 1))
-    departamento = request.args.get("departamento", "").strip()
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    fecha_desde = request.args.get("fecha_desde", "").strip()
+    fecha_hasta = request.args.get("fecha_hasta", "").strip()
+    if not departamento or not fecha_desde or not fecha_hasta:
+        return jsonify({"error": "Departamento y rango de fechas requeridos."}), 400
     return jsonify(_calcular_periodo(desde, hasta, departamento))
 
 
@@ -897,7 +901,11 @@ def periodo_exportar():
     from flask import Response
     desde = int(request.args.get("desde", 1))
     hasta = int(request.args.get("hasta", 1))
-    departamento = request.args.get("departamento", "").strip()
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    fecha_desde = request.args.get("fecha_desde", "").strip()
+    fecha_hasta = request.args.get("fecha_hasta", "").strip()
+    if not departamento or not fecha_desde or not fecha_hasta:
+        return jsonify({"error": "Departamento y rango de fechas requeridos."}), 400
     resultado = _calcular_periodo(desde, hasta, departamento)
 
     out = io.StringIO()
@@ -931,19 +939,23 @@ def periodo_cerrar():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     desde = int(request.form.get("desde", 1))
     hasta = int(request.form.get("hasta", 1))
-    departamento = request.form.get("departamento", "").strip()
-    if not departamento:
+    departamento = _normalizar_departamento_web(request.form.get("departamento", ""))
+    fecha_desde_req = request.form.get("fecha_desde", "").strip()
+    fecha_hasta_req = request.form.get("fecha_hasta", "").strip()
+    semana_visible_desde = request.form.get("semana_visible_desde", "").strip()
+    semana_visible_hasta = request.form.get("semana_visible_hasta", "").strip()
+    if not departamento or not fecha_desde_req or not fecha_hasta_req:
         return jsonify({"error": "SeleccionÃ¡ un departamento para cerrar el perÃ­odo."}), 400
     with _get_db() as conn:
         duplicado = conn.execute("""
             SELECT 1
             FROM periodos p
             JOIN periodo_empleados pe ON pe.periodo_id = p.id
-            WHERE p.semana_desde = ?
-              AND p.semana_hasta = ?
+            WHERE p.fecha_desde = ?
+              AND p.fecha_hasta = ?
               AND pe.departamento = ?
             LIMIT 1
-        """, (desde, hasta, departamento)).fetchone()
+        """, (fecha_desde_req, fecha_hasta_req, _nombre_departamento_visible(departamento))).fetchone()
     if duplicado:
         return jsonify({"error": "Ya existe un cierre para ese departamento y rango."}), 400
 
@@ -957,7 +969,7 @@ def periodo_cerrar():
     _fdlist, _fhlist = [], []
     semanas_cerradas = []
     for s in meta.get("semanas", []):
-        depto = s.get("departamento", "") or "Todos"
+        depto = _normalizar_departamento_web(s.get("departamento", "") or "Todos")
         if depto != departamento:
             continue
         try:
@@ -968,8 +980,8 @@ def periodo_cerrar():
                 if s.get("fecha_hasta"): _fhlist.append(s["fecha_hasta"])
         except (TypeError, ValueError):
             pass
-    fecha_desde_p = min(_fdlist) if _fdlist else ""
-    fecha_hasta_p = max(_fhlist) if _fhlist else ""
+    fecha_desde_p = fecha_desde_req or (min(_fdlist) if _fdlist else "")
+    fecha_hasta_p = fecha_hasta_req or (max(_fhlist) if _fhlist else "")
     if not semanas_cerradas:
         return jsonify({"error": "No hay semanas activas de ese departamento en el rango seleccionado."}), 400
 
@@ -978,6 +990,8 @@ def periodo_cerrar():
     (PERIODOS_DIR / archivo).write_text(
         json.dumps({"cerrado_en": ahora,
                     "departamento": departamento,
+                    "semana_visible_desde": semana_visible_desde,
+                    "semana_visible_hasta": semana_visible_hasta,
                     "semanas": semanas_cerradas,
                     "fecha_desde": fecha_desde_p, "fecha_hasta": fecha_hasta_p,
                     "empleados": resumen},
@@ -1005,7 +1019,7 @@ def periodo_cerrar():
     # Limpiar solo los tokens del rango cerrado
     tokens_borrar = [t for t, d in _sesion.items()
                      if desde <= d.get("semana", 0) <= hasta
-                     and ((d.get("departamento", "") or "Todos") == departamento)]
+                     and _normalizar_departamento_web(d.get("departamento", "") or "Todos") == departamento]
     for t in tokens_borrar:
         del _sesion[t]
     _guardar_sesion(_sesion)
@@ -1018,7 +1032,7 @@ def periodo_cerrar():
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 if (desde <= data.get("semana", 0) <= hasta
-                        and ((data.get("departamento", "") or "Todos") == departamento)):
+                        and _normalizar_departamento_web(data.get("departamento", "") or "Todos") == departamento):
                     f.rename(archivo_dir / f.name)
             except Exception:
                 pass
@@ -1029,7 +1043,7 @@ def periodo_cerrar():
         s for s in meta.get("semanas", [])
         if not (
             desde <= s.get("numero", 0) <= hasta
-            and ((s.get("departamento", "") or "Todos") == departamento)
+            and _normalizar_departamento_web(s.get("departamento", "") or "Todos") == departamento
         )
     ]
     meta["semana_actual"] = max((s.get("numero", 0) for s in meta["semanas"]), default=0)

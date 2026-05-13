@@ -151,12 +151,15 @@ let _deptosActivos  = new Set();
 const _semanasDisponibles = JSON.parse(document.getElementById('semanas-data').textContent);
 
 function normalizarDepartamento(depto) {
-  return String(depto || '')
+  const normalizado = String(depto || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+  if (normalizado === 'redes' || normalizado === 'rede' || normalizado === 'red') return 'redes';
+  if (normalizado === 'administracion' || normalizado === 'admin') return 'administracion';
+  return normalizado;
 }
 
 function nombreDepartamentoVisible(depto) {
@@ -201,14 +204,29 @@ function cargarOpcionesSemana(selectEl, semanas, seleccionarUltima) {
   semanas.forEach((s, idx) => {
     const opt = document.createElement('option');
     opt.value = s.numero;
+    opt.dataset.loteGlobal = s.numero;
     opt.dataset.fd = s.fecha_desde || '';
     opt.dataset.fh = s.fecha_hasta || '';
     opt.dataset.departamento = normalizarDepartamento(s.departamento || 'Todos');
+    opt.dataset.semanaVisible = s.num_depto || s.numero;
+    opt.dataset.label = etiquetaSemana(s);
     opt.textContent = etiquetaSemana(s);
     if (seleccionarUltima && idx === semanas.length - 1) opt.selected = true;
     selectEl.appendChild(opt);
   });
   selectEl.disabled = !semanas.length;
+}
+
+function semanaSeleccionada(id) {
+  const opt = document.getElementById(id).selectedOptions[0];
+  return {
+    loteGlobal: parseInt(opt.dataset.loteGlobal || opt.value),
+    fechaDesde: opt.dataset.fd || '',
+    fechaHasta: opt.dataset.fh || '',
+    semanaVisible: parseInt(opt.dataset.semanaVisible || opt.value),
+    departamento: opt.dataset.departamento || '',
+    label: opt.dataset.label || opt.textContent || '',
+  };
 }
 
 function filtrarSemanasPorDepartamento() {
@@ -241,35 +259,38 @@ async function previsualizar() {
     alert('No hay semanas activas para el departamento seleccionado.');
     return false;
   }
-  _desde = parseInt(document.getElementById('desde').value);
-  _hasta = parseInt(document.getElementById('hasta').value);
+  const semDesde = semanaSeleccionada('desde');
+  const semHasta = semanaSeleccionada('hasta');
+  _desde = semDesde.loteGlobal;
+  _hasta = semHasta.loteGlobal;
   if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return false; }
 
-  const deptoParam = encodeURIComponent(departamento);
-  const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}&departamento=${deptoParam}`);
+  const params = new URLSearchParams({
+    desde: _desde,
+    hasta: _hasta,
+    departamento,
+    fecha_desde: semDesde.fechaDesde,
+    fecha_hasta: semHasta.fechaHasta,
+    semana_visible_desde: semDesde.semanaVisible,
+    semana_visible_hasta: semHasta.semanaVisible,
+  });
+  const res  = await fetch(`/periodo/resumen?${params.toString()}`);
   const data = await res.json();
+  if (data.error) { alert('Error: ' + data.error); return false; }
   const wrap = document.getElementById('resumen-wrap');
 
-  document.getElementById('resumen-titulo').textContent  = `Período: semanas ${_desde} a ${_hasta}`;
+  const deptoVisible = nombreDepartamentoVisible(departamento);
+  const tituloPeriodoVisual = semDesde.semanaVisible === semHasta.semanaVisible
+    ? `Periodo: ${deptoVisible} - Semana ${semDesde.semanaVisible}`
+    : `Periodo: ${deptoVisible} - Semanas ${semDesde.semanaVisible} a ${semHasta.semanaVisible}`;
+  document.getElementById('resumen-titulo').textContent  = tituloPeriodoVisual;
   const ahora = new Date().toLocaleString('es-AR');
-  const tituloPeriodo = `Periodo: ${departamento} · Semanas ${_desde} a ${_hasta}`;
-  document.getElementById('print-titulo').textContent       = `Período: Semanas ${_desde} a ${_hasta}`;
-  document.getElementById('print-titulo').textContent       = tituloPeriodo;
+  document.getElementById('print-titulo').textContent       = tituloPeriodoVisual;
   document.getElementById('print-fecha').textContent        = `Generado: ${ahora}`;
   document.getElementById('print-fecha-footer').textContent = `Generado: ${ahora}`;
 
-  // Calcular rango de fechas real desde los atributos de los <option>
-  let fdMin = '', fhMax = '';
-  document.querySelectorAll('#desde option, #hasta option').forEach(opt => {
-    const n = parseInt(opt.value);
-    if (n >= _desde && n <= _hasta && opt.dataset.departamento === departamento) {
-      const fd = opt.dataset.fd || '', fh = opt.dataset.fh || '';
-      if (fd && (!fdMin || fd < fdMin)) fdMin = fd;
-      if (fh && (!fhMax || fh > fhMax)) fhMax = fh;
-    }
-  });
   document.getElementById('print-rango').textContent =
-    fdMin ? `${fdMin}  al  ${fhMax}` : '';
+    semDesde.fechaDesde ? `${semDesde.fechaDesde}  al  ${semHasta.fechaHasta}` : '';
 
   if (!data.length) {
     document.getElementById('resumen-body').innerHTML = '<div class="vacio">Sin datos en este rango.</div>';
@@ -427,8 +448,18 @@ function renderTabla() {
 
 function descargarCSV() {
   const departamento = document.getElementById('departamento').value;
-  const deptoParam = encodeURIComponent(departamento);
-  window.location.href = `/periodo/exportar?desde=${_desde}&hasta=${_hasta}&departamento=${deptoParam}`;
+  const semDesde = semanaSeleccionada('desde');
+  const semHasta = semanaSeleccionada('hasta');
+  const params = new URLSearchParams({
+    desde: _desde,
+    hasta: _hasta,
+    departamento,
+    fecha_desde: semDesde.fechaDesde,
+    fecha_hasta: semHasta.fechaHasta,
+    semana_visible_desde: semDesde.semanaVisible,
+    semana_visible_hasta: semHasta.semanaVisible,
+  });
+  window.location.href = `/periodo/exportar?${params.toString()}`;
 }
 
 async function cerrarPeriodo() {
@@ -449,6 +480,12 @@ async function cerrarPeriodo() {
   fd.append('desde', _desde);
   fd.append('hasta', _hasta);
   fd.append('departamento', departamento);
+  const semDesde = semanaSeleccionada('desde');
+  const semHasta = semanaSeleccionada('hasta');
+  fd.append('fecha_desde', semDesde.fechaDesde);
+  fd.append('fecha_hasta', semHasta.fechaHasta);
+  fd.append('semana_visible_desde', semDesde.semanaVisible);
+  fd.append('semana_visible_hasta', semHasta.semanaVisible);
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
