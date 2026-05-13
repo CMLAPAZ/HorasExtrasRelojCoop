@@ -90,8 +90,17 @@
   {% if semanas %}
   <div class="selector">
     <div class="field">
+      <label for="departamento">Departamento</label>
+      <select id="departamento" onchange="filtrarSemanasPorDepartamento()" required>
+        <option value="">Seleccionar departamento</option>
+        {% for d in departamentos %}
+        <option value="{{ d }}">{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
       <label for="desde">Desde semana</label>
-      <select id="desde">
+      <select id="desde" disabled>
         {% for s in semanas %}
         <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}">Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
@@ -99,7 +108,7 @@
     </div>
     <div class="field">
       <label for="hasta">Hasta semana</label>
-      <select id="hasta">
+      <select id="hasta" disabled>
         {% for s in semanas %}
         <option value="{{ s.numero }}" data-fd="{{ s.fecha_desde }}" data-fh="{{ s.fecha_hasta }}" {% if loop.last %}selected{% endif %}>Sem. {{ s.numero }}{% if s.departamento %} · {{ s.departamento }}{% endif %}{% if s.fecha_desde %} ({{ s.fecha_desde }} → {{ s.fecha_hasta }}){% endif %}</option>
         {% endfor %}
@@ -145,11 +154,70 @@
 let _desde = 1, _hasta = 1;
 let _todosEmpleados = [];
 let _deptosActivos  = new Set();
+const _semanasDisponibles = {{ semanas | tojson }};
+
+function etiquetaSemana(s) {
+  const partes = [
+    `Sem. ${s.num_depto || s.numero}`,
+    s.departamento || 'Todos',
+    `lote global ${s.numero}`,
+  ];
+  if (s.fecha_desde || s.fecha_hasta) partes.push(`${s.fecha_desde || ''} -> ${s.fecha_hasta || ''}`);
+  if (s.archivo) partes.push(s.archivo);
+  return partes.join(' · ');
+}
+
+function limpiarSelectorSemana(selectEl) {
+  selectEl.innerHTML = '';
+  selectEl.disabled = true;
+}
+
+function cargarOpcionesSemana(selectEl, semanas, seleccionarUltima) {
+  selectEl.innerHTML = '';
+  semanas.forEach((s, idx) => {
+    const opt = document.createElement('option');
+    opt.value = s.numero;
+    opt.dataset.fd = s.fecha_desde || '';
+    opt.dataset.fh = s.fecha_hasta || '';
+    opt.dataset.departamento = s.departamento || 'Todos';
+    opt.textContent = etiquetaSemana(s);
+    if (seleccionarUltima && idx === semanas.length - 1) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+  selectEl.disabled = !semanas.length;
+}
+
+function filtrarSemanasPorDepartamento() {
+  const departamento = document.getElementById('departamento').value;
+  const desdeEl = document.getElementById('desde');
+  const hastaEl = document.getElementById('hasta');
+  document.getElementById('resumen-wrap').classList.add('hidden');
+  document.getElementById('aviso-pendientes').classList.add('hidden');
+  document.getElementById('filtro-deptos').classList.add('hidden');
+
+  if (!departamento) {
+    limpiarSelectorSemana(desdeEl);
+    limpiarSelectorSemana(hastaEl);
+    return;
+  }
+
+  const semanas = _semanasDisponibles
+    .filter(s => (s.departamento || 'Todos') === departamento)
+    .sort((a, b) => a.numero - b.numero);
+  cargarOpcionesSemana(desdeEl, semanas, false);
+  cargarOpcionesSemana(hastaEl, semanas, true);
+}
 
 async function previsualizar() {
+  const departamento = document.getElementById('departamento').value;
+  if (!departamento) { alert('Selecciona un departamento primero.'); return false; }
+  if (document.getElementById('desde').disabled || document.getElementById('hasta').disabled) {
+    alert('No hay semanas activas para el departamento seleccionado.');
+    return false;
+  }
   _desde = parseInt(document.getElementById('desde').value);
   _hasta = parseInt(document.getElementById('hasta').value);
-  if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return; }
+  if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return false; }
 
   const res  = await fetch(`/periodo/resumen?desde=${_desde}&hasta=${_hasta}`);
   const data = await res.json();
@@ -157,7 +225,9 @@ async function previsualizar() {
 
   document.getElementById('resumen-titulo').textContent  = `Período: semanas ${_desde} a ${_hasta}`;
   const ahora = new Date().toLocaleString('es-AR');
+  const tituloPeriodo = `Periodo: ${departamento} · Semanas ${_desde} a ${_hasta}`;
   document.getElementById('print-titulo').textContent       = `Período: Semanas ${_desde} a ${_hasta}`;
+  document.getElementById('print-titulo').textContent       = tituloPeriodo;
   document.getElementById('print-fecha').textContent        = `Generado: ${ahora}`;
   document.getElementById('print-fecha-footer').textContent = `Generado: ${ahora}`;
 
@@ -165,7 +235,7 @@ async function previsualizar() {
   let fdMin = '', fhMax = '';
   document.querySelectorAll('#desde option, #hasta option').forEach(opt => {
     const n = parseInt(opt.value);
-    if (n >= _desde && n <= _hasta) {
+    if (n >= _desde && n <= _hasta && opt.dataset.departamento === departamento) {
       const fd = opt.dataset.fd || '', fh = opt.dataset.fh || '';
       if (fd && (!fdMin || fd < fdMin)) fdMin = fd;
       if (fh && (!fhMax || fh > fhMax)) fhMax = fh;
@@ -179,7 +249,7 @@ async function previsualizar() {
     document.getElementById('aviso-pendientes').classList.add('hidden');
     document.getElementById('filtro-deptos').classList.add('hidden');
     wrap.classList.remove('hidden');
-    return;
+    return true;
   }
 
   _todosEmpleados = data;
@@ -201,6 +271,7 @@ async function previsualizar() {
   renderTabla();
   wrap.classList.remove('hidden');
   wrap.scrollIntoView({ behavior:'smooth' });
+  return true;
 }
 
 function renderFiltroDeptos(deptos) {

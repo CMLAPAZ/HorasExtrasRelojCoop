@@ -748,12 +748,19 @@ def periodo():
     # Una entrada por semana/upload para que el selector las distinga
     semanas_selector = sorted([
         {"numero": s["numero"],
+         "num_depto": s.get("num_depto", s["numero"]),
          "departamento": s.get("departamento", ""),
          "fecha_desde": s.get("fecha_desde", ""),
-         "fecha_hasta": s.get("fecha_hasta", "")}
+         "fecha_hasta": s.get("fecha_hasta", ""),
+         "archivo": s.get("archivo", "")}
         for s in meta.get("semanas", [])
     ], key=lambda x: x["numero"])
+    departamentos = sorted({
+        s.get("departamento") or "Todos"
+        for s in meta.get("semanas", [])
+    })
     return render_template("periodo.html", semanas=semanas_selector,
+                           departamentos=departamentos,
                            firma=FIRMA_SUPERVISOR)
 
 
