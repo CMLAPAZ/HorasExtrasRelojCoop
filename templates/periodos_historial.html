@@ -20,8 +20,12 @@
     tr:last-child td{border-bottom:none}
     .badge-ok{background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
     .badge-pend{background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
+    .badge-anulado{background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
     .btn-ver{padding:5px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
     .btn-ver:hover{background:#2d2d4e}
+    .btn-anular{padding:5px 12px;background:#b91c1c;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer}
+    .btn-anular:hover{background:#991b1b}
+    .acciones{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
   </style>
 </head>
@@ -48,6 +52,7 @@
         <th>Empleados</th>
         <th>Confirmados</th>
         <th>Pendientes</th>
+        <th>Estado</th>
         <th>Informe</th>
       </tr>
     </thead>
@@ -60,7 +65,21 @@
         <td>{{ c.total }}</td>
         <td><span class="badge-ok">✓ {{ c.confirmados }}</span></td>
         <td>{% if c.pendientes > 0 %}<span class="badge-pend">⏳ {{ c.pendientes }}</span>{% else %}—{% endif %}</td>
-        <td><a class="btn-ver" href="/periodos/ver/{{ c.id }}">Ver informe</a></td>
+        <td>
+          {% if c.estado == 'ANULADO' %}
+            <span class="badge-anulado">ANULADO</span>
+          {% else %}
+            <span class="badge-ok">ACTIVO</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="acciones">
+            <a class="btn-ver" href="/periodos/ver/{{ c.id }}">Ver informe</a>
+            {% if c.estado != 'ANULADO' %}
+              <button type="button" class="btn-anular" onclick="anularCierre({{ c.id }})">Anular cierre</button>
+            {% endif %}
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -69,6 +88,23 @@
   <div class="vacio">No hay períodos cerrados todavía.</div>
   {% endif %}
 </div>
+
+<script>
+async function anularCierre(id) {
+  if (!confirm('¿Seguro que querés anular este cierre? El historial se conservará.')) return;
+  const motivo = prompt('Motivo de anulación (opcional):') || '';
+  const fd = new FormData();
+  fd.append('motivo', motivo);
+  const res = await fetch(`/periodos/anular/${id}`, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) {
+    alert('Error: ' + data.error);
+    return;
+  }
+  alert('Cierre anulado correctamente.');
+  location.reload();
+}
+</script>
 
 </body>
 </html>

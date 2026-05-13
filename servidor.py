@@ -103,7 +103,14 @@ def _init_db():
             )
         """)
         # Migración: agregar columnas de fechas si no existen
-        for col in ("fecha_desde TEXT DEFAULT ''", "fecha_hasta TEXT DEFAULT ''"):
+        for col in (
+            "fecha_desde TEXT DEFAULT ''",
+            "fecha_hasta TEXT DEFAULT ''",
+            "estado TEXT DEFAULT 'ACTIVO'",
+            "fecha_anulacion TEXT DEFAULT ''",
+            "motivo_anulacion TEXT DEFAULT ''",
+            "usuario_anulacion TEXT DEFAULT ''",
+        ):
             try:
                 conn.execute(f"ALTER TABLE periodos ADD COLUMN {col}")
             except Exception:
@@ -954,6 +961,7 @@ def periodo_cerrar():
             WHERE p.fecha_desde = ?
               AND p.fecha_hasta = ?
               AND pe.departamento = ?
+              AND COALESCE(p.estado, 'ACTIVO') <> 'ANULADO'
             LIMIT 1
         """, (fecha_desde_req, fecha_hasta_req, _nombre_departamento_visible(departamento))).fetchone()
     if duplicado:
@@ -989,6 +997,7 @@ def periodo_cerrar():
     PERIODOS_DIR.mkdir(exist_ok=True)
     (PERIODOS_DIR / archivo).write_text(
         json.dumps({"cerrado_en": ahora,
+                    "estado": "ACTIVO",
                     "departamento": departamento,
                     "semana_visible_desde": semana_visible_desde,
                     "semana_visible_hasta": semana_visible_hasta,
@@ -1001,8 +1010,8 @@ def periodo_cerrar():
     # Guardar en base de datos
     with _get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, fecha_desde, fecha_hasta) VALUES (?,?,?,?,?,?)",
-            (ahora, desde, hasta, archivo, fecha_desde_p, fecha_hasta_p)
+            "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, fecha_desde, fecha_hasta, estado) VALUES (?,?,?,?,?,?,?)",
+            (ahora, desde, hasta, archivo, fecha_desde_p, fecha_hasta_p, "ACTIVO")
         )
         pid = cur.lastrowid
         for e in resumen:
@@ -1059,6 +1068,9 @@ def periodos_historial():
         rows = conn.execute("""
             SELECT p.id, p.cerrado_en, p.semana_desde, p.semana_hasta,
                    p.fecha_desde, p.fecha_hasta,
+                   COALESCE(p.estado, 'ACTIVO') as estado,
+                   p.fecha_anulacion, p.motivo_anulacion, p.usuario_anulacion,
+                   GROUP_CONCAT(DISTINCT pe.departamento) as departamentos,
                    COUNT(pe.id) as total,
                    SUM(pe.confirmado) as confirmados
             FROM periodos p
@@ -1076,11 +1088,57 @@ def periodos_historial():
             "semanas":     list(range(r["semana_desde"], r["semana_hasta"]+1)),
             "fecha_desde": r["fecha_desde"] or "",
             "fecha_hasta": r["fecha_hasta"] or "",
+            "estado":      r["estado"] or "ACTIVO",
+            "fecha_anulacion": (r["fecha_anulacion"] or "")[:16].replace("T", " "),
+            "motivo_anulacion": r["motivo_anulacion"] or "",
+            "usuario_anulacion": r["usuario_anulacion"] or "",
+            "departamentos": r["departamentos"] or "",
             "total":       total,
             "confirmados": conf,
             "pendientes":  total - conf,
         })
     return render_template("periodos_historial.html", cierres=cierres)
+
+
+@app.route("/periodos/anular/<int:pid>", methods=["POST"])
+def periodo_anular(pid):
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    motivo = request.form.get("motivo", "").strip()
+    usuario = session.get("usuario", "") or "sistema"
+    ahora = datetime.now().isoformat()
+
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": "Cierre no encontrado."}), 404
+        if (p["estado"] or "ACTIVO") == "ANULADO":
+            return jsonify({"error": "El cierre ya estaba anulado."}), 400
+
+        conn.execute("""
+            UPDATE periodos
+            SET estado='ANULADO',
+                fecha_anulacion=?,
+                motivo_anulacion=?,
+                usuario_anulacion=?
+            WHERE id=?
+        """, (ahora, motivo, usuario, pid))
+        conn.commit()
+
+    archivo = p["archivo"]
+    if archivo:
+        json_path = PERIODOS_DIR / archivo
+        if json_path.exists():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                data["estado"] = "ANULADO"
+                data["fecha_anulacion"] = ahora
+                data["motivo_anulacion"] = motivo
+                data["usuario_anulacion"] = usuario
+                json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
+    return jsonify({"ok": True})
 
 
 @app.route("/periodos/ver/<int:pid>")
