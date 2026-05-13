@@ -901,8 +901,23 @@ def periodo_cerrar():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
     desde = int(request.form.get("desde", 1))
     hasta = int(request.form.get("hasta", 1))
+    departamento = request.form.get("departamento", "").strip()
+    if not departamento:
+        return jsonify({"error": "SeleccionÃ¡ un departamento para cerrar el perÃ­odo."}), 400
+    with _get_db() as conn:
+        duplicado = conn.execute("""
+            SELECT 1
+            FROM periodos p
+            JOIN periodo_empleados pe ON pe.periodo_id = p.id
+            WHERE p.semana_desde = ?
+              AND p.semana_hasta = ?
+              AND pe.departamento = ?
+            LIMIT 1
+        """, (desde, hasta, departamento)).fetchone()
+    if duplicado:
+        return jsonify({"error": "Ya existe un cierre para ese departamento y rango."}), 400
 
-    resumen = _calcular_periodo(desde, hasta)
+    resumen = _calcular_periodo(desde, hasta, departamento)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     ahora = datetime.now().isoformat()
     archivo = f"periodo_{ts}.json"
@@ -910,22 +925,30 @@ def periodo_cerrar():
     # Extraer rango de fechas de las semanas incluidas
     meta = _cargar_metadata()
     _fdlist, _fhlist = [], []
+    semanas_cerradas = []
     for s in meta.get("semanas", []):
-        nd = s.get("num_depto", s.get("numero", 0))
+        depto = s.get("departamento", "") or "Todos"
+        if depto != departamento:
+            continue
         try:
-            if desde <= int(nd) <= hasta:
+            n_global = int(s.get("numero", 0))
+            if desde <= n_global <= hasta:
+                semanas_cerradas.append(n_global)
                 if s.get("fecha_desde"): _fdlist.append(s["fecha_desde"])
                 if s.get("fecha_hasta"): _fhlist.append(s["fecha_hasta"])
         except (TypeError, ValueError):
             pass
     fecha_desde_p = min(_fdlist) if _fdlist else ""
     fecha_hasta_p = max(_fhlist) if _fhlist else ""
+    if not semanas_cerradas:
+        return jsonify({"error": "No hay semanas activas de ese departamento en el rango seleccionado."}), 400
 
     # Guardar JSON de respaldo
     PERIODOS_DIR.mkdir(exist_ok=True)
     (PERIODOS_DIR / archivo).write_text(
         json.dumps({"cerrado_en": ahora,
-                    "semanas": list(range(desde, hasta+1)),
+                    "departamento": departamento,
+                    "semanas": semanas_cerradas,
                     "fecha_desde": fecha_desde_p, "fecha_hasta": fecha_hasta_p,
                     "empleados": resumen},
                    ensure_ascii=False, indent=2), encoding="utf-8"
@@ -951,7 +974,8 @@ def periodo_cerrar():
 
     # Limpiar solo los tokens del rango cerrado
     tokens_borrar = [t for t, d in _sesion.items()
-                     if desde <= d.get("semana", 0) <= hasta]
+                     if desde <= d.get("semana", 0) <= hasta
+                     and ((d.get("departamento", "") or "Todos") == departamento)]
     for t in tokens_borrar:
         del _sesion[t]
     _guardar_sesion(_sesion)
@@ -963,15 +987,21 @@ def periodo_cerrar():
         for f in CONFIRM_DIR.glob("*.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                if desde <= data.get("semana", 0) <= hasta:
+                if (desde <= data.get("semana", 0) <= hasta
+                        and ((data.get("departamento", "") or "Todos") == departamento)):
                     f.rename(archivo_dir / f.name)
             except Exception:
                 pass
 
     # Actualizar metadata: solo quitar las semanas cerradas
     meta = _cargar_metadata()
-    meta["semanas"] = [s for s in meta.get("semanas", [])
-                       if not (desde <= s.get("numero", 0) <= hasta)]
+    meta["semanas"] = [
+        s for s in meta.get("semanas", [])
+        if not (
+            desde <= s.get("numero", 0) <= hasta
+            and ((s.get("departamento", "") or "Todos") == departamento)
+        )
+    ]
     meta["semana_actual"] = max((s.get("numero", 0) for s in meta["semanas"]), default=0)
     _guardar_metadata(meta)
 

@@ -410,6 +410,8 @@ async function cerrarPeriodo() {
   if (document.getElementById('resumen-wrap').classList.contains('hidden')) {
     await previsualizar();
   }
+  const departamento = document.getElementById('departamento').value;
+  if (!departamento) { alert('Selecciona un departamento primero.'); return; }
   if (!confirm(
     `¿Cerrar el período semanas ${_desde} a ${_hasta}?\n\n` +
     `• Se generará el informe de cierre para imprimir / guardar como PDF.\n` +
@@ -420,6 +422,7 @@ async function cerrarPeriodo() {
   const fd = new FormData();
   fd.append('desde', _desde);
   fd.append('hasta', _hasta);
+  fd.append('departamento', departamento);
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
