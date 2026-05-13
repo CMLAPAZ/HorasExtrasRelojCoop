@@ -345,13 +345,21 @@ def _normalizar_departamento_web(nombre):
     base = unicodedata.normalize("NFKD", texto)
     base = "".join(c for c in base if not unicodedata.combining(c)).lower()
     base = re.sub(r"[^a-z0-9]+", " ", base).strip()
-    if base == "redes":
+    if base in ("redes", "rede", "red"):
         return "redes"
     if base in ("administracion", "admin"):
         return "administracion"
     if base == "todos":
         return "todos"
     return base
+
+def _nombre_departamento_visible(nombre):
+    normalizado = _normalizar_departamento_web(nombre)
+    if normalizado == "redes":
+        return "Redes"
+    if normalizado == "administracion":
+        return "Administración"
+    return nombre or ""
 
 def _leer_archivo(fs):
     nombre = (fs.filename or "").lower()
@@ -764,16 +772,23 @@ def periodo():
     semanas_selector = sorted([
         {"numero": s["numero"],
          "num_depto": s.get("num_depto", s["numero"]),
-         "departamento": s.get("departamento", ""),
+         "departamento": _normalizar_departamento_web(s.get("departamento", "")),
+         "departamento_visible": _nombre_departamento_visible(s.get("departamento", "")),
          "fecha_desde": s.get("fecha_desde", ""),
          "fecha_hasta": s.get("fecha_hasta", ""),
          "archivo": s.get("archivo", "")}
         for s in meta.get("semanas", [])
     ], key=lambda x: x["numero"])
-    departamentos = sorted({
-        s.get("departamento") or "Todos"
-        for s in meta.get("semanas", [])
-    })
+    deptos_map = {}
+    for s in meta.get("semanas", []):
+        valor = _normalizar_departamento_web(s.get("departamento", ""))
+        if not valor or valor == "todos":
+            continue
+        deptos_map[valor] = _nombre_departamento_visible(s.get("departamento", ""))
+    departamentos = [
+        {"valor": valor, "nombre": nombre}
+        for valor, nombre in sorted(deptos_map.items(), key=lambda item: item[1])
+    ]
     return render_template("periodo.html", semanas=semanas_selector,
                            departamentos=departamentos,
                            firma=FIRMA_SUPERVISOR)

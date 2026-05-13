@@ -93,9 +93,6 @@
       <label for="departamento">Departamento</label>
       <select id="departamento" onchange="filtrarSemanasPorDepartamento()" required>
         <option value="">Seleccionar departamento</option>
-        {% for d in departamentos %}
-        <option value="{{ d }}">{{ d }}</option>
-        {% endfor %}
       </select>
     </div>
     <div class="field">
@@ -169,9 +166,24 @@ function nombreDepartamentoVisible(depto) {
   return depto || '';
 }
 
+function normalizarSelectDepartamento() {
+  const select = document.getElementById('departamento');
+  select.innerHTML = '<option value="">Seleccionar departamento</option>';
+  const vistos = new Set();
+  _semanasDisponibles.forEach(s => {
+    const valor = normalizarDepartamento(s.departamento || s.departamento_visible);
+    if (!valor || valor === 'todos' || vistos.has(valor)) return;
+    const opt = document.createElement('option');
+    opt.value = valor;
+    opt.textContent = s.departamento_visible || nombreDepartamentoVisible(s.departamento);
+    select.appendChild(opt);
+    vistos.add(valor);
+  });
+}
+
 function etiquetaSemana(s) {
   const partes = [
-    nombreDepartamentoVisible(s.departamento) || 'Todos',
+    s.departamento_visible || nombreDepartamentoVisible(s.departamento) || 'Todos',
     `Semana ${s.num_depto || s.numero}`,
   ];
   if (s.fecha_desde || s.fecha_hasta) partes.push(`${s.fecha_desde || ''} al ${s.fecha_hasta || ''}`);
@@ -219,6 +231,8 @@ function filtrarSemanasPorDepartamento() {
   cargarOpcionesSemana(desdeEl, semanas, false);
   cargarOpcionesSemana(hastaEl, semanas, true);
 }
+
+normalizarSelectDepartamento();
 
 async function previsualizar() {
   const departamento = document.getElementById('departamento').value;
