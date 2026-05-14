@@ -1493,6 +1493,8 @@ def periodos_ver(pid):
     return render_template("periodo_detalle.html",
                            pid=pid,
                            cerrado_en=(p["cerrado_en"] or "")[:16].replace("T", " "),
+                           fecha_desde=p["fecha_desde"] or "",
+                           fecha_hasta=p["fecha_hasta"] or "",
                            semanas=semanas,
                            empleados=empleados,
                            firma=FIRMA_SUPERVISOR)

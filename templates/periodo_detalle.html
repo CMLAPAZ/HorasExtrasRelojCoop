@@ -15,6 +15,8 @@
     .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
     .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
+    .rango-cierre{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:.88rem;color:#374151}
+    .rango-cierre strong{color:#111827}
     .btn-print{padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
     .btn-print:hover{background:#4b5563}
     .tabla-wrap{overflow-x:auto}
@@ -66,6 +68,7 @@
   <div class="print-header">
     <div class="print-header-left">
       <h2>INFORME DE CIERRE — Semanas {{ semanas|join(', ') }}</h2>
+      {% if fecha_desde %}<p>Periodo: {{ fecha_desde }} al {{ fecha_hasta }}</p>{% endif %}
       <p>Cerrado: {{ cerrado_en }}</p>
     </div>
     <div class="print-header-right">
@@ -80,6 +83,11 @@
   <div class="card-header">
     <span class="card-title">Semanas {{ semanas|join(', ') }} — Cerrado {{ cerrado_en }}</span>
     <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
+  </div>
+
+  <div class="rango-cierre">
+    <strong>Periodo del cierre:</strong>
+    {% if fecha_desde %}{{ fecha_desde }} al {{ fecha_hasta }}{% else %}Sin rango de fechas registrado{% endif %}
   </div>
 
   <div class="tabla-wrap">
