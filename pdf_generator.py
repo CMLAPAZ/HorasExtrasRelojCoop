@@ -344,6 +344,13 @@ class PDFGeneral(FPDF):
 # --------------------------------------------  
 # GENERAR PDF GENERAL  
 # --------------------------------------------
+def _legajo_sort_key(x):
+    leg = str(x.get("legajo", ""))
+    try:
+        return int(leg)
+    except ValueError:
+        return 0
+
 def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Informe de Fichadas - {mes}"
@@ -352,7 +359,7 @@ def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None,
 
     pdf.portada_abreviaciones(mes)
 
-    for empleado in data:
+    for empleado in sorted(data, key=_legajo_sort_key):
         pdf.add_page()
         pdf.encabezado_empleado(
             empleado.get("legajo",""),
@@ -395,7 +402,7 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
     tot_fr   = 0
     tot_tar  = 0
 
-    for emp in data:
+    for emp in sorted(data, key=_legajo_sort_key):
         leg = emp.get("legajo","")
         nom = emp.get("nombre","")
         regs = emp.get("registros",[])

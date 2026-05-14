@@ -204,6 +204,13 @@ def _resolver_semana_confirmacion(data, meta):
             return s.get("numero", sem_conf), s.get("num_depto", s.get("numero", sem_conf))
     return sem_conf, data.get("semana_depto", sem_conf)
 
+def _legajo_key(x):
+    leg = str(x.get("legajo", ""))
+    try:
+        return int(leg)
+    except ValueError:
+        return 0
+
 def _score_confirmacion(data):
     dias = data.get("dias", []) or []
     descs = sum(1 for d in dias if str(d.get("descripcion", "")).strip())
@@ -285,7 +292,7 @@ def _leer_historial(semana=None, departamento=None):
                     mejores[key] = data
         except Exception:
             continue
-    items.extend(mejores.values())
+    items.extend(sorted(mejores.values(), key=_legajo_key))
     vistos.update(mejores.keys())
     # Fallback: empleados confirmados en _sesion sin archivo en confirmaciones/
     for d in _sesion.values():
@@ -316,7 +323,7 @@ def _leer_historial(semana=None, departamento=None):
             ],
         })
         vistos.add(key)
-    return items
+    return sorted(items, key=_legajo_key)
 
 def _cargar_telefonos():
     if TELEFONOS_FILE.exists():
@@ -414,8 +421,7 @@ def _leer_confirmaciones_cierre(periodo):
                 continue
     return sorted(items, key=lambda x: (
         _normalizar_departamento_web(x.get("departamento", "")),
-        x.get("nombre", ""),
-        str(x.get("legajo", "")),
+        _legajo_key(x),
     ))
 
 def _generar_pdf_confirmaciones_cierre(periodo, empleados):
@@ -796,6 +802,7 @@ def _procesar_empleados(df, departamentos=None):
     fecha_desde, fecha_hasta = _rango_lunes_domingo(todas_fechas)
     if fecha_desde and fecha_hasta:
         empleados = _filtrar_empleados_por_rango(empleados, fecha_desde, fecha_hasta)
+    empleados = sorted(empleados, key=_legajo_key)
     return empleados, fecha_desde, fecha_hasta
 
 def _rango_lunes_domingo(fechas):
@@ -1649,7 +1656,7 @@ def periodos_ver(pid):
         if not p:
             return "Período no encontrado", 404
         rows = conn.execute(
-            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, nombre",
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, CAST(legajo AS INTEGER)",
             (pid,)
         ).fetchall()
     empleados = []
@@ -1678,7 +1685,7 @@ def periodos_confirmaciones_pdf(pid):
         if not p:
             return "Periodo no encontrado", 404
         rows = conn.execute(
-            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, nombre",
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, CAST(legajo AS INTEGER)",
             (pid,)
         ).fetchall()
 
