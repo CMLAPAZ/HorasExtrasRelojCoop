@@ -154,6 +154,10 @@ def _cargar_semana_csv(n):
     f = SEMANAS_DIR / f"semana_{n}.csv"
     return pd.read_csv(f, encoding="utf-8") if f.exists() else None
 
+def _archivos_confirmacion():
+    CONFIRM_DIR.mkdir(exist_ok=True)
+    return sorted(CONFIRM_DIR.rglob("*.json"), reverse=True)
+
 def _parse_fecha(s):
     if not s:
         return None
@@ -215,7 +219,7 @@ def _leer_historial(semana=None, departamento=None):
     items = []
     vistos = set()  # departamento + legajo + semana ya cubiertos por archivos
     mejores = {}
-    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
+    for f in _archivos_confirmacion():
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
@@ -512,7 +516,7 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
     meta = _cargar_metadata()
     restauradas = 0
     mejores = {}
-    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
+    for f in _archivos_confirmacion():
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
@@ -545,6 +549,7 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
                 break
             d["confirmado"] = True
             d["confirmado_en"] = data.get("confirmado_en")
+            d["departamento"] = depto_conf
             d["semana_depto"] = sem_depto
             dias_por_fecha = {x.get("fecha"): x for x in data.get("dias", [])}
             for dia in d.get("dias", []):
