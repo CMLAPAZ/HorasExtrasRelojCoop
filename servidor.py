@@ -200,6 +200,12 @@ def _resolver_semana_confirmacion(data, meta):
             return s.get("numero", sem_conf), s.get("num_depto", s.get("numero", sem_conf))
     return sem_conf, data.get("semana_depto", sem_conf)
 
+def _score_confirmacion(data):
+    dias = data.get("dias", []) or []
+    descs = sum(1 for d in dias if str(d.get("descripcion", "")).strip())
+    confirmado_en = data.get("confirmado_en", "") or ""
+    return (descs, confirmado_en)
+
 def _leer_historial(semana=None, departamento=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
     # Solo leer confirmaciones del período activo (semanas en metadata)
@@ -208,6 +214,7 @@ def _leer_historial(semana=None, departamento=None):
     semanas_activas = {s.get("numero") for s in meta.get("semanas", [])}
     items = []
     vistos = set()  # departamento + legajo + semana ya cubiertos por archivos
+    mejores = {}
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -222,10 +229,14 @@ def _leer_historial(semana=None, departamento=None):
             if departamento and depto_conf != departamento:
                 continue
             if semana is None or sem_conf == semana:
-                items.append(data)
-                vistos.add(_clave_confirmacion(data))
+                key = _clave_confirmacion(data)
+                actual = mejores.get(key)
+                if actual is None or _score_confirmacion(data) > _score_confirmacion(actual):
+                    mejores[key] = data
         except Exception:
             continue
+    items.extend(mejores.values())
+    vistos.update(mejores.keys())
     # Fallback: empleados confirmados en _sesion sin archivo en confirmaciones/
     for d in _sesion.values():
         if not d.get("confirmado"):
@@ -500,6 +511,7 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
     departamento = _normalizar_departamento_web(departamento)
     meta = _cargar_metadata()
     restauradas = 0
+    mejores = {}
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -509,6 +521,18 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
         if departamento and depto_conf != departamento:
             continue
         sem_conf, sem_depto = _resolver_semana_confirmacion(data, meta)
+        data["semana"] = sem_conf
+        data["semana_depto"] = sem_depto
+        legajo = str(data.get("legajo", ""))
+        key = (depto_conf, legajo, sem_conf)
+        actual = mejores.get(key)
+        if actual is None or _score_confirmacion(data) > _score_confirmacion(actual):
+            mejores[key] = data
+
+    for data in mejores.values():
+        depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
+        sem_conf = data.get("semana", 0)
+        sem_depto = data.get("semana_depto", sem_conf)
         legajo = str(data.get("legajo", ""))
         for d in _sesion.values():
             if str(d.get("legajo", "")) != legajo:
