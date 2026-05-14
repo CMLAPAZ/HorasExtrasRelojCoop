@@ -312,7 +312,7 @@ async function procesar(force) {
 
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
-    data.empleados.forEach(e => {
+    data.empleados.sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo)).forEach(e => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${e.legajo}</td>
@@ -402,7 +402,8 @@ async function verLinks(n) {
     tbody.innerHTML = `<tr><td colspan="5" class="td-vacio">Sin datos disponibles</td></tr>`;
     return;
   }
-  data.forEach(e => {
+  data.sort((a, b) => (b.confirmado ? 1 : 0) - (a.confirmado ? 1 : 0) || parseInt(a.legajo) - parseInt(b.legajo))
+    .forEach(e => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${e.legajo}</td>
@@ -448,7 +449,7 @@ async function regenerarLinks(n) {
   if (!data.empleados.length) {
     tbody.innerHTML = `<tr><td colspan="5" class="td-vacio">Todos ya confirmaron.</td></tr>`;
   } else {
-    data.empleados.forEach(e => {
+    data.empleados.sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo)).forEach(e => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${e.legajo}</td>
@@ -484,7 +485,8 @@ async function cargarEstado() {
     if (!data.length) return;
     const tbody = document.getElementById('tbody-estado');
     tbody.innerHTML = '';
-    data.forEach(e => {
+    data.sort((a, b) => (b.confirmado ? 1 : 0) - (a.confirmado ? 1 : 0) || parseInt(a.legajo) - parseInt(b.legajo))
+      .forEach(e => {
       const descs = (e.dias || []).map(d =>
         `<div class="desc-dia"><span class="desc-fecha">${d.fecha}</span> — ${d.descripcion || '<em>sin descripción</em>'}</div>`
       ).join('');
