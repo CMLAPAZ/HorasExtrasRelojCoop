@@ -10,7 +10,6 @@ import socket
 from io import BytesIO
 
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
-from pdf_generator import PDFGeneral
 
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
@@ -317,6 +316,8 @@ def _leer_confirmaciones_cierre(periodo):
     ))
 
 def _generar_pdf_confirmaciones_cierre(periodo, empleados):
+    from pdf_generator import PDFGeneral
+
     confirmaciones = _leer_confirmaciones_cierre(periodo)
     confirmados = {
         (_normalizar_departamento_web(c.get("departamento", "")), str(c.get("legajo", "")))
