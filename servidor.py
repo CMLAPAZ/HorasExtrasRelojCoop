@@ -430,6 +430,30 @@ def _pendientes_cierre(confirmaciones, empleados):
         and (_normalizar_departamento_web(e.get("departamento", "")), str(e.get("legajo", ""))) not in confirmados
     ]
 
+def _mapa_semanas_visibles_periodo(periodo):
+    archivo = periodo.get("archivo") or ""
+    json_path = PERIODOS_DIR / archivo
+    if not json_path.exists():
+        return {}
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    semanas = data.get("semanas") or []
+    try:
+        visible_desde = int(data.get("semana_visible_desde") or semanas[0])
+    except Exception:
+        visible_desde = semanas[0] if semanas else 0
+    return {int(global_n): visible_desde + i for i, global_n in enumerate(semanas)}
+
+def _aplicar_semanas_visibles(empleados, periodo):
+    mapa = _mapa_semanas_visibles_periodo(periodo)
+    if not mapa:
+        return empleados
+    for e in empleados:
+        e["semanas"] = [mapa.get(int(s), s) for s in e.get("semanas", [])]
+    return empleados
+
 _sesion = _cargar_sesion()
 _init_db()
 
@@ -1174,6 +1198,14 @@ def periodo_cerrar():
     fecha_hasta_p = fecha_hasta_req or (max(_fhlist) if _fhlist else "")
     if not semanas_cerradas:
         return jsonify({"error": "No hay semanas activas de ese departamento en el rango seleccionado."}), 400
+    try:
+        visible_desde_int = int(semana_visible_desde or semanas_cerradas[0])
+    except Exception:
+        visible_desde_int = semanas_cerradas[0]
+    semanas_visibles_mapa = {
+        int(n): visible_desde_int + i
+        for i, n in enumerate(semanas_cerradas)
+    }
 
     # Guardar JSON de respaldo
     PERIODOS_DIR.mkdir(exist_ok=True)
@@ -1202,7 +1234,7 @@ def periodo_cerrar():
                 (pid, str(e.get("legajo","")), e.get("nombre",""), e.get("departamento",""),
                  e.get("ot50","0h"), e.get("ot100","0h"),
                  e.get("comidas",0), e.get("francos",0), e.get("tardanzas",0),
-                 json.dumps(e.get("semanas",[])),
+                 json.dumps([semanas_visibles_mapa.get(int(s), s) for s in e.get("semanas",[])]),
                  1 if e.get("confirmado") else 0)
             )
         conn.commit()
@@ -1340,6 +1372,7 @@ def periodos_ver(pid):
         d["semanas"]   = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
+    empleados = _aplicar_semanas_visibles(empleados, dict(p))
     semanas = list(range(p["semana_desde"], p["semana_hasta"]+1))
     return render_template("periodo_detalle.html",
                            pid=pid,
@@ -1368,6 +1401,7 @@ def periodos_confirmaciones_pdf(pid):
         d["semanas"] = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
+    empleados = _aplicar_semanas_visibles(empleados, periodo)
 
     try:
         pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
