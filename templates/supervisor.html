@@ -6,71 +6,81 @@
   <title>CM Horas Extras — Supervisor</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
-    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-    h1{font-size:1.3rem}
-    .nav{display:flex;gap:14px}
-    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
-    .nav a:hover{text-decoration:underline}
-    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
-    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
-    .card-title-inline{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
-    label{display:block;font-weight:600;margin-bottom:8px;font-size:.9rem}
-    input[type=file]{width:100%;padding:10px;border:2px dashed #d1d5db;border-radius:8px;cursor:pointer;font-size:.9rem}
-    .btn{padding:11px 28px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:14px}
-    .btn:hover{background:#2d2d4e}
-    .btn-sm{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer}
-    .btn-sm:hover{background:#2d2d4e}
-    .btn-outline{padding:5px 12px;background:#fff;color:#1a1a2e;border:1px solid #d1d5db;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
-    .btn-outline:hover{background:#f3f4f6}
-    .btn-warn{padding:5px 12px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
-    .btn-warn:hover{background:#fffbeb}
-    .btn-del{padding:5px 12px;background:#fff;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
-    .btn-del:hover{background:#fee2e2}
-    .warn-dup{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-top:10px}
-    .aviso-local{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;font-size:.85rem;margin-bottom:10px}
-    .deptos-label{font-size:.82rem;font-weight:600;color:#555;margin:12px 0 8px}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;padding:22px;color:#111827;max-width:1240px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a{height:34px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650}
+    .nav a:hover{border-color:#94a3b8;background:#f8fafc}
+    .nav button{height:34px;padding:0 12px;border-radius:7px!important;margin-left:0!important}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px}
+    .card-title,.card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
+    .card-title{margin-bottom:14px}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+    label{display:block;font-weight:700;margin-bottom:8px;font-size:.86rem;color:#334155}
+    input[type=file]{width:100%;padding:14px;border:1px dashed #94a3b8;border-radius:8px;cursor:pointer;font-size:.9rem;background:#f8fafc;color:#334155}
+    input[type=file]:hover{background:#f1f5f9;border-color:#64748b}
+    .btn{height:40px;padding:0 22px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.92rem;font-weight:750;cursor:pointer;margin-top:14px}
+    .btn:hover,.btn-sm:hover,.btn-sm-mt:hover{background:#25314a}
+    .btn-sm,.btn-sm-mt{height:32px;padding:0 12px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer}
+    .btn-sm-mt{margin-top:12px}
+    .btn-outline,.btn-warn,.btn-del{height:30px;padding:0 10px;background:#fff;border:1px solid #d7dde5;border-radius:7px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;color:#334155}
+    .btn-outline:hover{background:#f8fafc;border-color:#94a3b8}
+    .btn-warn{color:#92400e;border-color:#fde68a;background:#fffbeb}
+    .btn-warn:hover{background:#fef3c7}
+    .btn-del{color:#b91c1c;border-color:#fecaca;background:#fff}
+    .btn-del:hover{background:#fef2f2}
+    .warn-dup,.aviso-local{color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;font-size:.84rem;margin-top:10px}
+    .aviso-local{margin-bottom:10px}
+    .deptos-label{font-size:.82rem;font-weight:700;color:#475569;margin:12px 0 8px}
     .deptos-checks{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-    .depto-check{display:flex;align-items:center;gap:5px;font-size:.88rem;background:#f8f9fb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 10px;cursor:pointer}
+    .depto-check{display:flex;align-items:center;gap:5px;font-size:.88rem;background:#f8fafc;border:1px solid #e5e7eb;border-radius:7px;padding:6px 10px;cursor:pointer}
     .depto-check input{cursor:pointer}
-    .badge-depto{font-size:.7rem;background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:20px;font-weight:600;margin-left:4px}
-    .wa-btn{display:inline-block;background:#25d366;color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:4px;text-decoration:none;white-space:nowrap}
+    .badge-depto{font-size:.7rem;background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:999px;font-weight:750;margin-left:4px}
+    .wa-btn{display:inline-flex;height:26px;align-items:center;background:#16a34a;color:#fff;font-size:.75rem;font-weight:750;padding:0 10px;border-radius:6px;text-decoration:none;white-space:nowrap}
     .wa-btn:hover{background:#1da851}
-    .tel-ok{font-size:.75rem;color:#065f46;background:#d1fae5;padding:3px 10px;border-radius:4px}
+    .tel-ok{font-size:.75rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:3px 10px;border-radius:999px;font-weight:750}
     .depto-field{margin-top:12px}
     .depto-hint{font-weight:400;color:#888}
-    .depto-input{width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;margin-top:4px}
+    .depto-input{width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;margin-top:4px;background:#fff}
     .tel-error{color:#dc2626;font-size:.85rem;margin-top:8px}
     .btn-sm-mt{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:12px}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
     .tabla-wrap{overflow-x:auto}
-    table{width:100%;border-collapse:collapse;font-size:.85rem}
-    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+    th{background:#f8fafc;text-align:left;padding:10px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+    td{padding:10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
     tr:last-child td{border-bottom:none}
     .link-url{word-break:break-all;color:#1d4ed8;font-size:.8rem}
-    .copy-btn{font-size:.75rem;padding:3px 10px;background:#e5e7eb;border:none;border-radius:4px;cursor:pointer;white-space:nowrap}
-    .copy-btn:hover{background:#d1d5db}
-    .ok{color:#065f46;font-weight:600}
-    .pend{color:#92400e}
-    .badge-semana{background:#dbeafe;color:#1e40af;font-size:.75rem;font-weight:700;padding:3px 12px;border-radius:20px}
+    .copy-btn{font-size:.75rem;height:26px;padding:0 10px;background:#eef2f7;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;white-space:nowrap;color:#334155;font-weight:700}
+    .copy-btn:hover{background:#e2e8f0}
+    .ok{color:#166534;font-weight:750}
+    .pend{color:#92400e;font-weight:700}
+    .badge-semana{background:#dbeafe;color:#1e40af;font-size:.75rem;font-weight:750;padding:3px 12px;border-radius:999px}
     .progress-wrap{min-width:90px}
-    .progress-bar-bg{background:#f0f0f0;border-radius:4px;height:7px;overflow:hidden;margin-bottom:3px}
+    .progress-bar-bg{background:#e5e7eb;border-radius:999px;height:7px;overflow:hidden;margin-bottom:4px}
     .progress-bar{background:#22c55e;height:100%;transition:width .3s}
     .progress-text{font-size:.73rem;color:#555}
     .sem-n{font-weight:700}
     .sem-fecha{font-size:.75rem;color:#888;display:block;margin-top:2px}
-    .vacio{color:#888;font-size:.85rem;padding:16px 0;text-align:center}
+    .vacio{color:#64748b;font-size:.88rem;padding:18px 0;text-align:center}
     .actions-cell{display:flex;gap:6px;flex-wrap:wrap}
-    .desc-dia{font-size:.78rem;color:#555;margin-top:3px;padding:4px 8px;background:#f8f9fb;border-radius:4px;border-left:3px solid #d1d5db}
+    .desc-dia{font-size:.78rem;color:#475569;margin-top:3px;padding:5px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #cbd5e1}
     .desc-fecha{font-weight:600;color:#1a1a2e}
-    .info-ok{font-size:.82rem;color:#065f46;background:#d1fae5;padding:8px 12px;border-radius:6px;margin-bottom:12px}
+    .info-ok{font-size:.82rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:8px 12px;border-radius:7px;margin-bottom:12px}
     .hidden{display:none}
     .td-fechas{font-size:.82rem}
     .td-cargando{color:#888}
     .td-vacio{text-align:center;color:#888}
+    @media (max-width:760px){
+      body{padding:14px}
+      .topbar{display:block}
+      .nav{justify-content:flex-start;margin-top:12px}
+      .card-header{display:block}
+      .card-header .btn-sm{margin-top:10px}
+      table{font-size:.8rem}
+    }
   </style>
 </head>
 <body>

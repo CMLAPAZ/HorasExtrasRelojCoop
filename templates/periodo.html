@@ -6,52 +6,53 @@
   <title>CM Horas Extras — Períodos</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
-    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-    h1{font-size:1.3rem}
-    .nav{display:flex;gap:14px}
-    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
-    .nav a:hover{text-decoration:underline}
-    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;padding:22px;color:#111827;max-width:1240px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a{height:34px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650}
+    .nav a:hover{border-color:#94a3b8;background:#f8fafc}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px}
+    .card-title{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:14px;font-weight:800}
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
-    .card-title-inline{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
+    .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
     .selector{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
     .field{display:flex;flex-direction:column;gap:4px}
-    label{font-size:.82rem;font-weight:600;color:#555}
-    select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit;min-width:260px}
-    select:focus{outline:none;border-color:#1a1a2e}
-    .btn{padding:11px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;align-self:flex-end}
-    .btn:hover{background:#2d2d4e}
-    .btn-red{padding:8px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
-    .btn-red:hover{background:#b91c1c}
-    .btn-green{padding:8px 16px;background:#059669;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
-    .btn-green:hover{background:#047857}
-    .btn-print{padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
-    .btn-print:hover{background:#4b5563}
+    label{font-size:.82rem;font-weight:700;color:#334155}
+    select{padding:9px 10px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;min-width:260px;background:#fff;color:#111827}
+    select:focus{outline:2px solid #bfdbfe;border-color:#60a5fa}
+    .btn,.btn-red,.btn-green,.btn-print{height:36px;padding:0 14px;border:none;border-radius:7px;font-size:.82rem;font-weight:750;cursor:pointer;align-self:flex-end}
+    .btn{background:#172033;color:#fff;height:40px;padding:0 22px;font-size:.9rem}
+    .btn:hover{background:#25314a}
+    .btn-red{background:#fff;color:#b91c1c;border:1px solid #fecaca}
+    .btn-red:hover{background:#fef2f2}
+    .btn-green{background:#fff;color:#166534;border:1px solid #bbf7d0}
+    .btn-green:hover{background:#f0fdf4}
+    .btn-print{background:#fff;color:#334155;border:1px solid #d7dde5}
+    .btn-print:hover{background:#f8fafc;border-color:#94a3b8}
     .acciones{display:flex;gap:8px;flex-wrap:wrap}
     .tabla-wrap{overflow-x:auto}
-    table{width:100%;border-collapse:collapse;font-size:.85rem}
-    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+    th{background:#f8fafc;text-align:left;padding:10px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+    td{padding:10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
     tr:last-child td{border-bottom:none}
     .ot50{color:#d97706;font-weight:600}
     .ot100{color:#dc2626;font-weight:600}
     .emp-nombre{font-weight:600}
     .ok{color:#065f46;font-weight:600}
     .pend{color:#92400e}
-    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;padding:7px 10px}
-    .subtotal-row td{background:#f0fdf4;font-weight:700;font-size:.82rem;color:#065f46;border-top:1px solid #bbf7d0}
-    .total-row td{background:#1a1a2e;color:#fff;font-weight:700;border-top:2px solid #1a1a2e}
+    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:800;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px}
+    .subtotal-row td{background:#f0fdf4;font-weight:750;font-size:.82rem;color:#166534;border-top:1px solid #bbf7d0}
+    .total-row td{background:#172033;color:#fff;font-weight:800;border-top:2px solid #172033}
     .total-row .ot50{color:#fcd34d}
     .total-row .ot100{color:#fca5a5}
-    .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
+    .vacio{color:#64748b;font-size:.9rem;padding:22px 0;text-align:center}
     .hidden{display:none}
-    .aviso{font-size:.82rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+    .aviso{font-size:.84rem;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;margin-bottom:14px}
     .filtro-deptos{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
     .filtro-label{font-size:.78rem;font-weight:600;color:#555}
-    .depto-btn{padding:4px 12px;border:1px solid #d1d5db;border-radius:20px;font-size:.78rem;cursor:pointer;background:#fff;color:#555}
-    .depto-btn.activo{background:#1a1a2e;color:#fff;border-color:#1a1a2e}
+    .depto-btn{height:28px;padding:0 12px;border:1px solid #d7dde5;border-radius:999px;font-size:.78rem;cursor:pointer;background:#fff;color:#475569;font-weight:700}
+    .depto-btn.activo{background:#172033;color:#fff;border-color:#172033}
     .print-header{display:none}
     .print-footer{display:none}
 
@@ -69,6 +70,17 @@
       .firma-linea{border-top:1px solid #1a1a2e;width:180px;margin-top:28px;padding-top:4px;font-size:.75rem;color:#1a1a2e;font-weight:600}
       .depto-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .total-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    }
+    @media (max-width:760px){
+      body{padding:14px}
+      .topbar{display:block}
+      .nav{justify-content:flex-start;margin-top:12px}
+      .selector{display:block}
+      .field{margin-bottom:12px}
+      select{width:100%;min-width:0}
+      .btn{width:100%}
+      .card-header{display:block}
+      .acciones{margin-top:10px}
     }
   </style>
 </head>
