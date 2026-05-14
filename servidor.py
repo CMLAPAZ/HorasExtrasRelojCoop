@@ -649,7 +649,7 @@ def _normalizar_departamento_web(nombre):
     base = re.sub(r"[^a-z0-9]+", " ", base).strip()
     if base in ("redes", "rede", "red"):
         return "redes"
-    if base in ("administracion", "admin"):
+    if base in ("administracion", "administraciom", "administrativo", "admin"):
         return "administracion"
     if base == "todos":
         return "todos"
