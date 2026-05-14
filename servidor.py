@@ -1316,6 +1316,16 @@ def periodo():
 def _calcular_periodo(desde, hasta, departamento=None):
     """Acumula totales del período incluyendo no confirmados."""
     departamento = _normalizar_departamento_web(departamento)
+
+    # Mapa semana global → num_depto para mostrar el número visible al usuario
+    meta = _cargar_metadata()
+    semana_visible = {}
+    for s in meta.get("semanas", []):
+        depto_s = _normalizar_departamento_web(s.get("departamento", "") or "Todos")
+        if not departamento or depto_s == departamento or depto_s == "todos":
+            num_g = s.get("numero", 0)
+            semana_visible[num_g] = s.get("num_depto", num_g)
+
     por_empleado = {}
 
     for c in _leer_historial():
@@ -1344,7 +1354,8 @@ def _calcular_periodo(desde, hasta, departamento=None):
         e["comidas"]   += c["totales"].get("comidas", 0)
         e["francos"]   += sum(1 for dia in c.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += c["totales"].get("tardanzas", 0)
-        if sem not in e["semanas"]: e["semanas"].append(sem)
+        sem_vis = semana_visible.get(sem, sem)
+        if sem_vis not in e["semanas"]: e["semanas"].append(sem_vis)
         e["dias"].extend(c.get("dias", []))
         e["conf_sem"].add(sem)
 
@@ -1377,7 +1388,8 @@ def _calcular_periodo(desde, hasta, departamento=None):
         e["comidas"]   += tot.get("comidas", 0)
         e["francos"]   += sum(1 for dia in d.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += tot.get("tardanzas", 0)
-        if sem not in e["semanas"]: e["semanas"].append(sem)
+        sem_vis = semana_visible.get(sem, sem)
+        if sem_vis not in e["semanas"]: e["semanas"].append(sem_vis)
         e["pend_sem"].add(sem)
 
 
