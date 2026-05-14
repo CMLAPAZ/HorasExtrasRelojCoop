@@ -110,7 +110,7 @@
       <div class="modal-subtitulo" id="modal-subtitulo"></div>
     </div>
     <div class="modal-body">
-      <div class="modal-alerta" id="modal-alerta-pend"></div>
+      <div class="modal-alerta hidden" id="modal-alerta-pend"></div>
       <div class="modal-detalle">
         Los links <strong>pendientes quedarán inválidos</strong> y se generarán nuevos.<br>
         Los empleados que ya confirmaron <strong>no se tocan</strong>.
@@ -470,6 +470,7 @@ function regenerarLinks(n) {
     : `Semana ${n}`;
 
   document.getElementById('modal-subtitulo').textContent = `Regenerar links — ${label}`;
+  document.getElementById('modal-subtitulo').style.display = 'block';
   const alertEl = document.getElementById('modal-alerta-pend');
   if (pendientes > 0) {
     alertEl.textContent = `⚠️ Hay ${pendientes} empleado(s) que aún no confirmaron. Sus links anteriores quedarán inválidos y deberás reenviarles el nuevo link.`;
