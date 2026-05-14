@@ -1076,21 +1076,36 @@ def admin_restaurar_confirmaciones():
 def historial():
     if not _autenticado(): return _requiere_auth()
     departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    semana_raw = request.args.get("semana", "").strip()
+    try:
+        semana = int(semana_raw) if semana_raw else None
+    except ValueError:
+        semana = None
     todos = _leer_historial()
     deptos_map = {}
+    semanas_map = {}
     for item in todos:
         valor = _normalizar_departamento_web(item.get("departamento", ""))
         if not valor or valor == "todos":
             continue
         deptos_map[valor] = _nombre_departamento_visible(item.get("departamento", ""))
+        sem_valor = item.get("semana")
+        if sem_valor:
+            semanas_map[sem_valor] = item.get("semana_depto", sem_valor)
     departamentos = [
         {"valor": valor, "nombre": nombre}
         for valor, nombre in sorted(deptos_map.items(), key=lambda item: item[1])
     ]
-    items = _leer_historial(departamento=departamento) if departamento else todos
+    semanas = [
+        {"valor": valor, "nombre": nombre}
+        for valor, nombre in sorted(semanas_map.items(), key=lambda item: item[1])
+    ]
+    items = _leer_historial(semana=semana, departamento=departamento)
     return render_template("historial.html", items=items,
                            departamentos=departamentos,
-                           departamento_actual=departamento)
+                           departamento_actual=departamento,
+                           semanas=semanas,
+                           semana_actual=semana)
 
 
 @app.route("/periodo")
