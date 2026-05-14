@@ -562,6 +562,59 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
         _guardar_sesion(_sesion)
     return restauradas
 
+def _recalcular_totales_token(d):
+    ot50 = ot100 = timedelta(0)
+    comidas = francos = tardanzas = 0
+    excluido = d.get("excluido_ot") or str(d.get("legajo", "")) in _cargar_excluidos_ot()
+    for dia in d.get("dias", []):
+        if not excluido:
+            ot50 += _parse_td(dia.get("ot50", "00:00:00"))
+            ot100 += _parse_td(dia.get("ot100", "00:00:00"))
+        comidas += int(dia.get("comida", 0))
+        francos += int(dia.get("franco", 0))
+        tardanzas += int(dia.get("tarde", 0))
+    d["totales"] = {
+        "ot50": _fmt_hm(ot50),
+        "ot100": _fmt_hm(ot100),
+        "comidas": comidas,
+        "francos": francos,
+        "tardanzas": tardanzas,
+    }
+
+def _recortar_semana_lunes_domingo(n, departamento=None):
+    departamento = _normalizar_departamento_web(departamento)
+    tokens = [
+        (t, d) for t, d in _sesion.items()
+        if d.get("semana") == n
+        and (not departamento or _normalizar_departamento_web(d.get("departamento", "") or "Todos") == departamento)
+    ]
+    fechas = [dia.get("fecha", "") for _, d in tokens for dia in d.get("dias", [])]
+    fecha_desde, fecha_hasta = _rango_lunes_domingo(fechas)
+    desde = _parse_fecha(fecha_desde)
+    hasta = _parse_fecha(fecha_hasta)
+    if not desde or not hasta:
+        return {"ok": False, "error": "No hay fechas validas para recortar."}
+
+    afectados = 0
+    for _, d in tokens:
+        dias = [
+            dia for dia in d.get("dias", [])
+            if (lambda f: f and desde <= f <= hasta)(_parse_fecha(dia.get("fecha", "")))
+        ]
+        if len(dias) != len(d.get("dias", [])):
+            afectados += 1
+        d["dias"] = dias
+        _recalcular_totales_token(d)
+    _guardar_sesion(_sesion)
+
+    meta = _cargar_metadata()
+    for s in meta.get("semanas", []):
+        if s.get("numero") == n and (not departamento or _normalizar_departamento_web(s.get("departamento", "") or "Todos") == departamento):
+            s["fecha_desde"] = fecha_desde
+            s["fecha_hasta"] = fecha_hasta
+    _guardar_metadata(meta)
+    return {"ok": True, "semana": n, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "tokens_afectados": afectados}
+
 _sesion = _cargar_sesion()
 _init_db()
 
@@ -694,9 +747,36 @@ def _procesar_empleados(df, departamentos=None):
         empleados = [e for e in empleados if e.get("departamento","") in departamentos]
     empleados = _aplicar_exclusiones_ot(empleados)
     todas_fechas = [r["Fecha"] for emp in empleados for r in emp["registros"] if r["Fecha"]]
-    fecha_desde = min(todas_fechas) if todas_fechas else ""
-    fecha_hasta = max(todas_fechas) if todas_fechas else ""
+    fecha_desde, fecha_hasta = _rango_lunes_domingo(todas_fechas)
+    if fecha_desde and fecha_hasta:
+        empleados = _filtrar_empleados_por_rango(empleados, fecha_desde, fecha_hasta)
     return empleados, fecha_desde, fecha_hasta
+
+def _rango_lunes_domingo(fechas):
+    fechas_dt = sorted(f for f in (_parse_fecha(x) for x in fechas) if f)
+    if not fechas_dt:
+        return "", ""
+    primer_lunes = next((f for f in fechas_dt if f.weekday() == 0), None)
+    inicio = primer_lunes or (fechas_dt[0] - timedelta(days=fechas_dt[0].weekday()))
+    fin = inicio + timedelta(days=6)
+    return inicio.isoformat(), fin.isoformat()
+
+def _filtrar_empleados_por_rango(empleados, fecha_desde, fecha_hasta):
+    desde = _parse_fecha(fecha_desde)
+    hasta = _parse_fecha(fecha_hasta)
+    if not desde or not hasta:
+        return empleados
+    filtrados = []
+    for emp in empleados:
+        registros = [
+            r for r in emp.get("registros", [])
+            if (lambda f: f and desde <= f <= hasta)(_parse_fecha(r.get("Fecha", "")))
+        ]
+        if registros:
+            emp = dict(emp)
+            emp["registros"] = registros
+            filtrados.append(emp)
+    return filtrados
 
 def _crear_tokens(empleados, semana_n, semana_depto, base_url):
     tokens_creados = []
@@ -1070,6 +1150,35 @@ def admin_restaurar_confirmaciones():
     departamento = request.form.get("departamento", "")
     restauradas = _restaurar_confirmaciones_desde_archivos(departamento)
     return jsonify({"ok": True, "restauradas": restauradas})
+
+
+@app.route("/admin/recortar-semana", methods=["POST"])
+def admin_recortar_semana():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    departamento = request.form.get("departamento", "")
+    try:
+        n = int(request.form.get("semana", "0"))
+    except ValueError:
+        return jsonify({"error": "Semana invalida."}), 400
+    try:
+        semana_depto = int(request.form.get("semana_depto", "0"))
+    except ValueError:
+        semana_depto = 0
+    if n <= 0 and semana_depto > 0 and departamento:
+        depto = _normalizar_departamento_web(departamento)
+        meta = _cargar_metadata()
+        sem = next((
+            s for s in meta.get("semanas", [])
+            if _normalizar_departamento_web(s.get("departamento", "") or "Todos") == depto
+            and int(s.get("num_depto", s.get("numero", 0))) == semana_depto
+        ), None)
+        if sem:
+            n = int(sem.get("numero", 0))
+    if n <= 0:
+        return jsonify({"error": "Semana requerida."}), 400
+    resultado = _recortar_semana_lunes_domingo(n, departamento)
+    status = 200 if resultado.get("ok") else 400
+    return jsonify(resultado), status
 
 
 @app.route("/historial")
