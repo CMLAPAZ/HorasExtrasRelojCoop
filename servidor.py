@@ -161,6 +161,34 @@ def _clave_confirmacion(data):
         data.get("semana", 0),
     )
 
+def _fechas_confirmacion(data):
+    fechas = []
+    for d in data.get("dias", []) or []:
+        f = _parse_fecha(d.get("fecha", ""))
+        if f:
+            fechas.append(f)
+    return fechas
+
+def _resolver_semana_confirmacion(data, meta):
+    sem_conf = data.get("semana", 0)
+    depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
+    for s in meta.get("semanas", []):
+        if s.get("numero") == sem_conf and _normalizar_departamento_web(s.get("departamento", "") or "Todos") == depto_conf:
+            return sem_conf, s.get("num_depto", sem_conf)
+
+    fechas = _fechas_confirmacion(data)
+    if not fechas:
+        return sem_conf, data.get("semana_depto", sem_conf)
+    desde_conf, hasta_conf = min(fechas), max(fechas)
+    for s in meta.get("semanas", []):
+        if _normalizar_departamento_web(s.get("departamento", "") or "Todos") != depto_conf:
+            continue
+        desde_sem = _parse_fecha(s.get("fecha_desde", ""))
+        hasta_sem = _parse_fecha(s.get("fecha_hasta", ""))
+        if desde_sem and hasta_sem and desde_conf <= hasta_sem and hasta_conf >= desde_sem:
+            return s.get("numero", sem_conf), s.get("num_depto", s.get("numero", sem_conf))
+    return sem_conf, data.get("semana_depto", sem_conf)
+
 def _leer_historial(semana=None, departamento=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
     # Solo leer confirmaciones del período activo (semanas en metadata)
@@ -172,8 +200,11 @@ def _leer_historial(semana=None, departamento=None):
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            sem_conf = data.get("semana", 0)
             depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
+            sem_conf, sem_depto = _resolver_semana_confirmacion(data, meta)
+            data["semana_original"] = data.get("semana", sem_conf)
+            data["semana"] = sem_conf
+            data["semana_depto"] = sem_depto
             # Ignorar confirmaciones de períodos anteriores
             if semanas_activas and sem_conf not in semanas_activas:
                 continue
@@ -453,6 +484,43 @@ def _aplicar_semanas_visibles(empleados, periodo):
     for e in empleados:
         e["semanas"] = [mapa.get(int(s), s) for s in e.get("semanas", [])]
     return empleados
+
+def _restaurar_confirmaciones_desde_archivos(departamento=None):
+    departamento = _normalizar_departamento_web(departamento)
+    meta = _cargar_metadata()
+    restauradas = 0
+    for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
+        if departamento and depto_conf != departamento:
+            continue
+        sem_conf, sem_depto = _resolver_semana_confirmacion(data, meta)
+        legajo = str(data.get("legajo", ""))
+        for d in _sesion.values():
+            if str(d.get("legajo", "")) != legajo:
+                continue
+            if d.get("semana") != sem_conf:
+                continue
+            if _normalizar_departamento_web(d.get("departamento", "") or "Todos") != depto_conf:
+                continue
+            if d.get("confirmado"):
+                break
+            d["confirmado"] = True
+            d["confirmado_en"] = data.get("confirmado_en")
+            d["semana_depto"] = sem_depto
+            dias_por_fecha = {x.get("fecha"): x for x in data.get("dias", [])}
+            for dia in d.get("dias", []):
+                confirmado = dias_por_fecha.get(dia.get("fecha"))
+                if confirmado:
+                    dia["descripcion"] = confirmado.get("descripcion", dia.get("descripcion", ""))
+            restauradas += 1
+            break
+    if restauradas:
+        _guardar_sesion(_sesion)
+    return restauradas
 
 _sesion = _cargar_sesion()
 _init_db()
@@ -954,6 +1022,14 @@ def estado():
     ]
     resultado.sort(key=lambda x: (x["semana"], not x["confirmado"], x["nombre"]))
     return jsonify(resultado)
+
+
+@app.route("/admin/restaurar-confirmaciones", methods=["POST"])
+def admin_restaurar_confirmaciones():
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    departamento = request.form.get("departamento", "")
+    restauradas = _restaurar_confirmaciones_desde_archivos(departamento)
+    return jsonify({"ok": True, "restauradas": restauradas})
 
 
 @app.route("/historial")
