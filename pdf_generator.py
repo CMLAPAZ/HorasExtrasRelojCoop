@@ -235,7 +235,6 @@ class PDFGeneral(FPDF):
         columnas = ["Fecha","Entrada","Salida","Normales","50%","100%","Comida","Franco","Tarde","Observaciones"]
         anchos = [16,16,16,18,16,16,12,12,12,50]
 
-
         self.columnas = columnas
         self.anchos = anchos
 
@@ -251,6 +250,10 @@ class PDFGeneral(FPDF):
         tot_tarde = 0
 
         for r in registros:
+            # Re-imprimir encabezados si no hay espacio para la siguiente fila
+            if self.get_y() + 6 > self.h - self.b_margin:
+                self.add_page()
+                self._titulos_columnas(columnas, anchos)
             fecha = r.get("Fecha","")
             d = _parse_fecha(fecha)
             es_feriado = False
@@ -358,9 +361,19 @@ def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None,
     pdf.grosor_linea_lunes = grosor_lunes
 
     pdf.portada_abreviaciones(mes)
+    pdf.add_page()
 
-    for empleado in sorted(data, key=_legajo_sort_key):
-        pdf.add_page()
+    for i, empleado in enumerate(sorted(data, key=_legajo_sort_key)):
+        if i > 0:
+            espacio = pdf.h - pdf.get_y() - pdf.b_margin
+            if espacio < 40:
+                pdf.add_page()
+            else:
+                pdf.ln(3)
+                pdf.set_draw_color(160, 160, 160)
+                pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+                pdf.set_draw_color(0, 0, 0)
+                pdf.ln(3)
         pdf.encabezado_empleado(
             empleado.get("legajo",""),
             empleado.get("nombre",""),
@@ -391,10 +404,9 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
     pdf.set_font(fam,"B",8)
 
     for col, ancho in zip(columnas, anchos):
-        pdf.cell(ancho,7,col,1,0,'C')
+        pdf.cell(ancho,6,col,1,0,'C')
     pdf.ln()
 
-    totN=tot50=tot100=tim=com=fr=tar=0
     tot_norm = timedelta(0)
     tot_50   = timedelta(0)
     tot_100  = timedelta(0)
@@ -431,6 +443,14 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
         tot_fr   += e_fr
         tot_tar  += e_tar
 
+        # Salto de página con repetición de encabezados si no entra la fila
+        if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            pdf.set_font(fam,"B",8)
+            for col, ancho in zip(columnas, anchos):
+                pdf.cell(ancho,6,col,1,0,'C')
+            pdf.ln()
+
         pdf.set_font(fam,"",7)
         fila = [
             str(leg),
@@ -444,17 +464,17 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
         ]
 
         for dato, ancho in zip(fila, anchos):
-            pdf.cell(ancho,6,dato,1)
+            pdf.cell(ancho,5,dato,1)
         pdf.ln()
 
     pdf.set_font(fam,"B",8)
-    pdf.cell(anchos[0]+anchos[1],7,"TOTALES",1,0,"R")
-    pdf.cell(anchos[2],7,formato_horas(tot_norm),1)
-    pdf.cell(anchos[3],7,formato_horas(_round_to_hour(tot_50)),1)
-    pdf.cell(anchos[4],7,formato_horas(_round_to_hour(tot_100)),1)
-    pdf.cell(anchos[5],7,str(tot_com),1)
-    pdf.cell(anchos[6],7,str(tot_fr),1)
-    pdf.cell(anchos[7],7,str(tot_tar),1)
+    pdf.cell(anchos[0]+anchos[1],6,"TOTALES",1,0,"R")
+    pdf.cell(anchos[2],6,formato_horas(tot_norm),1)
+    pdf.cell(anchos[3],6,formato_horas(_round_to_hour(tot_50)),1)
+    pdf.cell(anchos[4],6,formato_horas(_round_to_hour(tot_100)),1)
+    pdf.cell(anchos[5],6,str(tot_com),1)
+    pdf.cell(anchos[6],6,str(tot_fr),1)
+    pdf.cell(anchos[7],6,str(tot_tar),1)
     pdf.ln()
 
     pdf.output(salida)

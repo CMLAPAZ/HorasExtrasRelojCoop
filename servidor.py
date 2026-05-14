@@ -458,36 +458,42 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
 
     if not confirmaciones:
         pdf.set_font(fam, "B", 10)
-        pdf.cell(0, 8, "No hay confirmaciones archivadas para este cierre.", ln=1)
+        pdf.cell(0, 7, "No hay confirmaciones archivadas para este cierre.", ln=1)
     else:
         depto_actual = None
         for c in confirmaciones:
             depto = c.get("departamento", "") or "-"
             if depto != depto_actual:
                 depto_actual = depto
-                pdf.ln(2)
+                pdf.ln(1)
                 pdf.set_fill_color(224, 231, 255)
                 pdf.set_font(fam, "B", 10)
-                pdf.cell(0, 8, _pdf_cell_text(depto), border=1, ln=1, fill=True)
+                pdf.cell(0, 7, _pdf_cell_text(depto), border=1, ln=1, fill=True)
+
+            # Salto de página si no hay espacio mínimo para el bloque del empleado
+            if pdf.get_y() + 16 > pdf.h - pdf.b_margin:
+                pdf.add_page()
 
             tot = c.get("totales", {})
             pdf.set_font(fam, "B", 9)
-            pdf.cell(0, 7, f"{c.get('legajo', '')} - {c.get('nombre', '')}", ln=1)
+            pdf.cell(0, 6, f"{c.get('legajo', '')} - {c.get('nombre', '')}", ln=1)
             pdf.set_font(fam, "", 8)
-            pdf.cell(0, 5, f"Confirmado: {(c.get('confirmado_en') or '')[:16].replace('T', ' ')}    Semana: {c.get('semana_depto', c.get('semana', ''))}", ln=1)
-            pdf.cell(0, 5, f"OT50: {tot.get('ot50', '0h')}    OT100: {tot.get('ot100', '0h')}    Comidas: {tot.get('comidas', 0)}    Francos: {tot.get('francos', 0)}    Tardanzas: {tot.get('tardanzas', 0)}", ln=1)
+            pdf.cell(0, 4, f"Confirmado: {(c.get('confirmado_en') or '')[:16].replace('T', ' ')}    Semana: {c.get('semana_depto', c.get('semana', ''))}", ln=1)
+            pdf.cell(0, 4, f"OT50: {tot.get('ot50', '0h')}    OT100: {tot.get('ot100', '0h')}    Comidas: {tot.get('comidas', 0)}    Francos: {tot.get('francos', 0)}    Tardanzas: {tot.get('tardanzas', 0)}", ln=1)
 
             dias = c.get("dias", [])
             if dias:
                 pdf.set_font(fam, "B", 7)
-                pdf.cell(23, 6, "Fecha", 1)
-                pdf.cell(24, 6, "Tipo", 1)
-                pdf.cell(20, 6, "OT50", 1)
-                pdf.cell(20, 6, "OT100", 1)
-                pdf.cell(22, 6, "Marcas", 1)
-                pdf.cell(0, 6, "Descripcion", 1, ln=1)
+                pdf.cell(23, 5, "Fecha", 1)
+                pdf.cell(24, 5, "Tipo", 1)
+                pdf.cell(20, 5, "OT50", 1)
+                pdf.cell(20, 5, "OT100", 1)
+                pdf.cell(22, 5, "Marcas", 1)
+                pdf.cell(0, 5, "Descripcion", 1, ln=1)
                 pdf.set_font(fam, "", 7)
                 for d in dias:
+                    if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                        pdf.add_page()
                     marcas = []
                     if d.get("franco"):
                         marcas.append("Franco")
@@ -495,36 +501,43 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
                         marcas.append("Comida")
                     x, y = pdf.get_x(), pdf.get_y()
                     desc = _pdf_cell_text(d.get("descripcion") or "Sin descripcion")
-                    pdf.cell(23, 6, _pdf_cell_text(d.get("fecha", "")), 1)
-                    pdf.cell(24, 6, _pdf_cell_text(d.get("tipo_dia", "normal")), 1)
-                    pdf.cell(20, 6, _pdf_cell_text(d.get("ot50", "")), 1)
-                    pdf.cell(20, 6, _pdf_cell_text(d.get("ot100", "")), 1)
-                    pdf.cell(22, 6, ", ".join(marcas), 1)
-                    pdf.multi_cell(0, 6, desc, 1)
-                    if pdf.get_y() < y + 6:
-                        pdf.set_y(y + 6)
+                    pdf.cell(23, 5, _pdf_cell_text(d.get("fecha", "")), 1)
+                    pdf.cell(24, 5, _pdf_cell_text(d.get("tipo_dia", "normal")), 1)
+                    pdf.cell(20, 5, _pdf_cell_text(d.get("ot50", "")), 1)
+                    pdf.cell(20, 5, _pdf_cell_text(d.get("ot100", "")), 1)
+                    pdf.cell(22, 5, ", ".join(marcas), 1)
+                    pdf.multi_cell(0, 5, desc, 1)
+                    if pdf.get_y() < y + 5:
+                        pdf.set_y(y + 5)
                     pdf.set_x(x)
-            pdf.ln(3)
+            pdf.ln(1)
 
     if pendientes:
-        pdf.add_page()
+        espacio = pdf.h - pdf.get_y() - pdf.b_margin
+        if espacio < 30:
+            pdf.add_page()
+        else:
+            pdf.ln(3)
+        pendientes_ord = sorted(pendientes, key=_legajo_key)
         pdf.set_font(fam, "B", 11)
-        pdf.cell(0, 8, "Pendientes incluidos en el cierre", ln=1)
+        pdf.cell(0, 7, "Pendientes incluidos en el cierre", ln=1)
         pdf.set_font(fam, "B", 8)
-        pdf.cell(22, 7, "Legajo", 1)
-        pdf.cell(70, 7, "Nombre", 1)
-        pdf.cell(40, 7, "Departamento", 1)
-        pdf.cell(20, 7, "OT50", 1)
-        pdf.cell(20, 7, "OT100", 1)
-        pdf.cell(0, 7, "Semanas", 1, ln=1)
+        pdf.cell(22, 6, "Legajo", 1)
+        pdf.cell(70, 6, "Nombre", 1)
+        pdf.cell(40, 6, "Departamento", 1)
+        pdf.cell(20, 6, "OT50", 1)
+        pdf.cell(20, 6, "OT100", 1)
+        pdf.cell(0, 6, "Semanas", 1, ln=1)
         pdf.set_font(fam, "", 8)
-        for e in pendientes:
-            pdf.cell(22, 6, _pdf_cell_text(e.get("legajo", "")), 1)
-            pdf.cell(70, 6, _pdf_cell_text(e.get("nombre", ""))[:35], 1)
-            pdf.cell(40, 6, _pdf_cell_text(e.get("departamento", ""))[:20], 1)
-            pdf.cell(20, 6, _pdf_cell_text(e.get("ot50", "0h")), 1)
-            pdf.cell(20, 6, _pdf_cell_text(e.get("ot100", "0h")), 1)
-            pdf.cell(0, 6, ", ".join(str(s) for s in e.get("semanas", [])), 1, ln=1)
+        for e in pendientes_ord:
+            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+            pdf.cell(22, 5, _pdf_cell_text(e.get("legajo", "")), 1)
+            pdf.cell(70, 5, _pdf_cell_text(e.get("nombre", ""))[:35], 1)
+            pdf.cell(40, 5, _pdf_cell_text(e.get("departamento", ""))[:20], 1)
+            pdf.cell(20, 5, _pdf_cell_text(e.get("ot50", "0h")), 1)
+            pdf.cell(20, 5, _pdf_cell_text(e.get("ot100", "0h")), 1)
+            pdf.cell(0, 5, ", ".join(str(s) for s in e.get("semanas", [])), 1, ln=1)
 
     return _pdf_bytes(pdf)
 
