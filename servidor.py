@@ -154,6 +154,17 @@ def _cargar_semana_csv(n):
     f = SEMANAS_DIR / f"semana_{n}.csv"
     return pd.read_csv(f, encoding="utf-8") if f.exists() else None
 
+def _parse_fecha(s):
+    if not s:
+        return None
+    s = str(s).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            pass
+    return None
+
 def _clave_confirmacion(data):
     return (
         _normalizar_departamento_web(data.get("departamento", "") or "Todos"),
