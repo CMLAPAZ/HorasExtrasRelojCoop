@@ -401,7 +401,7 @@ function renderTabla() {
     </tr></thead><tbody>`;
 
   Object.keys(grupos).sort().forEach(depto => {
-    const empleados = grupos[depto];
+    const empleados = grupos[depto].sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo));
     totGenEmp += empleados.length;
     let sub50 = 0, sub100 = 0, subComidas = 0, subFrancos = 0, subTardanzas = 0;
 

@@ -1409,7 +1409,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
             "dias":        sorted(e["dias"], key=lambda d: d["fecha"]),
         }
         for e in por_empleado.values()
-    ], key=lambda x: x["nombre"])
+    ], key=lambda x: _legajo_key(x))
 
 
 @app.route("/periodo/resumen")
