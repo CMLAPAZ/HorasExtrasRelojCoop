@@ -210,6 +210,51 @@ def _score_confirmacion(data):
     confirmado_en = data.get("confirmado_en", "") or ""
     return (descs, confirmado_en)
 
+def _semana_meta_por_numero(meta, semana, departamento=None):
+    departamento = _normalizar_departamento_web(departamento)
+    return next((
+        s for s in meta.get("semanas", [])
+        if s.get("numero") == semana
+        and (not departamento or _normalizar_departamento_web(s.get("departamento", "") or "Todos") == departamento)
+    ), None)
+
+def _ajustar_confirmacion_a_semana(data, meta, semana, departamento=None):
+    sem = _semana_meta_por_numero(meta, semana, departamento)
+    if not sem:
+        return data
+    desde = _parse_fecha(sem.get("fecha_desde", ""))
+    hasta = _parse_fecha(sem.get("fecha_hasta", ""))
+    if not desde or not hasta:
+        return data
+
+    dias = []
+    for dia in data.get("dias", []) or []:
+        fecha = _parse_fecha(dia.get("fecha", ""))
+        if fecha and desde <= fecha <= hasta:
+            dias.append(dia)
+
+    if len(dias) == len(data.get("dias", []) or []):
+        return data
+
+    data = dict(data)
+    data["dias"] = dias
+    ot50 = ot100 = timedelta(0)
+    comidas = francos = tardanzas = 0
+    for dia in dias:
+        ot50 += _parse_td(dia.get("ot50", "00:00:00"))
+        ot100 += _parse_td(dia.get("ot100", "00:00:00"))
+        comidas += int(dia.get("comida", 0))
+        francos += int(dia.get("franco", 0))
+        tardanzas += int(dia.get("tardanzas", dia.get("tarde", 0)))
+    data["totales"] = {
+        "ot50": _fmt_hm(ot50),
+        "ot100": _fmt_hm(ot100),
+        "comidas": comidas,
+        "francos": francos,
+        "tardanzas": tardanzas,
+    }
+    return data
+
 def _leer_historial(semana=None, departamento=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
     # Solo leer confirmaciones del período activo (semanas en metadata)
@@ -227,6 +272,7 @@ def _leer_historial(semana=None, departamento=None):
             data["semana_original"] = data.get("semana", sem_conf)
             data["semana"] = sem_conf
             data["semana_depto"] = sem_depto
+            data = _ajustar_confirmacion_a_semana(data, meta, sem_conf, depto_conf)
             # Ignorar confirmaciones de períodos anteriores
             if semanas_activas and sem_conf not in semanas_activas:
                 continue
