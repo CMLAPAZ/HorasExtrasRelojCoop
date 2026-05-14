@@ -70,6 +70,22 @@
     .desc-fecha{font-weight:600;color:#1a1a2e}
     .info-ok{font-size:.82rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:8px 12px;border-radius:7px;margin-bottom:12px}
     .hidden{display:none}
+    /* ── Modal advertencia ── */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+    .modal-box{background:#fff;border-radius:14px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:modal-in .18s ease}
+    @keyframes modal-in{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+    .modal-top{background:#fef2f2;border-bottom:2px solid #fecaca;padding:22px 24px 16px;text-align:center}
+    .modal-icono{font-size:2.8rem;line-height:1;margin-bottom:8px}
+    .modal-titulo{font-size:1.25rem;font-weight:800;color:#b91c1c;margin-bottom:4px}
+    .modal-subtitulo{font-size:.88rem;color:#7f1d1d;font-weight:600}
+    .modal-body{padding:18px 24px}
+    .modal-detalle{font-size:.88rem;color:#374151;line-height:1.6;margin-bottom:14px}
+    .modal-alerta{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 13px;font-size:.84rem;color:#92400e;font-weight:650;margin-bottom:6px}
+    .modal-footer{display:flex;gap:10px;padding:0 24px 20px;justify-content:flex-end}
+    .modal-cancelar{height:38px;padding:0 18px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;font-size:.88rem;font-weight:700;cursor:pointer}
+    .modal-cancelar:hover{background:#f8fafc}
+    .modal-confirmar{height:38px;padding:0 20px;border-radius:7px;border:none;background:#dc2626;color:#fff;font-size:.88rem;font-weight:800;cursor:pointer}
+    .modal-confirmar:hover{background:#b91c1c}
     .td-fechas{font-size:.82rem}
     .td-cargando{color:#888}
     .td-vacio{text-align:center;color:#888}
@@ -84,6 +100,29 @@
   </style>
 </head>
 <body>
+
+<!-- Modal advertencia Regenerar -->
+<div id="modal-regenerar" class="modal-overlay hidden" onclick="if(event.target===this)cerrarModalRegen()">
+  <div class="modal-box">
+    <div class="modal-top">
+      <div class="modal-icono">⚠️</div>
+      <div class="modal-titulo">¡ATENCIÓN!</div>
+      <div class="modal-subtitulo" id="modal-subtitulo"></div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-alerta" id="modal-alerta-pend"></div>
+      <div class="modal-detalle">
+        Los links <strong>pendientes quedarán inválidos</strong> y se generarán nuevos.<br>
+        Los empleados que ya confirmaron <strong>no se tocan</strong>.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="modal-cancelar" onclick="cerrarModalRegen()">Cancelar</button>
+      <button type="button" class="modal-confirmar" id="modal-btn-confirmar">Sí, regenerar</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="topbar">
   <h1>CM Horas Extras</h1>
@@ -417,20 +456,41 @@ async function verLinks(n) {
   });
 }
 
-// ─── Regenerar links ──────────────────────────────
-async function regenerarLinks(n) {
+// ─── Modal Regenerar ─────────────────────────────
+let _regenPendiente = null;
+function cerrarModalRegen() {
+  document.getElementById('modal-regenerar').classList.add('hidden');
+  _regenPendiente = null;
+}
+function regenerarLinks(n) {
   const sem = _semanas.find(s => s.numero === n);
   const pendientes = sem ? (sem.total - sem.confirmados) : 0;
-  let msg = `¿Regenerar links de la Sem. ${sem ? (sem.num_depto || n) : n} · ${sem ? sem.departamento : ''}?\n\nLos links pendientes quedarán inválidos y se crearán nuevos.\nLos empleados que ya confirmaron no se tocan.`;
+  const label = sem
+    ? `Sem. ${sem.num_depto || n}${sem.departamento && sem.departamento !== 'Todos' ? ' · ' + sem.departamento : ''}`
+    : `Semana ${n}`;
+
+  document.getElementById('modal-subtitulo').textContent = `Regenerar links — ${label}`;
+  const alertEl = document.getElementById('modal-alerta-pend');
   if (pendientes > 0) {
-    msg = `⚠️ Hay ${pendientes} empleado(s) que aún no confirmaron.\nSus links anteriores quedarán inválidos — necesitarás reenviarles el nuevo link.\n\n` + msg;
+    alertEl.textContent = `⚠️ Hay ${pendientes} empleado(s) que aún no confirmaron. Sus links anteriores quedarán inválidos y deberás reenviarles el nuevo link.`;
+    alertEl.classList.remove('hidden');
+  } else {
+    alertEl.classList.add('hidden');
   }
-  if (!confirm(msg)) return;
+
+  _regenPendiente = n;
+  document.getElementById('modal-btn-confirmar').onclick = () => _ejecutarRegen(n);
+  document.getElementById('modal-regenerar').classList.remove('hidden');
+}
+
+async function _ejecutarRegen(n) {
+  cerrarModalRegen();
 
   const res  = await fetch(`/semanas/${n}/regenerar`, { method:'POST' });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
 
+  const sem   = _semanas.find(s => s.numero === n);
   const panel = document.getElementById('links-panel');
   const titulo= document.getElementById('links-panel-titulo');
   const info  = document.getElementById('links-panel-info');
