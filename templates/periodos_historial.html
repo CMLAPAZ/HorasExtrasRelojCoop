@@ -75,6 +75,7 @@
         <td>
           <div class="acciones">
             <a class="btn-ver" href="/periodos/ver/{{ c.id }}">Ver informe</a>
+            <a class="btn-ver" href="/periodos/confirmaciones_pdf/{{ c.id }}">PDF confirmaciones</a>
             {% if c.estado != 'ANULADO' %}
               <button type="button" class="btn-anular" onclick="anularCierre({{ c.id }})">Anular cierre</button>
             {% endif %}

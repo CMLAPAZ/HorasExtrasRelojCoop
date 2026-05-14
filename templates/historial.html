@@ -12,6 +12,9 @@
     .nav{display:flex;gap:10px}
     .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
     .nav a:hover{text-decoration:underline}
+    .filtros{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+    .filtros label{font-size:.78rem;color:#555;font-weight:600}
+    .filtros select{padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:.85rem}
     .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
     .emp-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px}
     .emp-nombre{font-weight:700;font-size:1rem}
@@ -52,6 +55,18 @@
     <a href="/logout">Salir</a>
   </div>
 </div>
+
+{% if departamentos %}
+<form class="filtros" method="get" action="/historial">
+  <label for="departamento">Departamento</label>
+  <select id="departamento" name="departamento" onchange="this.form.submit()">
+    <option value="">Todos</option>
+    {% for d in departamentos %}
+    <option value="{{ d.valor }}" {% if d.valor == departamento_actual %}selected{% endif %}>{{ d.nombre }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% endif %}
 
 {% if not items %}
 <div class="vacio">No hay confirmaciones registradas todavía.</div>

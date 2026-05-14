@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 import os, re, urllib.parse, sqlite3, unicodedata
-from flask import Flask, request, render_template, jsonify, session, redirect, url_for
+from flask import Flask, request, render_template, jsonify, session, redirect, url_for, send_file
 import pandas as pd
 import secrets
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import socket
+from io import BytesIO
 
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
+from pdf_generator import PDFGeneral
 
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
@@ -153,30 +155,44 @@ def _cargar_semana_csv(n):
     f = SEMANAS_DIR / f"semana_{n}.csv"
     return pd.read_csv(f, encoding="utf-8") if f.exists() else None
 
-def _leer_historial(semana=None):
+def _clave_confirmacion(data):
+    return (
+        _normalizar_departamento_web(data.get("departamento", "") or "Todos"),
+        str(data.get("legajo", "")),
+        data.get("semana", 0),
+    )
+
+def _leer_historial(semana=None, departamento=None):
     CONFIRM_DIR.mkdir(exist_ok=True)
     # Solo leer confirmaciones del período activo (semanas en metadata)
+    departamento = _normalizar_departamento_web(departamento)
     meta = _cargar_metadata()
     semanas_activas = {s.get("numero") for s in meta.get("semanas", [])}
     items = []
-    vistos = set()  # legajo + semana ya cubiertos por archivos
+    vistos = set()  # departamento + legajo + semana ya cubiertos por archivos
     for f in sorted(CONFIRM_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             sem_conf = data.get("semana", 0)
+            depto_conf = _normalizar_departamento_web(data.get("departamento", "") or "Todos")
             # Ignorar confirmaciones de períodos anteriores
             if semanas_activas and sem_conf not in semanas_activas:
                 continue
+            if departamento and depto_conf != departamento:
+                continue
             if semana is None or sem_conf == semana:
                 items.append(data)
-                vistos.add((str(data["legajo"]), sem_conf))
+                vistos.add(_clave_confirmacion(data))
         except Exception:
             continue
     # Fallback: empleados confirmados en _sesion sin archivo en confirmaciones/
     for d in _sesion.values():
         if not d.get("confirmado"):
             continue
-        key = (str(d["legajo"]), d.get("semana", 0))
+        depto_conf = _normalizar_departamento_web(d.get("departamento", "") or "Todos")
+        if departamento and depto_conf != departamento:
+            continue
+        key = _clave_confirmacion(d)
         if key in vistos:
             continue
         if semana is not None and d.get("semana") != semana:
@@ -211,6 +227,14 @@ def _cargar_telefonos():
 def _guardar_telefonos(t):
     Path("recursos").mkdir(exist_ok=True)
     TELEFONOS_FILE.write_text(json.dumps(t, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _normalizar_valor_excel(v):
+    texto = str(v).strip()
+    if texto.lower() in ("nan", "none", ""):
+        return ""
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+    return texto
 
 def _wa_url(legajo, nombre, url, totales=None):
     tel = _cargar_telefonos()
@@ -266,6 +290,133 @@ def _fmt_hm(td):
     h = total // 3600
     m = (total % 3600) // 60
     return f"{h}h {m:02d}m" if m else f"{h}h"
+
+def _pdf_bytes(pdf):
+    data = pdf.output(dest="S")
+    if isinstance(data, str):
+        return data.encode("latin-1")
+    return bytes(data)
+
+def _pdf_cell_text(value):
+    return "" if value is None else str(value)
+
+def _leer_confirmaciones_cierre(periodo):
+    archivo = periodo.get("archivo") or ""
+    carpeta = CONFIRM_DIR / Path(archivo).stem
+    items = []
+    if carpeta.exists():
+        for f in sorted(carpeta.glob("*.json")):
+            try:
+                items.append(json.loads(f.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+    return sorted(items, key=lambda x: (
+        _normalizar_departamento_web(x.get("departamento", "")),
+        x.get("nombre", ""),
+        str(x.get("legajo", "")),
+    ))
+
+def _generar_pdf_confirmaciones_cierre(periodo, empleados):
+    confirmaciones = _leer_confirmaciones_cierre(periodo)
+    confirmados = {
+        (_normalizar_departamento_web(c.get("departamento", "")), str(c.get("legajo", "")))
+        for c in confirmaciones
+    }
+    pendientes = [
+        e for e in empleados
+        if not e.get("confirmado")
+        and (_normalizar_departamento_web(e.get("departamento", "")), str(e.get("legajo", ""))) not in confirmados
+    ]
+
+    pdf = PDFGeneral()
+    pdf.titulo = "Confirmaciones del cierre"
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.add_page()
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+
+    semanas = list(range(periodo["semana_desde"], periodo["semana_hasta"] + 1))
+    cerrado = (periodo["cerrado_en"] or "")[:16].replace("T", " ")
+    rango = f"{periodo['fecha_desde'] or ''} al {periodo['fecha_hasta'] or ''}".strip()
+    estado = periodo["estado"] or "ACTIVO"
+
+    pdf.set_font(fam, "B", 12)
+    pdf.cell(0, 8, "Confirmaciones archivadas por cierre", ln=1)
+    pdf.set_font(fam, "", 9)
+    pdf.cell(0, 6, f"Cierre ID: {periodo['id']}    Estado: {estado}    Cerrado: {cerrado}", ln=1)
+    pdf.cell(0, 6, f"Semanas: {', '.join(str(s) for s in semanas)}    Periodo: {rango}", ln=1)
+    pdf.ln(3)
+
+    if not confirmaciones:
+        pdf.set_font(fam, "B", 10)
+        pdf.cell(0, 8, "No hay confirmaciones archivadas para este cierre.", ln=1)
+    else:
+        depto_actual = None
+        for c in confirmaciones:
+            depto = c.get("departamento", "") or "-"
+            if depto != depto_actual:
+                depto_actual = depto
+                pdf.ln(2)
+                pdf.set_fill_color(224, 231, 255)
+                pdf.set_font(fam, "B", 10)
+                pdf.cell(0, 8, _pdf_cell_text(depto), border=1, ln=1, fill=True)
+
+            tot = c.get("totales", {})
+            pdf.set_font(fam, "B", 9)
+            pdf.cell(0, 7, f"{c.get('legajo', '')} - {c.get('nombre', '')}", ln=1)
+            pdf.set_font(fam, "", 8)
+            pdf.cell(0, 5, f"Confirmado: {(c.get('confirmado_en') or '')[:16].replace('T', ' ')}    Semana: {c.get('semana_depto', c.get('semana', ''))}", ln=1)
+            pdf.cell(0, 5, f"OT50: {tot.get('ot50', '0h')}    OT100: {tot.get('ot100', '0h')}    Comidas: {tot.get('comidas', 0)}    Francos: {tot.get('francos', 0)}    Tardanzas: {tot.get('tardanzas', 0)}", ln=1)
+
+            dias = c.get("dias", [])
+            if dias:
+                pdf.set_font(fam, "B", 7)
+                pdf.cell(23, 6, "Fecha", 1)
+                pdf.cell(24, 6, "Tipo", 1)
+                pdf.cell(20, 6, "OT50", 1)
+                pdf.cell(20, 6, "OT100", 1)
+                pdf.cell(22, 6, "Marcas", 1)
+                pdf.cell(0, 6, "Descripcion", 1, ln=1)
+                pdf.set_font(fam, "", 7)
+                for d in dias:
+                    marcas = []
+                    if d.get("franco"):
+                        marcas.append("Franco")
+                    if d.get("comida"):
+                        marcas.append("Comida")
+                    x, y = pdf.get_x(), pdf.get_y()
+                    desc = _pdf_cell_text(d.get("descripcion") or "Sin descripcion")
+                    pdf.cell(23, 6, _pdf_cell_text(d.get("fecha", "")), 1)
+                    pdf.cell(24, 6, _pdf_cell_text(d.get("tipo_dia", "normal")), 1)
+                    pdf.cell(20, 6, _pdf_cell_text(d.get("ot50", "")), 1)
+                    pdf.cell(20, 6, _pdf_cell_text(d.get("ot100", "")), 1)
+                    pdf.cell(22, 6, ", ".join(marcas), 1)
+                    pdf.multi_cell(0, 6, desc, 1)
+                    if pdf.get_y() < y + 6:
+                        pdf.set_y(y + 6)
+                    pdf.set_x(x)
+            pdf.ln(3)
+
+    if pendientes:
+        pdf.add_page()
+        pdf.set_font(fam, "B", 11)
+        pdf.cell(0, 8, "Pendientes incluidos en el cierre", ln=1)
+        pdf.set_font(fam, "B", 8)
+        pdf.cell(22, 7, "Legajo", 1)
+        pdf.cell(70, 7, "Nombre", 1)
+        pdf.cell(40, 7, "Departamento", 1)
+        pdf.cell(20, 7, "OT50", 1)
+        pdf.cell(20, 7, "OT100", 1)
+        pdf.cell(0, 7, "Semanas", 1, ln=1)
+        pdf.set_font(fam, "", 8)
+        for e in pendientes:
+            pdf.cell(22, 6, _pdf_cell_text(e.get("legajo", "")), 1)
+            pdf.cell(70, 6, _pdf_cell_text(e.get("nombre", ""))[:35], 1)
+            pdf.cell(40, 6, _pdf_cell_text(e.get("departamento", ""))[:20], 1)
+            pdf.cell(20, 6, _pdf_cell_text(e.get("ot50", "0h")), 1)
+            pdf.cell(20, 6, _pdf_cell_text(e.get("ot100", "0h")), 1)
+            pdf.cell(0, 6, ", ".join(str(s) for s in e.get("semanas", [])), 1, ln=1)
+
+    return _pdf_bytes(pdf)
 
 _sesion = _cargar_sesion()
 _init_db()
@@ -520,14 +671,18 @@ def telefonos_upload():
         df.columns = [str(c).strip() for c in df.columns]
         leg_col = next((c for c in df.columns if "legajo" in c.lower()), df.columns[0])
         tel_col = next((c for c in df.columns if "tel" in c.lower() or "cel" in c.lower()), df.columns[-1])
-        telefonos = {}
+        telefonos_nuevos = {}
         for _, row in df.iterrows():
-            leg = str(row[leg_col]).strip().split(".")[0]
-            tel = str(row[tel_col]).strip().split(".")[0]
-            if leg and leg not in ("nan","") and tel and tel not in ("nan",""):
-                telefonos[leg] = tel
+            leg = _normalizar_valor_excel(row[leg_col])
+            tel = _normalizar_valor_excel(row[tel_col])
+            if leg and tel:
+                telefonos_nuevos[leg] = tel
+        if not telefonos_nuevos:
+            return jsonify({"error": "No se encontraron telefonos validos en el archivo."}), 400
+        telefonos = _cargar_telefonos()
+        telefonos.update(telefonos_nuevos)
         _guardar_telefonos(telefonos)
-        return jsonify({"ok": True, "total": len(telefonos)})
+        return jsonify({"ok": True, "total": len(telefonos), "actualizados": len(telefonos_nuevos)})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -768,7 +923,22 @@ def estado():
 @app.route("/historial")
 def historial():
     if not _autenticado(): return _requiere_auth()
-    return render_template("historial.html", items=_leer_historial())
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    todos = _leer_historial()
+    deptos_map = {}
+    for item in todos:
+        valor = _normalizar_departamento_web(item.get("departamento", ""))
+        if not valor or valor == "todos":
+            continue
+        deptos_map[valor] = _nombre_departamento_visible(item.get("departamento", ""))
+    departamentos = [
+        {"valor": valor, "nombre": nombre}
+        for valor, nombre in sorted(deptos_map.items(), key=lambda item: item[1])
+    ]
+    items = _leer_historial(departamento=departamento) if departamento else todos
+    return render_template("historial.html", items=items,
+                           departamentos=departamentos,
+                           departamento_actual=departamento)
 
 
 @app.route("/periodo")
@@ -1165,6 +1335,36 @@ def periodos_ver(pid):
                            semanas=semanas,
                            empleados=empleados,
                            firma=FIRMA_SUPERVISOR)
+
+
+@app.route("/periodos/confirmaciones_pdf/<int:pid>")
+def periodos_confirmaciones_pdf(pid):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return "Periodo no encontrado", 404
+        rows = conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, nombre",
+            (pid,)
+        ).fetchall()
+
+    periodo = dict(p)
+    empleados = []
+    for e in rows:
+        d = dict(e)
+        d["semanas"] = json.loads(d["semanas"] or "[]")
+        d["confirmado"] = bool(d["confirmado"])
+        empleados.append(d)
+
+    pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
+    nombre = f"confirmaciones_cierre_{pid}.pdf"
+    return send_file(
+        BytesIO(pdf_data),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=nombre,
+    )
 
 
 @app.route("/admin/reset", methods=["POST"])
