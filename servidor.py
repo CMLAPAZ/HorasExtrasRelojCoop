@@ -419,6 +419,17 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
 
     return _pdf_bytes(pdf)
 
+def _pendientes_cierre(confirmaciones, empleados):
+    confirmados = {
+        (_normalizar_departamento_web(c.get("departamento", "")), str(c.get("legajo", "")))
+        for c in confirmaciones
+    }
+    return [
+        e for e in empleados
+        if not e.get("confirmado")
+        and (_normalizar_departamento_web(e.get("departamento", "")), str(e.get("legajo", ""))) not in confirmados
+    ]
+
 _sesion = _cargar_sesion()
 _init_db()
 
@@ -1358,14 +1369,25 @@ def periodos_confirmaciones_pdf(pid):
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
 
-    pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
-    nombre = f"confirmaciones_cierre_{pid}.pdf"
-    return send_file(
-        BytesIO(pdf_data),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=nombre,
-    )
+    try:
+        pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
+        nombre = f"confirmaciones_cierre_{pid}.pdf"
+        return send_file(
+            BytesIO(pdf_data),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=nombre,
+        )
+    except Exception as exc:
+        confirmaciones = _leer_confirmaciones_cierre(periodo)
+        return render_template(
+            "confirmaciones_cierre.html",
+            periodo=periodo,
+            empleados=empleados,
+            confirmaciones=confirmaciones,
+            pendientes=_pendientes_cierre(confirmaciones, empleados),
+            error_pdf=str(exc),
+        )
 
 
 @app.route("/admin/reset", methods=["POST"])

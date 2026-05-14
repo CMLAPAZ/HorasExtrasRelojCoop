@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmaciones del cierre</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    h1{font-size:1.3rem}
+    .nav{display:flex;gap:12px;align-items:center}
+    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
+    .nav a:hover{text-decoration:underline}
+    .btn{padding:7px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer}
+    .card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+    .meta{font-size:.82rem;color:#555;line-height:1.6}
+    .warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:.82rem;margin-bottom:14px}
+    .depto{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#3730a3;background:#e0e7ff;border-radius:6px;padding:6px 10px;margin:12px 0 8px;font-weight:700}
+    .emp{font-weight:700;margin-bottom:4px}
+    .sub{font-size:.78rem;color:#666;margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:8px}
+    th{background:#f8f9fb;text-align:left;color:#555;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+    th,td{padding:7px 8px;border-bottom:1px solid #eee;vertical-align:top}
+    .vacio{text-align:center;color:#888;padding:30px;font-size:.9rem}
+    @media print{
+      body{background:#fff;padding:10px}
+      .topbar,.btn,.warn{display:none!important}
+      .card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
+    }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <h1>Confirmaciones del cierre</h1>
+  <div class="nav">
+    <a href="/periodos/historial">Volver</a>
+    <button class="btn" onclick="window.print()">Imprimir / PDF</button>
+  </div>
+</div>
+
+{% if error_pdf %}
+<div class="warn">No se pudo generar el PDF automático. Esta vista se puede imprimir o guardar como PDF desde el navegador.</div>
+{% endif %}
+
+<div class="card meta">
+  <strong>Cierre {{ periodo.id }}</strong><br>
+  Estado: {{ periodo.estado or 'ACTIVO' }}<br>
+  Cerrado: {{ (periodo.cerrado_en or '')[:16].replace('T',' ') }}<br>
+  Período: {{ periodo.fecha_desde or '' }} al {{ periodo.fecha_hasta or '' }}<br>
+  Semanas: {{ periodo.semana_desde }} a {{ periodo.semana_hasta }}
+</div>
+
+{% if not confirmaciones %}
+<div class="vacio">No hay confirmaciones archivadas para este cierre.</div>
+{% else %}
+  {% set ns = namespace(depto='') %}
+  {% for c in confirmaciones %}
+    {% if c.departamento != ns.depto %}
+      {% set ns.depto = c.departamento %}
+      <div class="depto">{{ c.departamento or '-' }}</div>
+    {% endif %}
+    <div class="card">
+      <div class="emp">{{ c.legajo }} - {{ c.nombre }}</div>
+      <div class="sub">
+        Confirmado: {{ (c.confirmado_en or '')[:16].replace('T',' ') }}
+        · Semana {{ c.semana_depto or c.semana }}
+        · OT50 {{ c.totales.ot50 }} · OT100 {{ c.totales.ot100 }}
+      </div>
+      {% if c.dias %}
+      <table>
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>OT50</th><th>OT100</th><th>Marca</th><th>Descripción</th></tr></thead>
+        <tbody>
+        {% for d in c.dias %}
+          <tr>
+            <td>{{ d.fecha }}</td>
+            <td>{{ d.tipo_dia or 'normal' }}</td>
+            <td>{{ d.ot50 }}</td>
+            <td>{{ d.ot100 }}</td>
+            <td>{% if d.franco %}Franco {% endif %}{% if d.comida %}Comida{% endif %}</td>
+            <td>{{ d.descripcion or 'Sin descripción' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if pendientes %}
+<div class="card">
+  <div class="emp">Pendientes incluidos en el cierre</div>
+  <table>
+    <thead><tr><th>Legajo</th><th>Nombre</th><th>Departamento</th><th>OT50</th><th>OT100</th><th>Semanas</th></tr></thead>
+    <tbody>
+    {% for e in pendientes %}
+      <tr>
+        <td>{{ e.legajo }}</td>
+        <td>{{ e.nombre }}</td>
+        <td>{{ e.departamento }}</td>
+        <td>{{ e.ot50 }}</td>
+        <td>{{ e.ot100 }}</td>
+        <td>{{ e.semanas|join(', ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+</body>
+</html>
