@@ -6,103 +6,136 @@
   <title>CM Horas Extras — Informe de cierre</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
-    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-    h1{font-size:1.3rem}
-    .nav{display:flex;gap:14px}
-    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
-    .nav a:hover{text-decoration:underline}
-    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
-    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;font-weight:600}
-    .rango-cierre{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:.88rem;color:#374151}
-    .rango-cierre strong{color:#111827}
-    .btn-print{padding:8px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer}
-    .btn-print:hover{background:#4b5563}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;padding:22px}
+    .shell{max-width:1180px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;margin-bottom:4px}
+    .subtitle{font-size:.9rem;color:#64748b;margin-top:4px}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a,.btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
+    .nav a:hover,.btn:hover{border-color:#94a3b8;background:#f8fafc}
+    .btn-primary{background:#172033;color:#fff;border-color:#172033}
+    .btn-primary:hover{background:#25314a;color:#fff;border-color:#25314a}
+    .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+    .metric{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px}
+    .metric-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:800;margin-bottom:6px}
+    .metric-value{font-size:1rem;color:#0f172a;font-weight:750;line-height:1.3}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px;overflow:hidden}
+    .card-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #eef2f7;gap:10px;flex-wrap:wrap}
+    .card-title{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
     .tabla-wrap{overflow-x:auto}
-    table{width:100%;border-collapse:collapse;font-size:.85rem}
-    th{background:#f8f9fb;text-align:left;padding:9px 10px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.84rem}
+    th{background:#f8fafc;text-align:left;padding:9px 10px;color:#64748b;font-size:.71rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+    td{padding:9px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
     tr:last-child td{border-bottom:none}
-    .ot50{color:#d97706;font-weight:600}
-    .ot100{color:#dc2626;font-weight:600}
-    .emp-nombre{font-weight:600}
-    .ok{color:#065f46;font-weight:600}
-    .pend{color:#92400e}
-    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;padding:7px 10px}
+    .emp-nombre{font-weight:650;color:#0f172a}
+    .ot50{color:#d97706;font-weight:700}
+    .ot100{color:#dc2626;font-weight:700}
+    .ok{color:#065f46;font-weight:700}
+    .pend{color:#92400e;font-weight:700}
+    .depto-header td{background:#e0e7ff;color:#3730a3;font-weight:800;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;padding:7px 10px}
     .subtotal-row td{background:#f0fdf4;font-weight:700;font-size:.82rem;color:#065f46;border-top:1px solid #bbf7d0}
-    .total-row td{background:#1a1a2e;color:#fff;font-weight:700;border-top:2px solid #1a1a2e}
+    .total-row td{background:#172033;color:#fff;font-weight:700;border-top:2px solid #172033}
     .total-row .ot50{color:#fcd34d}
     .total-row .ot100{color:#fca5a5}
-    .print-header{display:none}
-    .print-footer{display:none}
 
-    @media print {
+    /* ── PRINT ─────────────────────────────── */
+    .print-block{display:none}
+    @media print{
       body{background:#fff;padding:10px}
-      .topbar,.nav,.btn-print{display:none !important}
-      .card{box-shadow:none;border:1px solid #e5e7eb;margin-bottom:10px}
-      .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #1a1a2e;padding-bottom:10px}
-      .print-header-left h2{font-size:1.1rem;color:#1a1a2e}
-      .print-header-left p{font-size:.78rem;color:#555;margin-top:3px}
-      .print-header-right{text-align:right;font-size:.78rem;color:#555}
-      .print-header-right strong{display:block;font-size:.9rem;color:#1a1a2e}
-      .print-footer{display:flex;justify-content:space-between;margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:.75rem;color:#888}
-      .firma-linea{border-top:1px solid #1a1a2e;width:180px;margin-top:28px;padding-top:4px;font-size:.75rem;color:#1a1a2e;font-weight:600}
+      .topbar,.nav,.btn{display:none!important}
+      .summary{grid-template-columns:repeat(4,1fr)}
+      .metric,.card{box-shadow:none;border:1px solid #d7dde5;break-inside:avoid}
       .depto-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .subtotal-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .total-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .print-block{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #172033}
+      .print-block h2{font-size:1.1rem;color:#0f172a}
+      .print-block p{font-size:.78rem;color:#555;margin-top:3px}
+      .print-block-right{text-align:right;font-size:.78rem;color:#555}
+      .firma-linea{border-top:1px solid #172033;width:200px;margin-top:30px;padding-top:4px;font-size:.76rem;color:#172033;font-weight:700}
+    }
+
+    @media(max-width:840px){
+      body{padding:14px}
+      .topbar{display:block}
+      .nav{justify-content:flex-start;margin-top:12px}
+      .summary{grid-template-columns:1fr 1fr}
+    }
+    @media(max-width:560px){
+      .summary{grid-template-columns:1fr}
     }
   </style>
 </head>
 <body>
+<div class="shell">
 
-<div class="topbar">
-  <h1>Informe de cierre</h1>
-  <div class="nav">
-    <a href="/periodos/historial">← Historial</a>
-    <a href="/">Panel principal</a>
-    <a href="/logout">Salir</a>
-  </div>
-</div>
-
-<div class="card">
-  <div class="print-header">
-    <div class="print-header-left">
+  <!-- Encabezado para impresión -->
+  <div class="print-block">
+    <div>
       <h2>INFORME DE CIERRE — Semanas {{ semanas|join(', ') }}</h2>
       {% if fecha_desde %}<p>Periodo: {{ fecha_desde }} al {{ fecha_hasta }}</p>{% endif %}
       <p>Cerrado: {{ cerrado_en }}</p>
     </div>
-    <div class="print-header-right">
-      <strong>CM Vector Systems</strong>
+    <div class="print-block-right">
+      <strong>{{ firma }}</strong>
+      <div class="firma-linea">{{ firma }}</div>
     </div>
   </div>
-  <div class="print-footer">
-    <span>Cerrado: {{ cerrado_en }}</span>
-    <div class="firma-linea">{{ firma }}</div>
+
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Cierre #{{ pid }}</div>
+      <h1>Informe de cierre</h1>
+      <div class="subtitle">Semanas {{ semanas|join(', ') }} — Cerrado {{ cerrado_en }}</div>
+    </div>
+    <div class="nav">
+      <a href="/periodos/historial">← Historial</a>
+      <a href="/">Panel</a>
+      <a href="/logout">Salir</a>
+      <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir / PDF</button>
+    </div>
   </div>
 
-  <div class="card-header">
-    <span class="card-title">Semanas {{ semanas|join(', ') }} — Cerrado {{ cerrado_en }}</span>
-    <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
+  <div class="summary">
+    <div class="metric">
+      <div class="metric-label">Periodo</div>
+      <div class="metric-value">{% if fecha_desde %}{{ fecha_desde }}<br>al {{ fecha_hasta }}{% else %}—{% endif %}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Cerrado</div>
+      <div class="metric-value">{{ cerrado_en or '—' }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Semanas</div>
+      <div class="metric-value">{{ semanas|join(', ') }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Empleados</div>
+      <div class="metric-value" id="total-emp">—</div>
+    </div>
   </div>
 
-  <div class="rango-cierre">
-    <strong>Periodo del cierre:</strong>
-    {% if fecha_desde %}{{ fecha_desde }} al {{ fecha_hasta }}{% else %}Sin rango de fechas registrado{% endif %}
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Detalle por empleado</span>
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Legajo</th><th>Nombre</th>
+            <th>OT 50%</th><th>OT 100%</th>
+            <th>Comidas</th><th>Francos</th><th>Tardanzas</th>
+            <th>Semanas</th><th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="tabla-wrap">
-    <table id="tabla-cierre">
-      <thead>
-        <tr>
-          <th>Legajo</th><th>Nombre</th>
-          <th>OT 50%</th><th>OT 100%</th>
-          <th>Comidas</th><th>Francos</th><th>Tardanzas</th>
-          <th>Semanas</th><th>Estado</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
 </div>
 
 <script>
@@ -134,7 +167,7 @@ function fmtMin(mins) {
   let html = '';
 
   Object.keys(grupos).sort().forEach(depto => {
-    const empleados = grupos[depto];
+    const empleados = grupos[depto].sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo));
     totGenEmp += empleados.length;
     let sub50 = 0, sub100 = 0, subComidas = 0, subFrancos = 0, subTardanzas = 0;
 
@@ -146,7 +179,9 @@ function fmtMin(mins) {
       subComidas   += e.comidas   || 0;
       subFrancos   += e.francos   || 0;
       subTardanzas += e.tardanzas || 0;
-      const estado = e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>';
+      const estado = e.confirmado
+        ? '<span class="ok">✓ Confirmado</span>'
+        : '<span class="pend">⏳ Pendiente</span>';
       html += `<tr>
         <td>${e.legajo}</td>
         <td class="emp-nombre">${e.nombre}</td>
@@ -188,6 +223,7 @@ function fmtMin(mins) {
   </tr>`;
 
   document.getElementById('tbody').innerHTML = html;
+  document.getElementById('total-emp').textContent = totGenEmp;
 })();
 </script>
 </body>
