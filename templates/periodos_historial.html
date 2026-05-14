@@ -3,97 +3,166 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CM Horas Extras — Historial de cierres</title>
+  <title>CM Horas Extras - Cierres</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#f0f4f8;padding:24px;color:#1a1a2e}
-    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-    h1{font-size:1.3rem}
-    .nav{display:flex;gap:14px}
-    .nav a{font-size:.82rem;color:#1d4ed8;text-decoration:none}
-    .nav a:hover{text-decoration:underline}
-    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-    .card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:14px;font-weight:600}
-    table{width:100%;border-collapse:collapse;font-size:.88rem}
-    th{background:#f8f9fb;text-align:left;padding:9px 12px;color:#555;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb}
-    td{padding:10px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;padding:22px}
+    .shell{max-width:1240px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;letter-spacing:0;color:#0f172a}
+    .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;margin-bottom:4px}
+    .subtitle{font-size:.9rem;color:#64748b;margin-top:4px}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a,.btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
+    .nav a:hover,.btn:hover{border-color:#94a3b8;background:#f8fafc}
+    .btn-primary{background:#172033;color:#fff;border-color:#172033}
+    .btn-primary:hover{background:#25314a;color:#fff;border-color:#25314a}
+    .btn-danger{background:#fff;color:#b91c1c;border-color:#fecaca}
+    .btn-danger:hover{background:#fef2f2;border-color:#fca5a5}
+    .panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+    .panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px;border-bottom:1px solid #e5e7eb}
+    .panel-title{font-size:.92rem;font-weight:750;color:#111827}
+    .tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .search{height:34px;width:min(280px,56vw);border:1px solid #d7dde5;border-radius:7px;padding:0 11px;font-size:.85rem;color:#111827;background:#fff}
+    .search:focus{outline:2px solid #bfdbfe;border-color:#60a5fa}
+    .table-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.86rem}
+    th{background:#f8fafc;text-align:left;padding:10px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+    td{padding:12px;border-bottom:1px solid #eef2f7;vertical-align:middle;color:#111827}
     tr:last-child td{border-bottom:none}
-    .badge-ok{background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .badge-pend{background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .badge-anulado{background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .btn-ver{padding:5px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
-    .btn-ver:hover{background:#2d2d4e}
-    .btn-anular{padding:5px 12px;background:#b91c1c;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer}
-    .btn-anular:hover{background:#991b1b}
-    .acciones{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .vacio{color:#888;font-size:.85rem;padding:20px 0;text-align:center}
+    tbody tr:hover{background:#fbfdff}
+    .periodo{font-weight:650;color:#0f172a}
+    .muted{color:#64748b;font-size:.8rem}
+    .num{font-variant-numeric:tabular-nums}
+    .badges{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .badge{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:999px;font-size:.76rem;font-weight:750;border:1px solid transparent;white-space:nowrap}
+    .ok{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+    .pend{background:#fef3c7;color:#92400e;border-color:#fde68a}
+    .off{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+    .neutral{background:#eef2f7;color:#475569;border-color:#e2e8f0}
+    .acciones{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+    .vacio{padding:44px 18px;text-align:center;color:#64748b;font-size:.92rem}
+    .mobile-label{display:none}
+    @media (max-width:760px){
+      body{padding:14px}
+      .topbar{display:block}
+      .nav{justify-content:flex-start;margin-top:12px}
+      .panel-head{display:block}
+      .tools{margin-top:12px}
+      .search{width:100%}
+      table,thead,tbody,tr,td{display:block;width:100%}
+      thead{display:none}
+      tr{border-bottom:1px solid #e5e7eb;padding:10px 12px}
+      td{border-bottom:none;padding:6px 0;display:flex;justify-content:space-between;gap:16px}
+      .mobile-label{display:inline;color:#64748b;font-size:.73rem;text-transform:uppercase;letter-spacing:.05em;font-weight:750}
+      .acciones{justify-content:flex-end}
+    }
   </style>
 </head>
 <body>
+<div class="shell">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Periodos</div>
+      <h1>Historial de cierres</h1>
+      <div class="subtitle">Consultas, confirmaciones archivadas y anulaciones de cierre.</div>
+    </div>
+    <div class="nav">
+      <a href="/">Panel principal</a>
+      <a href="/periodo">Periodos</a>
+      <a href="/logout">Salir</a>
+    </div>
+  </div>
 
-<div class="topbar">
-  <h1>Historial de cierres</h1>
-  <div class="nav">
-    <a href="/">← Panel principal</a>
-    <a href="/periodo">Períodos</a>
-    <a href="/logout">Salir</a>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Cierres registrados</div>
+      <div class="tools">
+        <input class="search" id="buscar" type="search" placeholder="Buscar fecha, semana o estado">
+      </div>
+    </div>
+
+    {% if cierres %}
+    <div class="table-wrap">
+      <table id="tabla-cierres">
+        <thead>
+          <tr>
+            <th>Fecha de cierre</th>
+            <th>Periodo</th>
+            <th>Semanas</th>
+            <th>Empleados</th>
+            <th>Confirmaciones</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cierres %}
+          <tr>
+            <td class="num"><span class="mobile-label">Cierre</span>{{ c.cerrado_en }}</td>
+            <td>
+              <span class="mobile-label">Periodo</span>
+              <div>
+                <div class="periodo">{% if c.fecha_desde %}{{ c.fecha_desde }} al {{ c.fecha_hasta }}{% else %}Sin fechas{% endif %}</div>
+                <div class="muted">ID {{ c.id }}</div>
+              </div>
+            </td>
+            <td><span class="mobile-label">Semanas</span>{% if c.semanas %}Sem. {{ c.semanas|join(', ') }}{% else %}-{% endif %}</td>
+            <td class="num"><span class="mobile-label">Empleados</span>{{ c.total }}</td>
+            <td>
+              <span class="mobile-label">Confirmaciones</span>
+              <div class="badges">
+                <span class="badge ok">{{ c.confirmados }} confirmados</span>
+                {% if c.pendientes > 0 %}
+                  <span class="badge pend">{{ c.pendientes }} pendientes</span>
+                {% else %}
+                  <span class="badge neutral">sin pendientes</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <span class="mobile-label">Estado</span>
+              {% if c.estado == 'ANULADO' %}
+                <span class="badge off">Anulado</span>
+              {% else %}
+                <span class="badge ok">Activo</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="mobile-label">Acciones</span>
+              <div class="acciones">
+                <a class="btn btn-primary" href="/periodos/ver/{{ c.id }}">Ver informe</a>
+                <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}">Confirmaciones</a>
+                {% if c.estado != 'ANULADO' %}
+                  <button type="button" class="btn btn-danger" onclick="anularCierre({{ c.id }})">Anular</button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio">No hay periodos cerrados todavia.</div>
+    {% endif %}
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Períodos cerrados</div>
-  {% if cierres %}
-  <table>
-    <thead>
-      <tr>
-        <th>Fecha de cierre</th>
-        <th>Período</th>
-        <th>Semanas</th>
-        <th>Empleados</th>
-        <th>Confirmados</th>
-        <th>Pendientes</th>
-        <th>Estado</th>
-        <th>Informe</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for c in cierres %}
-      <tr>
-        <td>{{ c.cerrado_en }}</td>
-        <td>{% if c.fecha_desde %}{{ c.fecha_desde }} → {{ c.fecha_hasta }}{% else %}—{% endif %}</td>
-        <td>{% if c.semanas %}Sem. {{ c.semanas|join(', ') }}{% else %}—{% endif %}</td>
-        <td>{{ c.total }}</td>
-        <td><span class="badge-ok">✓ {{ c.confirmados }}</span></td>
-        <td>{% if c.pendientes > 0 %}<span class="badge-pend">⏳ {{ c.pendientes }}</span>{% else %}—{% endif %}</td>
-        <td>
-          {% if c.estado == 'ANULADO' %}
-            <span class="badge-anulado">ANULADO</span>
-          {% else %}
-            <span class="badge-ok">ACTIVO</span>
-          {% endif %}
-        </td>
-        <td>
-          <div class="acciones">
-            <a class="btn-ver" href="/periodos/ver/{{ c.id }}">Ver informe</a>
-            <a class="btn-ver" href="/periodos/confirmaciones_pdf/{{ c.id }}">PDF confirmaciones</a>
-            {% if c.estado != 'ANULADO' %}
-              <button type="button" class="btn-anular" onclick="anularCierre({{ c.id }})">Anular cierre</button>
-            {% endif %}
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="vacio">No hay períodos cerrados todavía.</div>
-  {% endif %}
-</div>
-
 <script>
+const buscar = document.getElementById('buscar');
+if (buscar) {
+  buscar.addEventListener('input', () => {
+    const q = buscar.value.trim().toLowerCase();
+    document.querySelectorAll('#tabla-cierres tbody tr').forEach(tr => {
+      tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+}
+
 async function anularCierre(id) {
-  if (!confirm('¿Seguro que querés anular este cierre? El historial se conservará.')) return;
-  const motivo = prompt('Motivo de anulación (opcional):') || '';
+  if (!confirm('Seguro que queres anular este cierre? El historial se conservara.')) return;
+  const motivo = prompt('Motivo de anulacion (opcional):') || '';
   const fd = new FormData();
   fd.append('motivo', motivo);
   const res = await fetch(`/periodos/anular/${id}`, { method: 'POST', body: fd });
@@ -106,6 +175,5 @@ async function anularCierre(id) {
   location.reload();
 }
 </script>
-
 </body>
 </html>
