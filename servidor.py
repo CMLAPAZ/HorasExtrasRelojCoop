@@ -30,6 +30,19 @@ TELEFONOS_FILE = Path("recursos/telefonos.json")
 _AREA_CODES = {100: "343", 141: "3435"}
 _AREA_DEFAULT = "3437"
 
+_DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+def _dia_semana(fecha_str):
+    try:
+        dt = datetime.strptime(str(fecha_str)[:10], "%Y-%m-%d")
+        return _DIAS_ES[dt.weekday()]
+    except Exception:
+        return ""
+
+@app.template_filter("dia_semana")
+def filter_dia_semana(fecha_str):
+    return _dia_semana(fecha_str)
+
 
 # ═══════════════════════════════════════════════
 # AUTH
@@ -318,6 +331,7 @@ def _leer_historial(semana=None, departamento=None):
                 {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
                  "franco": x.get("franco", 0), "comida": x.get("comida", 0),
                  "tipo_dia": x.get("tipo_dia", "normal"),
+                 "dia_semana": x.get("dia_semana") or _dia_semana(x["fecha"]),
                  "descripcion": x.get("descripcion", "")}
                 for x in d.get("dias", []) if x.get("tiene_ot")
             ],
@@ -345,7 +359,7 @@ def _normalizar_valor_excel(v):
         texto = texto[:-2]
     return texto
 
-def _wa_url(legajo, nombre, url, totales=None):
+def _wa_url(legajo, nombre, url, totales=None, dias=None):
     tel = _cargar_telefonos()
     phone = re.sub(r'\D', '', str(tel.get(str(legajo), "")))
     if not phone:
@@ -356,18 +370,35 @@ def _wa_url(legajo, nombre, url, totales=None):
         path = urlparse(url).path
         url  = WA_BASE_URL.rstrip("/") + path
     nombre_corto = nombre.split()[0]
-    if totales:
-        ot50  = totales.get("ot50",  "0h")
-        ot100 = totales.get("ot100", "0h")
-        fra   = totales.get("francos",  0)
-        com   = totales.get("comidas",  0)
-        tar   = totales.get("tardanzas", 0)
+    if dias or totales:
         lineas = [f"Hola {nombre_corto}, tus horas extras registradas son:"]
-        if ot50  not in ("0h", "0:00", ""): lineas.append(f"• OT 50%: {ot50}")
-        if ot100 not in ("0h", "0:00", ""): lineas.append(f"• OT 100%: {ot100}")
-        if fra: lineas.append(f"• Francos: {fra}")
-        if com: lineas.append(f"• Comidas: {com}")
-        if tar: lineas.append(f"• Tardanzas: {tar}")
+        if dias:
+            for d in dias:
+                if not d.get("tiene_ot") and not d.get("ot50") and not d.get("ot100") and not d.get("franco") and not d.get("comida"):
+                    continue
+                if d.get("ot50") == "00:00:00" and d.get("ot100") == "00:00:00" and not d.get("franco") and not d.get("comida"):
+                    continue
+                dia_nombre = d.get("dia_semana") or _dia_semana(d.get("fecha", ""))
+                fecha_fmt  = d.get("fecha_fmt") or d.get("fecha", "")[5:]
+                partes = []
+                if d.get("ot50")  and d["ot50"]  != "00:00:00": partes.append(f"{d['ot50'][:5]} (50%)")
+                if d.get("ot100") and d["ot100"] != "00:00:00": partes.append(f"{d['ot100'][:5]} (100%)")
+                if d.get("franco"):  partes.append("Franco")
+                if d.get("comida"):  partes.append("Comida")
+                if partes:
+                    prefijo = f"{dia_nombre} {fecha_fmt}" if dia_nombre else fecha_fmt
+                    lineas.append(f"• {prefijo}: {', '.join(partes)}")
+        if len(lineas) == 1 and totales:
+            ot50  = totales.get("ot50",  "0h")
+            ot100 = totales.get("ot100", "0h")
+            fra   = totales.get("francos",  0)
+            com   = totales.get("comidas",  0)
+            tar   = totales.get("tardanzas", 0)
+            if ot50  not in ("0h", "0:00", ""): lineas.append(f"• OT 50%: {ot50}")
+            if ot100 not in ("0h", "0:00", ""): lineas.append(f"• OT 100%: {ot100}")
+            if fra: lineas.append(f"• Francos: {fra}")
+            if com: lineas.append(f"• Comidas: {com}")
+            if tar: lineas.append(f"• Tardanzas: {tar}")
         if len(lineas) == 1:
             lineas.append("• Sin horas extras este período")
         lineas.append(f"Podés verlas y confirmarlas en: {url}")
@@ -735,6 +766,7 @@ def _preparar_dias(registros):
             else:               tipo_dia = "normal"
             dias_dict[fecha] = {
                 "fecha": fecha, "fecha_fmt": fecha[5:],
+                "dia_semana": _dia_semana(fecha),
                 "tramos": [],
                 "normales": r["Normales"], "ot50": r["50%"], "ot100": r["100%"],
                 "comida": int(r.get("COMIDA",0)), "franco": int(r.get("FRANCO",0)),
@@ -878,7 +910,8 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
         links.append({"legajo": emp["legajo"], "nombre": emp["nombre"],
                        "url": emp_url,
                        "wa_url": _wa_url(emp["legajo"], emp["nombre"], emp_url,
-                                         totales=_sesion[token].get("totales"))})
+                                         totales=_sesion[token].get("totales"),
+                                         dias=_sesion[token].get("dias"))})
     return tokens_creados, links
 
 
@@ -1093,7 +1126,7 @@ def semana_links(n):
         {"legajo": d["legajo"], "nombre": d["nombre"],
          "confirmado": d["confirmado"], "url": f"{base_url}/e/{t}",
          "wa_url": _wa_url(d["legajo"], d["nombre"], f"{base_url}/e/{t}",
-                           totales=d.get("totales"))}
+                           totales=d.get("totales"), dias=d.get("dias"))}
         for t, d in _sesion.items() if d.get("semana") == n
     ]
     links.sort(key=lambda x: (x["confirmado"], x["nombre"]))

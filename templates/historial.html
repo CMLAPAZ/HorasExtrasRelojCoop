@@ -164,7 +164,7 @@
         {% for d in c.dias %}
         {% set tipo = d.get('tipo_dia','normal') %}
         <div class="dia-item {{ tipo }}">
-          <span class="dia-fecha">{{ d.fecha[5:] }}{% if tipo != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sabado','domingo':'Domingo','paro':'Paro'}.get(tipo,'') }}</span>{% endif %}</span>
+          <span class="dia-fecha">{{ d.fecha | dia_semana }} {{ d.fecha[5:] }}{% if tipo != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sabado','domingo':'Domingo','paro':'Paro'}.get(tipo,'') }}</span>{% endif %}</span>
           <span class="dia-horas">
             {% if d.ot50  != '00:00:00' %}+{{ d.ot50[:5] }} 50%{% endif %}
             {% if d.ot100 != '00:00:00' %} +{{ d.ot100[:5] }} 100%{% endif %}

@@ -113,7 +113,7 @@
   {% for d in data.dias %}{% if d.tiene_ot %}{% set _ = tiene_dias.append(1) %}
   <div class="dia {{ d.tipo_dia }}">
     <div class="dia-head">
-      <span class="dia-fecha">{{ d.fecha_fmt }}{% if d.tipo_dia != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sábado','domingo':'Domingo','paro':'Paro'}[d.tipo_dia] }}</span>{% endif %}</span>
+      <span class="dia-fecha">{{ d.fecha | dia_semana }} {{ d.fecha_fmt }}{% if d.tipo_dia != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sábado','domingo':'Domingo','paro':'Paro'}[d.tipo_dia] }}</span>{% endif %}</span>
       <div class="dia-horas">
         {% if d.ot50  != '00:00:00' %}<span class="ot50-t">+{{ d.ot50[:5] }} 50%</span><br>{% endif %}
         {% if d.ot100 != '00:00:00' %}<span class="ot100-t">+{{ d.ot100[:5] }} 100%</span>{% endif %}
