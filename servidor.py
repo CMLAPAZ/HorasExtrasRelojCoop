@@ -1059,12 +1059,14 @@ def procesar():
         for s in meta.get("semanas", []):
             if s.get("fecha_desde") == fecha_desde and s.get("fecha_hasta") == fecha_hasta \
                and s.get("departamento", "Todos") == depto_label:
+                nd = s.get("num_depto", s["numero"])
                 return jsonify({
                     "duplicado": True,
                     "semana_existente": s["numero"],
+                    "num_depto_existente": nd,
                     "fecha_desde": fecha_desde,
                     "fecha_hasta": fecha_hasta,
-                    "msg": f"Ya existe la Semana {s['numero']} con las mismas fechas y departamento ({fecha_desde} → {fecha_hasta} / {depto_label}).",
+                    "msg": f"Ya existe la Semana {nd} con las mismas fechas y departamento ({fecha_desde} → {fecha_hasta} / {depto_label}).",
                 })
 
     n = meta["semana_actual"] + 1

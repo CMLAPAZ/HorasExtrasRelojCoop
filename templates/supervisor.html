@@ -348,7 +348,7 @@ async function procesar(force) {
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button type="button" class="btn-warn" onclick="reprocesarSemana(${data.semana_existente})">
-            Corregir semana ${data.semana_existente}
+            Corregir semana ${data.num_depto_existente || data.semana_existente}
           </button>
           <button type="button" class="btn-outline" onclick="procesar(true)">
             Procesar de todos modos (nueva semana)
