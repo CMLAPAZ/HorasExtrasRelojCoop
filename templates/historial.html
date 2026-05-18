@@ -130,7 +130,7 @@
     </div>
     <div class="metric">
       <div class="metric-label">Semana</div>
-      <div class="metric-value">{% if semana_actual %}{{ semana_actual }}{% else %}Todas{% endif %}</div>
+      <div class="metric-value">{% if semana_actual %}{% for s in semanas %}{% if s.valor == semana_actual %}{{ s.nombre }}{% endif %}{% endfor %}{% else %}Todas{% endif %}</div>
     </div>
   </div>
 

@@ -298,7 +298,7 @@ def _leer_historial(semana=None, departamento=None):
                 continue
             if departamento and depto_conf != departamento:
                 continue
-            if semana is None or sem_conf == semana:
+            if semana is None or sem_depto == semana:
                 key = _clave_confirmacion(data)
                 actual = mejores.get(key)
                 if actual is None or _score_confirmacion(data) > _score_confirmacion(actual):
@@ -317,7 +317,7 @@ def _leer_historial(semana=None, departamento=None):
         key = _clave_confirmacion(d)
         if key in vistos:
             continue
-        if semana is not None and d.get("semana") != semana:
+        if semana is not None and d.get("semana_depto", d.get("semana")) != semana:
             continue
         items.append({
             "legajo":       d["legajo"],
@@ -1425,9 +1425,9 @@ def historial():
         if not valor or valor == "todos":
             continue
         deptos_map[valor] = _nombre_departamento_visible(item.get("departamento", ""))
-        sem_valor = item.get("semana")
-        if sem_valor:
-            semanas_map[sem_valor] = item.get("semana_depto", sem_valor)
+        sem_depto_val = item.get("semana_depto") or item.get("semana")
+        if sem_depto_val:
+            semanas_map[sem_depto_val] = sem_depto_val
     departamentos = [
         {"valor": valor, "nombre": nombre}
         for valor, nombre in sorted(deptos_map.items(), key=lambda item: item[1])
