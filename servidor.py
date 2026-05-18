@@ -27,7 +27,7 @@ DB_FILE        = DATOS_DIR / "cierres.db"
 TELEFONOS_FILE = Path("recursos/telefonos.json")
 
 # Prefijos de área por legajo (excepciones a la regla general)
-_AREA_CODES = {100: "343", 141: "3435"}
+_AREA_CODES = {100: "343", 141: "3435", 145: "353"}
 _AREA_DEFAULT = "3437"
 
 _DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -1092,6 +1092,132 @@ def procesar():
     return jsonify({"empleados": links, "semana": n, "num_depto": num_depto,
                     "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
                     "departamento": depto_label})
+
+
+@app.route("/semanas/<int:n>/reprocesar", methods=["POST"])
+def reprocesar_semana(n):
+    if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    if "csv" not in request.files: return jsonify({"error":"No se recibió archivo"}), 400
+
+    meta = _cargar_metadata()
+    semana_existente = next((s for s in meta.get("semanas", []) if s.get("numero") == n), None)
+    if not semana_existente:
+        return jsonify({"error": f"No existe la semana {n}."}), 404
+
+    # Legajos a actualizar (vacío = todos)
+    solo_legajos_raw = request.form.get("solo_legajos", "").strip()
+    solo_legajos = {s.strip() for s in solo_legajos_raw.split(",") if s.strip()} if solo_legajos_raw else set()
+
+    try:
+        df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    depto_label = semana_existente.get("departamento", "Todos")
+    try:
+        empleados_nuevos, fecha_desde, fecha_hasta = _procesar_empleados(df, [depto_label])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not empleados_nuevos:
+        return jsonify({"error": "No se encontraron empleados para el departamento."}), 400
+
+    for emp in empleados_nuevos:
+        emp["departamento"] = depto_label
+
+    base_url = request.host_url.rstrip("/")
+    num_depto = semana_existente.get("num_depto", n)
+
+    # Mapa legajo → nuevo empleado procesado
+    nuevos_por_legajo = {str(e["legajo"]): e for e in empleados_nuevos}
+
+    # Mapa legajo → token existente
+    token_por_legajo = {
+        str(_sesion[t]["legajo"]): t
+        for t in semana_existente.get("tokens", [])
+        if t in _sesion
+    }
+
+    links = []
+    tokens_finales = list(semana_existente.get("tokens", []))  # preservar orden original
+
+    # Actualizar solo los legajos indicados (o todos si no se especificaron)
+    legajos_a_actualizar = solo_legajos if solo_legajos else set(nuevos_por_legajo.keys())
+
+    for leg in legajos_a_actualizar:
+        emp = nuevos_por_legajo.get(leg)
+        if not emp:
+            continue  # legajo no encontrado en el CSV nuevo, no tocar nada
+
+        dias_prep = _preparar_dias(emp["registros"])
+        excluido = emp.get("excluido_ot", False)
+        ot50 = ot100 = timedelta(0)
+        comidas = francos = tardanzas = 0
+        for d in dias_prep:
+            if not excluido:
+                ot50  += _parse_td(d["ot50"])
+                ot100 += _parse_td(d["ot100"])
+            comidas   += int(d.get("comida", 0))
+            francos   += int(d.get("franco", 0))
+            tardanzas += int(d.get("tarde",  0))
+        totales = {"ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
+                   "comidas": comidas, "francos": francos, "tardanzas": tardanzas}
+
+        if leg in token_por_legajo:
+            # Actualizar datos en el token existente, preservar link y confirmado
+            token = token_por_legajo[leg]
+            _sesion[token] = {
+                **_sesion[token],
+                "dias": dias_prep,
+                "totales": totales,
+                "excluido_ot": excluido,
+                "nombre": emp["nombre"],
+                "departamento": depto_label,
+            }
+        else:
+            # Empleado nuevo en el CSV: crear token
+            token = secrets.token_urlsafe(10)
+            _sesion[token] = {
+                "legajo": leg, "nombre": emp["nombre"],
+                "departamento": depto_label,
+                "excluido_ot": excluido,
+                "dias": dias_prep, "totales": totales,
+                "confirmado": False, "confirmado_en": None,
+                "semana": n, "semana_depto": num_depto,
+            }
+            tokens_finales.append(token)
+            token_por_legajo[leg] = token
+
+    # Armar lista de links de todos los empleados de la semana (actualizados y sin tocar)
+    for t in tokens_finales:
+        if t not in _sesion:
+            continue
+        d = _sesion[t]
+        emp_url = f"{base_url}/e/{t}"
+        links.append({"legajo": d["legajo"], "nombre": d["nombre"],
+                      "url": emp_url,
+                      "wa_url": _wa_url(d["legajo"], d["nombre"], emp_url,
+                                        totales=d.get("totales"), dias=d.get("dias"))})
+
+    _guardar_sesion(_sesion)
+
+    # Solo pisar el CSV si se actualizaron todos (parcial no reemplaza el archivo)
+    if not solo_legajos:
+        _guardar_semana_csv(n, df)
+        semana_existente["fecha_desde"] = fecha_desde
+        semana_existente["fecha_hasta"] = fecha_hasta
+        semana_existente["legajos"] = [emp["legajo"] for emp in empleados_nuevos]
+
+    semana_existente["tokens"] = tokens_finales
+    semana_existente["fecha_upload"] = datetime.now().isoformat()
+    _guardar_metadata(meta)
+
+    actualizados = list(legajos_a_actualizar & set(nuevos_por_legajo.keys()))
+    return jsonify({"empleados": links, "semana": n, "num_depto": num_depto,
+                    "fecha_desde": semana_existente.get("fecha_desde", ""),
+                    "fecha_hasta": semana_existente.get("fecha_hasta", ""),
+                    "departamento": depto_label,
+                    "actualizados": actualizados})
 
 
 @app.route("/semanas")

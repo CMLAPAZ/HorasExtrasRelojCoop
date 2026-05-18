@@ -190,7 +190,7 @@ async function resetTotal() {
     <span class="card-title-inline">Lista de teléfonos</span>
     <span id="tel-estado" class="tel-ok hidden"></span>
   </div>
-  <label for="tel-archivo">Subí el Excel con legajos y teléfonos (una sola vez, se guarda)</label>
+  <label for="tel-archivo">Subí el Excel con legajos y teléfonos (se puede subir de nuevo para actualizar)</label>
   <input type="file" id="tel-archivo" accept=".xls,.xlsx,.csv">
   <div id="tel-error" class="tel-error hidden"></div>
   <button type="button" class="btn-sm-mt" onclick="subirTelefonos()">Cargar teléfonos</button>
@@ -338,10 +338,22 @@ async function procesar(force) {
     }
 
     if (data.duplicado) {
-      dupEl.innerHTML = `⚠ ${data.msg}<br>
-        <button type="button" class="btn-outline" style="margin-top:8px" onclick="procesar(true)">
-          Procesar de todos modos (nueva semana)
-        </button>`;
+      dupEl.innerHTML = `⚠ ${data.msg}
+        <div style="margin-top:10px;font-size:.9rem">
+          <label style="display:block;margin-bottom:4px;font-weight:600">
+            ¿Corregir solo algunos legajos? (opcional — dejá vacío para actualizar todos)
+          </label>
+          <input id="dup-legajos" type="text" placeholder="Ej: 141, 145"
+            style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:220px;font-size:.9rem">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button type="button" class="btn-warn" onclick="reprocesarSemana(${data.semana_existente})">
+            Corregir semana ${data.semana_existente}
+          </button>
+          <button type="button" class="btn-outline" onclick="procesar(true)">
+            Procesar de todos modos (nueva semana)
+          </button>
+        </div>`;
       dupEl.classList.remove('hidden');
       return;
     }
@@ -370,6 +382,61 @@ async function procesar(force) {
   } catch(ex) {
     loadEl.classList.add('hidden');
     errEl.textContent = 'Error de conexión con el servidor.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+// ─── Reprocesar semana existente ─────────────────
+async function reprocesarSemana(n) {
+  const file      = document.getElementById('csv').files[0];
+  const errEl     = document.getElementById('error');
+  const dupEl     = document.getElementById('warn-dup');
+  const loadEl    = document.getElementById('loading');
+  const legInput  = document.getElementById('dup-legajos');
+  const soloLegs  = legInput ? legInput.value.trim() : '';
+  errEl.classList.add('hidden');
+  dupEl.classList.add('hidden');
+  loadEl.classList.remove('hidden');
+  document.getElementById('resultado').classList.add('hidden');
+
+  const fd = new FormData();
+  fd.append('csv', file);
+  if (soloLegs) fd.append('solo_legajos', soloLegs);
+  try {
+    const res  = await fetch(`/semanas/${n}/reprocesar`, { method:'POST', body:fd });
+    const data = await res.json();
+    loadEl.classList.add('hidden');
+    if (data.error) {
+      errEl.textContent = '⚠ ' + data.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const actualizadosMsg = data.actualizados && data.actualizados.length
+      ? ` · Legajos corregidos: ${data.actualizados.join(', ')}`
+      : '';
+    document.getElementById('semana-badge').textContent =
+      `Semana ${data.num_depto || data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}${actualizadosMsg}`;
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    data.empleados.sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo)).forEach(e => {
+      const esActualizado = data.actualizados && data.actualizados.includes(String(e.legajo));
+      const tr = document.createElement('tr');
+      tr.style.background = esActualizado ? '#fef9c3' : '';
+      tr.innerHTML = `
+        <td>${e.legajo}${esActualizado ? ' <span style="color:#92400e;font-size:.8rem">(corregido)</span>' : ''}</td>
+        <td>${e.nombre}</td>
+        <td><a class="link-url" href="${e.url}" target="_blank">${e.url}</a></td>
+        <td><button type="button" class="copy-btn" onclick="copiar(this,'${e.url}')">Copiar</button></td>
+        <td>${e.wa_url ? `<a class="wa-btn" href="${e.wa_url}" target="_blank">WhatsApp</a>` : '—'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('resultado').classList.remove('hidden');
+    cargarSemanas();
+    cargarEstado();
+  } catch(ex) {
+    loadEl.classList.add('hidden');
+    errEl.textContent = 'Error de conexión.';
     errEl.classList.remove('hidden');
   }
 }
