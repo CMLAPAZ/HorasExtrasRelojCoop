@@ -1955,18 +1955,18 @@ def admin_reset():
 # FRANCOS TOMADOS
 # ═══════════════════════════════════════════════
 def _empleados_conocidos():
-    """Lista deduplicada de {legajo, nombre} desde historial de cierres + sesión activa."""
+    """Lista deduplicada de {legajo, nombre, departamento} ordenada por depto y legajo."""
     vistos = {}
     with _get_db() as conn:
-        for row in conn.execute("SELECT DISTINCT legajo, nombre FROM periodo_empleados ORDER BY nombre"):
-            vistos[str(row["legajo"])] = row["nombre"]
+        for row in conn.execute("SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"):
+            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": row["departamento"] or ""}
     for d in _sesion.values():
         leg = str(d.get("legajo", ""))
-        if leg and leg not in vistos:
-            vistos[leg] = d.get("nombre", "")
+        if leg:
+            vistos[leg] = {"nombre": d.get("nombre", ""), "departamento": d.get("departamento", "")}
     return sorted(
-        [{"legajo": k, "nombre": v} for k, v in vistos.items()],
-        key=lambda e: e["nombre"]
+        [{"legajo": k, "nombre": v["nombre"], "departamento": v["departamento"]} for k, v in vistos.items()],
+        key=lambda e: (e["departamento"].lower(), int(e["legajo"]) if e["legajo"].isdigit() else 0)
     )
 
 def _cargar_feriados_config():
