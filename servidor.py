@@ -1991,11 +1991,16 @@ def _dias_habiles(fecha_desde_str, fecha_hasta_str):
     hasta = _parse_fecha(fecha_hasta_str)
     if not desde or not hasta:
         return 0
+    # Normalizar a date (parse_fecha puede devolver datetime o date)
+    if isinstance(desde, datetime):
+        desde = desde.date()
+    if isinstance(hasta, datetime):
+        hasta = hasta.date()
     feriados = _cargar_feriados_config()
     total = 0
     cur = desde
     while cur <= hasta:
-        if cur.weekday() < 5 and cur.date() not in feriados:
+        if cur.weekday() < 5 and cur not in feriados:
             total += 1
         cur += timedelta(days=1)
     return total
