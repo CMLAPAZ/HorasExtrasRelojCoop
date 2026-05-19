@@ -2020,10 +2020,17 @@ def francos():
         else:
             r["fechas_lista"] = []
     saldos = [dict(r) for r in saldos_rows]
+    # Agrupar empleados por departamento para el template
+    empleados_raw = _empleados_conocidos()
+    empleados_por_depto = {}
+    for e in empleados_raw:
+        dep = e["departamento"] or "Sin departamento"
+        empleados_por_depto.setdefault(dep, []).append(e)
+    empleados_grupos = [{"departamento": k, "empleados": v} for k, v in sorted(empleados_por_depto.items())]
     return render_template("francos.html",
                            registros=registros,
                            saldos=saldos,
-                           empleados=_empleados_conocidos())
+                           empleados_grupos=empleados_grupos)
 
 @app.route("/francos/nuevo", methods=["POST"])
 def francos_nuevo():

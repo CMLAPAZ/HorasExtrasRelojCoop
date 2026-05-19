@@ -74,16 +74,13 @@
         <label>Empleado</label>
         <select name="legajo" id="sel-legajo" onchange="completarNombre()" required>
           <option value="">— Seleccionar —</option>
-          {% set ns = namespace(depto_actual='') %}
-          {% for e in empleados %}
-            {% if e.departamento != ns.depto_actual %}
-              {% if ns.depto_actual != '' %}</optgroup>{% endif %}
-              <optgroup label="{{ e.departamento | upper }}">
-              {% set ns.depto_actual = e.departamento %}
-            {% endif %}
+          {% for grupo in empleados_grupos %}
+          <optgroup label="{{ grupo.departamento | upper }}">
+            {% for e in grupo.empleados %}
             <option value="{{ e.legajo }}" data-nombre="{{ e.nombre }}">{{ e.legajo }} — {{ e.nombre }}</option>
+            {% endfor %}
+          </optgroup>
           {% endfor %}
-          {% if ns.depto_actual != '' %}</optgroup>{% endif %}
         </select>
         <input type="hidden" name="nombre" id="campo-nombre">
       </div>
