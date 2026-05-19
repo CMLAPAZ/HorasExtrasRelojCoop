@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Francos Tomados</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;padding:22px;color:#111827;max-width:1240px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a{height:34px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650}
+    .nav a:hover{border-color:#94a3b8;background:#f8fafc}
+    .nav a.active{background:#172033;color:#fff;border-color:#172033}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px}
+    .card-title{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800;margin-bottom:14px}
+    label{display:block;font-weight:700;margin-bottom:6px;font-size:.86rem;color:#334155}
+    input,select,textarea{width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;background:#fff;color:#111827}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:#6366f1}
+    textarea{min-height:64px;resize:vertical}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+    .field{margin-bottom:12px}
+    .btn{height:40px;padding:0 22px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.92rem;font-weight:750;cursor:pointer;margin-top:6px}
+    .btn:hover{background:#25314a}
+    .btn-del{height:28px;padding:0 10px;background:#fff;border:1px solid #fecaca;border-radius:6px;font-size:.78rem;font-weight:700;cursor:pointer;color:#b91c1c}
+    .btn-del:hover{background:#fef2f2}
+    .tabla-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+    th{background:#f8fafc;text-align:left;padding:10px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+    td{padding:10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-dias{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:.88rem}
+    #campos-rango{display:block}
+    #campos-sueltas{display:none}
+    .hint{font-size:.78rem;color:#64748b;margin-top:4px}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>CM Horas Extras</h1>
+  <div class="nav">
+    <a href="/supervisor">Inicio</a>
+    <a href="/historial">Historial</a>
+    <a href="/periodo">Períodos</a>
+    <a href="/periodos/historial">Cierres</a>
+    <a href="/francos" class="active">Francos</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+{% if request.args.get('error') %}
+<div class="error-box">
+  {% if request.args.get('error') == 'legajo_requerido' %}Debe seleccionar un empleado.
+  {% elif request.args.get('error') == 'fechas_requeridas' %}Debe ingresar las fechas.
+  {% elif request.args.get('error') == 'dias_cero' %}El rango no contiene días hábiles.
+  {% else %}Error al guardar. Verifique los datos.
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Formulario alta -->
+<div class="card">
+  <div class="card-title">Registrar Franco Tomado</div>
+  <form method="post" action="/francos/nuevo">
+
+    <div class="grid-2">
+      <div class="field">
+        <label>Empleado</label>
+        <select name="legajo" id="sel-legajo" onchange="completarNombre()" required>
+          <option value="">— Seleccionar —</option>
+          {% for e in empleados %}
+          <option value="{{ e.legajo }}" data-nombre="{{ e.nombre }}">{{ e.legajo }} — {{ e.nombre }}</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="nombre" id="campo-nombre">
+      </div>
+      <div class="field">
+        <label>Estado</label>
+        <select name="estado">
+          <option value="Aprobado" selected>Aprobado</option>
+          <option value="Pendiente">Pendiente</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Tipo</label>
+      <select name="tipo" id="sel-tipo" onchange="cambiarTipo()">
+        <option value="RANGO">Rango de fechas (días corridos hábiles)</option>
+        <option value="SUELTAS">Fechas sueltas (días no consecutivos)</option>
+      </select>
+    </div>
+
+    <div id="campos-rango">
+      <div class="grid-2">
+        <div class="field">
+          <label>Fecha desde</label>
+          <input type="date" name="fecha_desde" id="f-desde" onchange="calcularDias()">
+        </div>
+        <div class="field">
+          <label>Fecha hasta</label>
+          <input type="date" name="fecha_hasta" id="f-hasta" onchange="calcularDias()">
+        </div>
+      </div>
+      <div class="field">
+        <span id="preview-dias" style="font-size:.85rem;color:#1e40af;font-weight:700"></span>
+      </div>
+    </div>
+
+    <div id="campos-sueltas" style="display:none">
+      <div class="field">
+        <label>Fechas (una por línea o separadas por coma)</label>
+        <textarea name="fechas_sueltas" id="f-sueltas" placeholder="2026-05-19&#10;2026-05-22&#10;2026-05-26" onchange="contarSueltas()" oninput="contarSueltas()"></textarea>
+        <div class="hint" id="preview-sueltas"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Observaciones (opcional)</label>
+      <input type="text" name="observaciones" placeholder="">
+    </div>
+
+    <button type="submit" class="btn">Guardar Franco</button>
+  </form>
+</div>
+
+<!-- Listado -->
+<div class="card">
+  <div class="card-title">Francos Registrados ({{ registros|length }})</div>
+  {% if registros %}
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Legajo</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Fechas</th>
+          <th>Días</th>
+          <th>Estado</th>
+          <th>Obs.</th>
+          <th>Cargado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in registros %}
+        <tr>
+          <td style="color:#94a3b8;font-size:.78rem">{{ r.id }}</td>
+          <td>{{ r.legajo }}</td>
+          <td>{{ r.nombre }}</td>
+          <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
+          <td style="font-size:.82rem">
+            {% if r.tipo == 'RANGO' %}
+              {{ r.fecha_desde }} → {{ r.fecha_hasta }}
+            {% else %}
+              {{ r.fechas_lista | join(', ') }}
+            {% endif %}
+          </td>
+          <td><span class="badge-dias">{{ r.dias }}</span></td>
+          <td>
+            {% if r.estado == 'Aprobado' %}
+              <span class="badge-aprobado">Aprobado</span>
+            {% else %}
+              <span class="badge-pendiente">Pendiente</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.82rem;color:#64748b">{{ r.observaciones }}</td>
+          <td style="font-size:.78rem;color:#94a3b8">{{ r.cargado_en[:10] if r.cargado_en else '' }}</td>
+          <td>
+            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return confirm('¿Eliminar este franco?')">
+              <button type="submit" class="btn-del">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#94a3b8;font-size:.88rem">No hay francos registrados aún.</p>
+  {% endif %}
+</div>
+
+<script>
+function completarNombre() {
+  const sel = document.getElementById('sel-legajo');
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('campo-nombre').value = opt ? (opt.dataset.nombre || '') : '';
+}
+
+function cambiarTipo() {
+  const t = document.getElementById('sel-tipo').value;
+  document.getElementById('campos-rango').style.display = t === 'RANGO' ? 'block' : 'none';
+  document.getElementById('campos-sueltas').style.display = t === 'SUELTAS' ? 'block' : 'none';
+}
+
+function calcularDias() {
+  const d = document.getElementById('f-desde').value;
+  const h = document.getElementById('f-hasta').value;
+  const el = document.getElementById('preview-dias');
+  if (!d || !h) { el.textContent = ''; return; }
+  const desde = new Date(d), hasta = new Date(h);
+  if (hasta < desde) { el.textContent = 'La fecha hasta debe ser igual o posterior a la fecha desde.'; return; }
+  let count = 0, cur = new Date(desde);
+  while (cur <= hasta) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate()+1); }
+  el.textContent = count + ' día' + (count !== 1 ? 's' : '') + ' hábil' + (count !== 1 ? 'es' : '') + ' (sin feriados — el total exacto se calcula al guardar)';
+}
+
+function contarSueltas() {
+  const raw = document.getElementById('f-sueltas').value;
+  const lista = raw.replace(/,/g,'\n').split('\n').map(s=>s.trim()).filter(s=>s.length>0);
+  const el = document.getElementById('preview-sueltas');
+  el.textContent = lista.length > 0 ? lista.length + ' fecha' + (lista.length !== 1 ? 's' : '') : '';
+}
+</script>
+
+</body>
+</html>

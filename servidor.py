@@ -129,6 +129,21 @@ def _init_db():
                 conn.execute(f"ALTER TABLE periodos ADD COLUMN {col}")
             except Exception:
                 pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_tomados (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo         TEXT NOT NULL,
+                nombre         TEXT NOT NULL,
+                tipo           TEXT NOT NULL DEFAULT 'RANGO',
+                fecha_desde    TEXT DEFAULT '',
+                fecha_hasta    TEXT DEFAULT '',
+                fechas_sueltas TEXT DEFAULT '[]',
+                dias           INTEGER NOT NULL DEFAULT 1,
+                estado         TEXT DEFAULT 'Aprobado',
+                observaciones  TEXT DEFAULT '',
+                cargado_en     TEXT DEFAULT ''
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -1934,6 +1949,119 @@ def admin_reset():
         conn.commit()
 
     return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════
+# FRANCOS TOMADOS
+# ═══════════════════════════════════════════════
+def _empleados_conocidos():
+    """Lista deduplicada de {legajo, nombre} desde historial de cierres + sesión activa."""
+    vistos = {}
+    with _get_db() as conn:
+        for row in conn.execute("SELECT DISTINCT legajo, nombre FROM periodo_empleados ORDER BY nombre"):
+            vistos[str(row["legajo"])] = row["nombre"]
+    for d in _sesion.values():
+        leg = str(d.get("legajo", ""))
+        if leg and leg not in vistos:
+            vistos[leg] = d.get("nombre", "")
+    return sorted(
+        [{"legajo": k, "nombre": v} for k, v in vistos.items()],
+        key=lambda e: e["nombre"]
+    )
+
+def _cargar_feriados_config():
+    try:
+        cfg = json.loads(Path("config.json").read_text(encoding="utf-8"))
+        from datetime import date as _date
+        return {datetime.strptime(f, "%Y-%m-%d").date() for f in cfg.get("feriados", [])}
+    except Exception:
+        return set()
+
+def _dias_habiles(fecha_desde_str, fecha_hasta_str):
+    """Cuenta días hábiles (lun-vie, excluyendo feriados de config.json)."""
+    desde = _parse_fecha(fecha_desde_str)
+    hasta = _parse_fecha(fecha_hasta_str)
+    if not desde or not hasta:
+        return 0
+    feriados = _cargar_feriados_config()
+    total = 0
+    cur = desde
+    while cur <= hasta:
+        if cur.weekday() < 5 and cur.date() not in feriados:
+            total += 1
+        cur += timedelta(days=1)
+    return total
+
+@app.route("/francos")
+def francos():
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        registros = conn.execute(
+            "SELECT * FROM francos_tomados ORDER BY cargado_en DESC, id DESC"
+        ).fetchall()
+    registros = [dict(r) for r in registros]
+    for r in registros:
+        if r["tipo"] == "SUELTAS":
+            try:
+                r["fechas_lista"] = json.loads(r["fechas_sueltas"])
+            except Exception:
+                r["fechas_lista"] = []
+        else:
+            r["fechas_lista"] = []
+    return render_template("francos.html",
+                           registros=registros,
+                           empleados=_empleados_conocidos())
+
+@app.route("/francos/nuevo", methods=["POST"])
+def francos_nuevo():
+    if not _autenticado(): return _requiere_auth()
+    legajo  = request.form.get("legajo", "").strip()
+    nombre  = request.form.get("nombre", "").strip()
+    tipo    = request.form.get("tipo", "RANGO").strip()
+    estado  = request.form.get("estado", "Aprobado").strip()
+    obs     = request.form.get("observaciones", "").strip()
+    ahora   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not legajo or not nombre:
+        return redirect(url_for("francos") + "?error=legajo_requerido")
+
+    if tipo == "RANGO":
+        fecha_desde = request.form.get("fecha_desde", "").strip()
+        fecha_hasta = request.form.get("fecha_hasta", "").strip()
+        if not fecha_desde or not fecha_hasta:
+            return redirect(url_for("francos") + "?error=fechas_requeridas")
+        dias = _dias_habiles(fecha_desde, fecha_hasta)
+        if dias <= 0:
+            return redirect(url_for("francos") + "?error=dias_cero")
+        fechas_sueltas_json = "[]"
+    else:
+        fechas_raw = request.form.get("fechas_sueltas", "").strip()
+        fechas_lista = [f.strip() for f in fechas_raw.replace(",", "\n").split("\n") if f.strip()]
+        fechas_lista = [f for f in fechas_lista if _parse_fecha(f)]
+        if not fechas_lista:
+            return redirect(url_for("francos") + "?error=fechas_requeridas")
+        dias = len(fechas_lista)
+        fechas_sueltas_json = json.dumps(sorted(fechas_lista))
+        fecha_desde = min(fechas_lista)
+        fecha_hasta = max(fechas_lista)
+
+    with _get_db() as conn:
+        conn.execute(
+            """INSERT INTO francos_tomados
+               (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones, cargado_en)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas_json, dias, estado, obs, ahora)
+        )
+        conn.commit()
+    return redirect(url_for("francos"))
+
+@app.route("/francos/eliminar/<int:fid>", methods=["POST"])
+def francos_eliminar(fid):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        conn.execute("DELETE FROM francos_tomados WHERE id=?", (fid,))
+        conn.commit()
+    return redirect(url_for("francos"))
 
 
 # ═══════════════════════════════════════════════
