@@ -144,6 +144,14 @@ def _init_db():
                 cargado_en     TEXT DEFAULT ''
             )
         """)
+        for col in (
+            "fecha_emision TEXT DEFAULT ''",
+            "autorizado_por TEXT DEFAULT ''",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE francos_tomados ADD COLUMN {col}")
+            except Exception:
+                pass
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -1999,6 +2007,9 @@ def francos():
         registros = conn.execute(
             "SELECT * FROM francos_tomados ORDER BY cargado_en DESC, id DESC"
         ).fetchall()
+        saldos_rows = conn.execute(
+            "SELECT legajo, nombre, SUM(dias) as total_tomados FROM francos_tomados GROUP BY legajo ORDER BY CAST(legajo AS INTEGER)"
+        ).fetchall()
     registros = [dict(r) for r in registros]
     for r in registros:
         if r["tipo"] == "SUELTAS":
@@ -2008,19 +2019,23 @@ def francos():
                 r["fechas_lista"] = []
         else:
             r["fechas_lista"] = []
+    saldos = [dict(r) for r in saldos_rows]
     return render_template("francos.html",
                            registros=registros,
+                           saldos=saldos,
                            empleados=_empleados_conocidos())
 
 @app.route("/francos/nuevo", methods=["POST"])
 def francos_nuevo():
     if not _autenticado(): return _requiere_auth()
-    legajo  = request.form.get("legajo", "").strip()
-    nombre  = request.form.get("nombre", "").strip()
-    tipo    = request.form.get("tipo", "RANGO").strip()
-    estado  = request.form.get("estado", "Aprobado").strip()
-    obs     = request.form.get("observaciones", "").strip()
-    ahora   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    legajo         = request.form.get("legajo", "").strip()
+    nombre         = request.form.get("nombre", "").strip()
+    tipo           = request.form.get("tipo", "RANGO").strip()
+    estado         = request.form.get("estado", "Aprobado").strip()
+    obs            = request.form.get("observaciones", "").strip()
+    fecha_emision  = request.form.get("fecha_emision", "").strip()
+    autorizado_por = request.form.get("autorizado_por", "").strip()
+    ahora          = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if not legajo or not nombre:
         return redirect(url_for("francos") + "?error=legajo_requerido")
@@ -2056,9 +2071,9 @@ def francos_nuevo():
     with _get_db() as conn:
         conn.execute(
             """INSERT INTO francos_tomados
-               (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones, cargado_en)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas_json, dias, estado, obs, ahora)
+               (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones, fecha_emision, autorizado_por, cargado_en)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas_json, dias, estado, obs, fecha_emision, autorizado_por, ahora)
         )
         conn.commit()
     return redirect(url_for("francos"))
