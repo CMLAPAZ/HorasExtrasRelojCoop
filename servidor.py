@@ -152,6 +152,15 @@ def _init_db():
                 conn.execute(f"ALTER TABLE francos_tomados ADD COLUMN {col}")
             except Exception:
                 pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_saldo_inicial (
+                legajo     TEXT PRIMARY KEY,
+                nombre     TEXT NOT NULL,
+                saldo      INTEGER NOT NULL DEFAULT 0,
+                nota       TEXT DEFAULT '',
+                cargado_en TEXT DEFAULT ''
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -1962,6 +1971,29 @@ def admin_reset():
 # ═══════════════════════════════════════════════
 # FRANCOS TOMADOS
 # ═══════════════════════════════════════════════
+def _calcular_saldos():
+    """Saldo actual por empleado = saldo_inicial + generados - tomados."""
+    with _get_db() as conn:
+        iniciales = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
+        generados = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
+        tomados   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias)   as total FROM francos_tomados   GROUP BY legajo")}
+    resultado = []
+    for emp in _empleados_conocidos():
+        leg = emp["legajo"]
+        si  = iniciales.get(leg, 0)
+        gen = generados.get(leg, 0)
+        tom = tomados.get(leg, 0)
+        resultado.append({
+            "legajo":       leg,
+            "nombre":       emp["nombre"],
+            "departamento": emp["departamento"],
+            "saldo_inicial": si,
+            "generados":    gen,
+            "tomados":      tom,
+            "saldo_actual": si + gen - tom,
+        })
+    return resultado
+
 def _empleados_conocidos():
     """Lista deduplicada de {legajo, nombre, departamento} ordenada por depto y legajo."""
     vistos = {}
@@ -2012,9 +2044,6 @@ def francos():
         registros = conn.execute(
             "SELECT * FROM francos_tomados ORDER BY cargado_en DESC, id DESC"
         ).fetchall()
-        saldos_rows = conn.execute(
-            "SELECT legajo, nombre, SUM(dias) as total_tomados FROM francos_tomados GROUP BY legajo ORDER BY CAST(legajo AS INTEGER)"
-        ).fetchall()
     registros = [dict(r) for r in registros]
     for r in registros:
         if r["tipo"] == "SUELTAS":
@@ -2024,8 +2053,6 @@ def francos():
                 r["fechas_lista"] = []
         else:
             r["fechas_lista"] = []
-    saldos = [dict(r) for r in saldos_rows]
-    # Agrupar empleados por departamento para el template
     empleados_raw = _empleados_conocidos()
     empleados_por_depto = {}
     for e in empleados_raw:
@@ -2034,8 +2061,57 @@ def francos():
     empleados_grupos = [{"departamento": k, "empleados": v} for k, v in sorted(empleados_por_depto.items())]
     return render_template("francos.html",
                            registros=registros,
-                           saldos=saldos,
+                           saldos=_calcular_saldos(),
                            empleados_grupos=empleados_grupos)
+
+
+@app.route("/francos/saldos")
+def francos_saldos():
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        iniciales = {r["legajo"]: dict(r) for r in conn.execute("SELECT * FROM francos_saldo_inicial")}
+    empleados_grupos = []
+    empleados_raw = _empleados_conocidos()
+    por_depto = {}
+    for e in empleados_raw:
+        dep = e["departamento"] or "Sin departamento"
+        por_depto.setdefault(dep, []).append(e)
+    for dep, emps in sorted(por_depto.items()):
+        empleados_grupos.append({"departamento": dep, "empleados": emps})
+    # Agrupar saldos por departamento
+    saldos_raw = _calcular_saldos()
+    saldos_grupos = {}
+    for s in saldos_raw:
+        dep = s["departamento"] or "Sin departamento"
+        saldos_grupos.setdefault(dep, []).append(s)
+    saldos_por_depto = [{"departamento": k, "empleados": v} for k, v in sorted(saldos_grupos.items())]
+    return render_template("francos_saldos.html",
+                           saldos_por_depto=saldos_por_depto,
+                           iniciales=iniciales,
+                           empleados_grupos=empleados_grupos)
+
+
+@app.route("/francos/saldos/guardar", methods=["POST"])
+def francos_saldos_guardar():
+    if not _autenticado(): return _requiere_auth()
+    legajo = request.form.get("legajo", "").strip()
+    nombre = request.form.get("nombre", "").strip()
+    try:
+        saldo = int(request.form.get("saldo", "0").strip())
+    except ValueError:
+        saldo = 0
+    nota   = request.form.get("nota", "").strip()
+    ahora  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not legajo or not nombre:
+        return redirect(url_for("francos_saldos") + "?error=datos_requeridos")
+    with _get_db() as conn:
+        conn.execute("""
+            INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(legajo) DO UPDATE SET nombre=excluded.nombre, saldo=excluded.saldo, nota=excluded.nota, cargado_en=excluded.cargado_en
+        """, (legajo, nombre, saldo, nota, ahora))
+        conn.commit()
+    return redirect(url_for("francos_saldos"))
 
 @app.route("/francos/nuevo", methods=["POST"])
 def francos_nuevo():
