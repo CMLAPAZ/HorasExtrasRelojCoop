@@ -2025,7 +2025,15 @@ def francos_nuevo():
     if not legajo or not nombre:
         return redirect(url_for("francos") + "?error=legajo_requerido")
 
-    if tipo == "RANGO":
+    if tipo == "UNICO":
+        fecha_unica = request.form.get("fecha_unica", "").strip()
+        if not fecha_unica:
+            return redirect(url_for("francos") + "?error=fechas_requeridas")
+        fecha_desde = fecha_unica
+        fecha_hasta = fecha_unica
+        dias = 1
+        fechas_sueltas_json = "[]"
+    elif tipo == "RANGO":
         fecha_desde = request.form.get("fecha_desde", "").strip()
         fecha_hasta = request.form.get("fecha_hasta", "").strip()
         if not fecha_desde or not fecha_hasta:

@@ -92,12 +92,20 @@
     <div class="field">
       <label>Tipo</label>
       <select name="tipo" id="sel-tipo" onchange="cambiarTipo()">
+        <option value="UNICO">Día único</option>
         <option value="RANGO">Rango de fechas (días corridos hábiles)</option>
         <option value="SUELTAS">Fechas sueltas (días no consecutivos)</option>
       </select>
     </div>
 
-    <div id="campos-rango">
+    <div id="campos-unico">
+      <div class="field">
+        <label>Fecha</label>
+        <input type="date" name="fecha_unica" id="f-unico">
+      </div>
+    </div>
+
+    <div id="campos-rango" style="display:none">
       <div class="grid-2">
         <div class="field">
           <label>Fecha desde</label>
@@ -158,7 +166,9 @@
           <td>{{ r.nombre }}</td>
           <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
           <td style="font-size:.82rem">
-            {% if r.tipo == 'RANGO' %}
+            {% if r.tipo == 'UNICO' %}
+              {{ r.fecha_desde }}
+            {% elif r.tipo == 'RANGO' %}
               {{ r.fecha_desde }} → {{ r.fecha_hasta }}
             {% else %}
               {{ r.fechas_lista | join(', ') }}
@@ -198,8 +208,9 @@ function completarNombre() {
 
 function cambiarTipo() {
   const t = document.getElementById('sel-tipo').value;
-  document.getElementById('campos-rango').style.display = t === 'RANGO' ? 'block' : 'none';
-  document.getElementById('campos-sueltas').style.display = t === 'SUELTAS' ? 'block' : 'none';
+  document.getElementById('campos-unico').style.display  = t === 'UNICO'   ? 'block' : 'none';
+  document.getElementById('campos-rango').style.display  = t === 'RANGO'   ? 'block' : 'none';
+  document.getElementById('campos-sueltas').style.display= t === 'SUELTAS' ? 'block' : 'none';
 }
 
 function calcularDias() {
