@@ -38,6 +38,10 @@
     #campos-rango{display:block}
     #campos-sueltas{display:none}
     .hint{font-size:.78rem;color:#64748b;margin-top:4px}
+    .legajo-row{display:flex;gap:8px;align-items:center}
+    .legajo-row input[type=number]{width:110px;flex-shrink:0}
+    .nombre-display{font-size:.9rem;color:#374151;font-weight:600;padding:9px 0}
+    .legajo-error{font-size:.78rem;color:#b91c1c;margin-top:3px;display:none}
   </style>
 </head>
 <body>
@@ -71,17 +75,14 @@
 
     <div class="grid-2">
       <div class="field">
-        <label>Empleado</label>
-        <select name="legajo" id="sel-legajo" onchange="completarNombre()" required>
-          <option value="">— Seleccionar —</option>
-          {% for grupo in empleados_grupos %}
-          <optgroup label="{{ grupo.departamento | upper }}">
-            {% for e in grupo.empleados %}
-            <option value="{{ e.legajo }}" data-nombre="{{ e.nombre }}">{{ e.legajo }} — {{ e.nombre }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endfor %}
-        </select>
+        <label>Legajo</label>
+        <div class="legajo-row">
+          <input type="number" id="input-legajo" placeholder="Nro. legajo" min="1"
+                 oninput="buscarLegajo()" autocomplete="off">
+          <span id="nombre-display" class="nombre-display"></span>
+        </div>
+        <div id="legajo-error" class="legajo-error">Legajo no encontrado</div>
+        <input type="hidden" name="legajo" id="campo-legajo">
         <input type="hidden" name="nombre" id="campo-nombre">
       </div>
       <div class="field">
@@ -260,10 +261,29 @@
 </div>
 
 <script>
-function completarNombre() {
-  const sel = document.getElementById('sel-legajo');
-  const opt = sel.options[sel.selectedIndex];
-  document.getElementById('campo-nombre').value = opt ? (opt.dataset.nombre || '') : '';
+const EMPS = {};
+{% for grupo in empleados_grupos %}{% for e in grupo.empleados %}
+EMPS["{{ e.legajo }}"] = "{{ e.nombre }}";
+{% endfor %}{% endfor %}
+
+function buscarLegajo() {
+  const leg = document.getElementById('input-legajo').value.trim();
+  const display = document.getElementById('nombre-display');
+  const err     = document.getElementById('legajo-error');
+  const hidLeg  = document.getElementById('campo-legajo');
+  const hidNom  = document.getElementById('campo-nombre');
+  if (!leg) {
+    display.textContent = ''; err.style.display = 'none';
+    hidLeg.value = ''; hidNom.value = ''; return;
+  }
+  const nombre = EMPS[leg];
+  if (nombre) {
+    display.textContent = nombre; err.style.display = 'none';
+    hidLeg.value = leg; hidNom.value = nombre;
+  } else {
+    display.textContent = ''; err.style.display = 'block';
+    hidLeg.value = ''; hidNom.value = '';
+  }
 }
 
 function cambiarTipo() {
