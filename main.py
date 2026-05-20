@@ -744,11 +744,13 @@ def abrir_gestor_asignaciones_especiales():
         entry_desde.delete(0, tk.END)
         entry_hasta.delete(0, tk.END)
         entry_hora.delete(0, tk.END)
+        
         entry_hora.insert(0, "06:00")
         edit_index["value"] = None
         lbl_modo.config(text="Modo: Alta")
 
     def cargar_seleccion():
+
         seleccion = tree.selection()
         if not seleccion:
             messagebox.showwarning("Atención", "Seleccioná una fila de la grilla.", parent=win)

@@ -20,8 +20,11 @@
     input,select{width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;background:#fff;color:#111827}
     input:focus,select:focus{outline:none;border-color:#6366f1}
     .grid-4{display:grid;grid-template-columns:2fr 3fr 1fr 2fr;gap:12px;align-items:end}
+    .grid-5{display:grid;grid-template-columns:1.5fr 1.5fr 2.5fr 2fr 1fr;gap:12px;align-items:end}
     .btn{height:40px;padding:0 22px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.92rem;font-weight:750;cursor:pointer}
     .btn:hover{background:#25314a}
+    .btn-sm{height:30px;padding:0 12px;border:none;border-radius:5px;font-size:.8rem;font-weight:700;cursor:pointer;background:#fee2e2;color:#b91c1c}
+    .btn-sm:hover{background:#fca5a5}
     .tabla-wrap{overflow-x:auto}
     table{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
     th{background:#f8fafc;text-align:left;padding:10px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
@@ -31,9 +34,18 @@
     .badge-neg{background:#fecaca;color:#b91c1c;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-zer{background:#f1f5f9;color:#64748b;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-ini{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-gen{background:#fef9c3;color:#854d0e;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .info-box{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:14px}
     .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
     .depto-header{background:#f8fafc;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;padding:8px 10px;border-bottom:1px solid #e5e7eb}
+    .hidden{display:none}
+    select[disabled]{background:#f1f5f9;color:#94a3b8}
+    .td-depto{color:#64748b;font-size:.82rem}
+    .td-desc{font-size:.82rem}
+    .td-fecha{font-size:.78rem;color:#94a3b8}
+    .td-gen-pos{color:#166534;font-weight:700}
+    .td-gen-neg{color:#b91c1c;font-weight:700}
+    .td-nota{font-size:.78rem;color:#94a3b8}
   </style>
 </head>
 <body>
@@ -51,22 +63,28 @@
 </div>
 
 {% if request.args.get('error') %}
-<div class="error-box">Legajo y nombre son requeridos.</div>
+<div class="error-box">
+  {% if request.args.get('error') == 'generados_datos_requeridos' %}
+    Legajo, nombre y días son requeridos.
+  {% else %}
+    Legajo y nombre son requeridos.
+  {% endif %}
+</div>
 {% endif %}
 
 <div class="info-box">
-  Cargá el saldo inicial de cada empleado una sola vez, para arrancar con los datos históricos del Excel.
-  Una vez cargado, el sistema suma automáticamente los francos generados y descuenta los tomados.
+  Cargá el saldo inicial de cada empleado una sola vez para arrancar con los datos históricos.
+  Luego usá "Carga Manual de Generados" para agregar francos de departamentos sin fichadas automáticas.
 </div>
 
-<!-- Formulario -->
+<!-- Formulario: saldo inicial -->
 <div class="card">
   <div class="card-title">Cargar / Actualizar Saldo Inicial</div>
   <form method="post" action="/francos/saldos/guardar">
     <div class="grid-4">
       <div>
         <label>Empleado</label>
-        <select name="legajo" id="sel-legajo" onchange="completarNombre()" required>
+        <select name="legajo" id="sel-legajo-ini" onchange="completarNombre('ini')" required>
           <option value="">— Seleccionar —</option>
           {% for grupo in empleados_grupos %}
           <optgroup label="{{ grupo.departamento | upper }}">
@@ -76,22 +94,107 @@
           </optgroup>
           {% endfor %}
         </select>
-        <input type="hidden" name="nombre" id="campo-nombre">
+        <input type="hidden" name="nombre" id="campo-nombre-ini">
       </div>
       <div>
         <label>Saldo inicial (días)</label>
         <input type="number" name="saldo" min="0" value="0" required>
       </div>
-      <div style="display:flex;align-items:flex-end">
-        <button type="submit" class="btn" style="width:100%">Guardar</button>
-      </div>
       <div>
         <label>Nota (opcional)</label>
         <input type="text" name="nota" placeholder="ej: saldo al 31/01/2026">
       </div>
+      <div style="display:flex;align-items:flex-end">
+        <button type="submit" class="btn" style="width:100%">Guardar</button>
+      </div>
     </div>
   </form>
 </div>
+
+<!-- Formulario: generados manuales -->
+<div class="card">
+  <div class="card-title">Carga Manual de Francos Generados</div>
+  <p style="font-size:.84rem;color:#64748b;margin-bottom:14px">
+    Para departamentos sin procesamiento automático de fichadas (o correcciones manuales).
+    Seleccioná primero el departamento y luego buscá el legajo.
+  </p>
+  <form method="post" action="/francos/generados/nuevo">
+    <div class="grid-5">
+      <div>
+        <label>Departamento</label>
+        <select id="sel-depto-gen" onchange="filtrarLegajosGen()" required>
+          <option value="">— Seleccionar —</option>
+          {% for dep in departamentos %}
+          <option value="{{ dep }}">{{ dep | upper }}</option>
+          {% endfor %}
+          <option value="__otro__">Otro / No listado</option>
+        </select>
+      </div>
+      <div>
+        <label>Legajo — Empleado</label>
+        <select name="legajo" id="sel-legajo-gen" onchange="completarNombreGen()" required disabled>
+          <option value="">— Primero seleccioná depto —</option>
+        </select>
+        <input type="hidden" name="nombre" id="campo-nombre-gen">
+        <input type="hidden" name="departamento" id="campo-depto-gen">
+      </div>
+      <div>
+        <label>Descripción del período</label>
+        <input type="text" name="descripcion" placeholder="ej: Semana 2 Mayo 2026" required>
+      </div>
+      <div>
+        <label>Días generados</label>
+        <input type="number" name="dias" min="1" value="1" required>
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <button type="submit" class="btn" style="width:100%">Agregar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Tabla de generados manuales -->
+{% if gen_manual %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title-inline">Registros de Generados Manuales</div>
+    <span style="font-size:.78rem;color:#94a3b8">{{ gen_manual | length }} registro(s)</span>
+  </div>
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Legajo</th>
+          <th>Nombre</th>
+          <th>Departamento</th>
+          <th>Descripción</th>
+          <th>Días</th>
+          <th>Cargado</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in gen_manual %}
+        <tr>
+          <td>{{ g.legajo }}</td>
+          <td>{{ g.nombre }}</td>
+          <td class="td-depto">{{ g.departamento }}</td>
+          <td class="td-desc">{{ g.descripcion }}</td>
+          <td><span class="badge-gen">+{{ g.dias }}</span></td>
+          <td class="td-fecha">{{ g.cargado_en[:10] if g.cargado_en else '—' }}</td>
+          <td>
+            <form method="post" action="/francos/generados/eliminar/{{ g.id }}"
+                  onsubmit="return confirm('¿Eliminar este registro?')">
+              <button type="submit" class="btn-sm">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <!-- Tabla de saldos actuales -->
 <div class="card">
@@ -121,8 +224,8 @@
             <td>{{ s.legajo }}</td>
             <td>{{ s.nombre }}</td>
             <td><span class="badge-ini">{{ s.saldo_inicial }}</span></td>
-            <td style="color:#166534;font-weight:700">+{{ s.generados }}</td>
-            <td style="color:#b91c1c;font-weight:700">-{{ s.tomados }}</td>
+            <td class="td-gen-pos">+{{ s.generados }}</td>
+            <td class="td-gen-neg">-{{ s.tomados }}</td>
             <td>
               {% if s.saldo_actual > 0 %}
                 <span class="badge-pos">{{ s.saldo_actual }}</span>
@@ -132,7 +235,7 @@
                 <span class="badge-zer">0</span>
               {% endif %}
             </td>
-            <td style="font-size:.78rem;color:#94a3b8">{{ iniciales[s.legajo].nota if s.legajo in iniciales else '—' }}</td>
+            <td class="td-nota">{{ iniciales[s.legajo].nota if s.legajo in iniciales else '—' }}</td>
           </tr>
           {% endfor %}
         {% endfor %}
@@ -145,10 +248,81 @@
 </div>
 
 <script>
-function completarNombre() {
-  const sel = document.getElementById('sel-legajo');
+// Datos de empleados indexados por departamento
+const empleadosPorDepto = {
+  {% for grupo in empleados_grupos %}
+  "{{ grupo.departamento }}": [
+    {% for e in grupo.empleados %}
+    { legajo: "{{ e.legajo }}", nombre: "{{ e.nombre }}" },
+    {% endfor %}
+  ],
+  {% endfor %}
+};
+
+function completarNombre(sufijo) {
+  const sel = document.getElementById('sel-legajo-' + sufijo);
   const opt = sel.options[sel.selectedIndex];
-  document.getElementById('campo-nombre').value = opt ? (opt.dataset.nombre || '') : '';
+  document.getElementById('campo-nombre-' + sufijo).value = opt ? (opt.dataset.nombre || '') : '';
+}
+
+function filtrarLegajosGen() {
+  const deptoSel = document.getElementById('sel-depto-gen');
+  const dep = deptoSel.value;
+  const selLeg = document.getElementById('sel-legajo-gen');
+  const campoDepto = document.getElementById('campo-depto-gen');
+
+  selLeg.innerHTML = '';
+  campoDepto.value = dep === '__otro__' ? '' : dep;
+
+  if (!dep) {
+    selLeg.disabled = true;
+    selLeg.innerHTML = '<option value="">— Primero seleccioná depto —</option>';
+    return;
+  }
+
+  if (dep === '__otro__') {
+    // Mostrar todos los empleados
+    selLeg.disabled = false;
+    selLeg.innerHTML = '<option value="">— Seleccionar —</option>';
+    for (const [d, emps] of Object.entries(empleadosPorDepto)) {
+      const og = document.createElement('optgroup');
+      og.label = d.toUpperCase();
+      for (const e of emps) {
+        const o = document.createElement('option');
+        o.value = e.legajo;
+        o.dataset.nombre = e.nombre;
+        o.dataset.depto = d;
+        o.textContent = e.legajo + ' — ' + e.nombre;
+        og.appendChild(o);
+      }
+      selLeg.appendChild(og);
+    }
+    return;
+  }
+
+  const emps = empleadosPorDepto[dep] || [];
+  selLeg.disabled = emps.length === 0;
+  selLeg.innerHTML = '<option value="">— Seleccionar —</option>';
+  campoDepto.value = dep;
+
+  for (const e of emps) {
+    const o = document.createElement('option');
+    o.value = e.legajo;
+    o.dataset.nombre = e.nombre;
+    o.dataset.depto = dep;
+    o.textContent = e.legajo + ' — ' + e.nombre;
+    selLeg.appendChild(o);
+  }
+}
+
+function completarNombreGen() {
+  const sel = document.getElementById('sel-legajo-gen');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+  document.getElementById('campo-nombre-gen').value = opt.dataset.nombre || '';
+  if (opt.dataset.depto) {
+    document.getElementById('campo-depto-gen').value = opt.dataset.depto;
+  }
 }
 </script>
 

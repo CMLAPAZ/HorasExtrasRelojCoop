@@ -30,6 +30,7 @@
     .btn-warn:hover{background:#fef3c7}
     .btn-del{color:#b91c1c;border-color:#fecaca;background:#fff}
     .btn-del:hover{background:#fef2f2}
+    .btn-reset{padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px}
     .warn-dup,.aviso-local{color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;font-size:.84rem;margin-top:10px}
     .aviso-local{margin-bottom:10px}
     .deptos-label{font-size:.82rem;font-weight:700;color:#475569;margin:12px 0 8px}
@@ -131,8 +132,10 @@
     <a href="/periodo">Períodos</a>
     <a href="/periodos/historial">Cierres</a>
     <a href="/francos">Francos</a>
+    <a href="/empleados/importar">Empleados</a>
+    <a href="/configuracion/email">Config. Email</a>
     <a href="/logout">Salir</a>
-    <button type="button" onclick="resetTotal()" style="padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px">⚠ Reset total</button>
+    <button type="button" onclick="resetTotal()" class="btn-reset">⚠ Reset total</button>
   </div>
 </div>
 

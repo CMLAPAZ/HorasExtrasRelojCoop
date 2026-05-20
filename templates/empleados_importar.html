@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Empleados por Sector</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;padding:22px;color:#111827;max-width:1100px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a{height:34px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650}
+    .nav a:hover{border-color:#94a3b8;background:#f8fafc}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:16px}
+    .card-title{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800;margin-bottom:14px}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+    .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
+    label{display:block;font-weight:700;margin-bottom:5px;font-size:.86rem;color:#334155}
+    input[type=text],input[type=number]{width:100%;padding:8px 10px;border:1px solid #d7dde5;border-radius:6px;font-size:.88rem;font-family:inherit;background:#fff;color:#111827}
+    input:focus{outline:none;border-color:#6366f1}
+    .btn{height:38px;padding:0 20px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.88rem;font-weight:750;cursor:pointer}
+    .btn:hover{background:#25314a}
+    .btn-sm{height:28px;padding:0 10px;border:none;border-radius:5px;font-size:.78rem;font-weight:700;cursor:pointer;background:#fee2e2;color:#b91c1c}
+    .btn-sm:hover{background:#fca5a5}
+    .btn-add{height:32px;padding:0 14px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:6px;font-size:.82rem;font-weight:700;cursor:pointer}
+    .btn-add:hover{background:#dcfce7}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.84rem}
+    th{background:#f8fafc;text-align:left;padding:9px 10px;color:#64748b;font-size:.71rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e5e7eb;white-space:nowrap}
+    td{padding:8px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    .depto-header td{background:#1e3a5f;color:#fff;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:7px 10px}
+    .ok-box{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
+    .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
+    .info-box{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:14px}
+    .badge-dep{display:inline-block;background:#eff6ff;color:#1e40af;font-size:.74rem;font-weight:700;padding:2px 8px;border-radius:999px}
+    .input-leg{width:70px !important}
+    .col-leg{width:80px}
+    .col-dep{width:130px}
+    .col-acc{width:90px}
+    .row-nuevo td{background:#fffbeb}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>CM Horas Extras</h1>
+  <div class="nav">
+    <a href="/supervisor">Inicio</a>
+    <a href="/francos/saldos">Saldos Francos</a>
+    <a href="/configuracion/email">Config. Email</a>
+    <a href="/logout">Salir</a>
+  </div>
+</div>
+
+{% if request.args.get('ok') %}
+<div class="ok-box">{{ request.args.get('ok') }} empleado(s) guardado(s) correctamente.</div>
+{% endif %}
+{% if error %}
+<div class="error-box">Error leyendo el archivo ODS: {{ error }}</div>
+{% endif %}
+
+<div class="info-box">
+  Empleados de departamentos sin procesamiento automático de fichadas.
+  Aparecen en todos los selectores del sistema (francos, saldos, supervisores).
+  Los departamentos activos (con sesión o períodos cerrados) se muestran en gris.
+</div>
+
+<!-- Agregar empleado manual -->
+<div class="card">
+  <div class="card-title">Agregar empleado manualmente</div>
+  <form method="post" action="/empleados/importar/guardar" id="form-uno">
+    <input type="hidden" name="nombre" id="nuevo-nombre-h">
+    <input type="hidden" name="departamento" id="nuevo-dep-h">
+    <input type="hidden" name="legajo" id="nuevo-leg-h">
+    <div style="display:grid;grid-template-columns:100px 1fr 160px 120px;gap:12px;align-items:end">
+      <div>
+        <label>Legajo</label>
+        <input type="number" id="nuevo-leg" placeholder="ej: 19" min="1">
+      </div>
+      <div>
+        <label>Nombre completo</label>
+        <input type="text" id="nuevo-nombre" placeholder="APELLIDO NOMBRE">
+      </div>
+      <div>
+        <label>Departamento</label>
+        <input type="text" id="nuevo-dep" placeholder="ej: TELEFONIA">
+      </div>
+      <div>
+        <button type="button" class="btn" style="width:100%" onclick="submitUno()">Agregar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Tabla de empleados actuales -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title-inline">Empleados cargados</div>
+    <span style="font-size:.78rem;color:#94a3b8">{{ existentes | length }} en total</span>
+  </div>
+  {% if existentes %}
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-leg">Legajo</th>
+          <th>Nombre</th>
+          <th class="col-dep">Departamento</th>
+          <th class="col-acc">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(dep_actual='') %}
+        {% for leg, emp in existentes.items() | sort(attribute='1.departamento') %}
+          {% if emp.departamento != ns.dep_actual %}
+            {% set ns.dep_actual = emp.departamento %}
+            <tr class="depto-header"><td colspan="4">{{ emp.departamento }}</td></tr>
+          {% endif %}
+          <tr>
+            <td>{{ emp.legajo }}</td>
+            <td>{{ emp.nombre }}</td>
+            <td><span class="badge-dep">{{ emp.departamento }}</span></td>
+            <td>
+              <form method="post" action="/empleados/extra/eliminar/{{ emp.legajo }}"
+                    onsubmit="return confirm('¿Quitar a {{ emp.nombre }}?')">
+                <button type="submit" class="btn-sm">Quitar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#94a3b8;font-size:.88rem">No hay empleados cargados aún.</p>
+  {% endif %}
+</div>
+
+<!-- Candidatos desde ODS (los que no están cargados aún) -->
+{% set pendientes = candidatos | selectattr('nombre', 'ne', '') | list %}
+{% if pendientes %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title-inline">Desde archivo "Personal por Sector.ods"</div>
+    <span style="font-size:.78rem;color:#94a3b8">Cargá los legajos y guardá</span>
+  </div>
+  <form method="post" action="/empleados/importar/guardar" id="form-ods">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-leg">Legajo *</th>
+            <th>Nombre</th>
+            <th class="col-dep">Departamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns2 = namespace(dep_actual='') %}
+          {% for c in pendientes %}
+            {% if c.departamento != ns2.dep_actual %}
+              {% set ns2.dep_actual = c.departamento %}
+              <tr class="depto-header"><td colspan="3">{{ c.departamento }}</td></tr>
+            {% endif %}
+            {% set ya_existe = existentes.values() | selectattr('nombre','eq',c.nombre) | list | length > 0 %}
+            <tr {% if ya_existe %}style="opacity:.4"{% endif %}>
+              <td>
+                <input type="number" name="legajo" class="input-leg"
+                       {% if ya_existe %}disabled{% endif %}
+                       placeholder="—" min="1">
+              </td>
+              <td>
+                <input type="hidden" name="nombre" value="{{ c.nombre }}">
+                {{ c.nombre }}
+                {% if ya_existe %}<span style="font-size:.75rem;color:#94a3b8"> (ya cargado)</span>{% endif %}
+              </td>
+              <td>
+                <input type="hidden" name="departamento" value="{{ c.departamento }}">
+                <span class="badge-dep">{{ c.departamento }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn">Guardar los que tengan legajo</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<script>
+function submitUno() {
+  const leg = document.getElementById('nuevo-leg').value.trim();
+  const nom = document.getElementById('nuevo-nombre').value.trim().toUpperCase();
+  const dep = document.getElementById('nuevo-dep').value.trim().toUpperCase();
+  if (!leg || !nom || !dep) { alert('Completá legajo, nombre y departamento.'); return; }
+  document.getElementById('nuevo-leg-h').value = leg;
+  document.getElementById('nuevo-nombre-h').value = nom;
+  document.getElementById('nuevo-dep-h').value = dep;
+  document.getElementById('form-uno').submit();
+}
+</script>
+
+</body>
+</html>

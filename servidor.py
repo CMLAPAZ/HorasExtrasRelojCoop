@@ -161,6 +161,36 @@ def _init_db():
                 cargado_en TEXT DEFAULT ''
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_generados (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo       TEXT NOT NULL,
+                nombre       TEXT NOT NULL,
+                departamento TEXT NOT NULL DEFAULT '',
+                descripcion  TEXT NOT NULL DEFAULT '',
+                dias         INTEGER NOT NULL DEFAULT 1,
+                cargado_en   TEXT DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS supervisores (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre        TEXT NOT NULL,
+                email         TEXT NOT NULL,
+                departamentos TEXT NOT NULL DEFAULT '[]',
+                activo        INTEGER NOT NULL DEFAULT 1,
+                cargado_en    TEXT DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS empleados_extra (
+                legajo        TEXT PRIMARY KEY,
+                nombre        TEXT NOT NULL,
+                departamento  TEXT NOT NULL DEFAULT '',
+                activo        INTEGER NOT NULL DEFAULT 1,
+                cargado_en    TEXT DEFAULT ''
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -1972,16 +2002,17 @@ def admin_reset():
 # FRANCOS TOMADOS
 # ═══════════════════════════════════════════════
 def _calcular_saldos():
-    """Saldo actual por empleado = saldo_inicial + generados - tomados."""
+    """Saldo por empleado = saldo_inicial + generados_periodos + generados_manual - tomados."""
     with _get_db() as conn:
-        iniciales = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
-        generados = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
-        tomados   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias)   as total FROM francos_tomados   GROUP BY legajo")}
+        iniciales    = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
+        gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
+        gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
+        tomados      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
     resultado = []
     for emp in _empleados_conocidos():
         leg = emp["legajo"]
         si  = iniciales.get(leg, 0)
-        gen = generados.get(leg, 0)
+        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0)
         tom = tomados.get(leg, 0)
         resultado.append({
             "legajo":       leg,
@@ -1995,11 +2026,20 @@ def _calcular_saldos():
     return resultado
 
 def _empleados_conocidos():
-    """Lista deduplicada de {legajo, nombre, departamento} ordenada por depto y legajo."""
+    """Lista deduplicada de {legajo, nombre, departamento} ordenada por depto y legajo.
+    Fuentes (menor a mayor prioridad): empleados_extra → periodo_empleados → sesion.json
+    """
     vistos = {}
     with _get_db() as conn:
+        # empleados_extra primero (base maestra de depts sin fichadas)
+        for row in conn.execute(
+            "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1"
+        ):
+            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": row["departamento"] or ""}
+        # periodos cerrados (sobreescribe si coincide legajo)
         for row in conn.execute("SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"):
             vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": row["departamento"] or ""}
+    # sesion activa (máxima prioridad, es la más reciente)
     for d in _sesion.values():
         leg = str(d.get("legajo", ""))
         if leg:
@@ -2037,6 +2077,101 @@ def _dias_habiles(fecha_desde_str, fecha_hasta_str):
         cur += timedelta(days=1)
     return total
 
+def _fechas_habiles_set(desde, hasta, feriados):
+    """Devuelve el conjunto de dates hábiles (lun-vie, no feriado) en [desde, hasta]."""
+    if isinstance(desde, datetime): desde = desde.date()
+    if isinstance(hasta, datetime): hasta = hasta.date()
+    result = set()
+    cur = desde
+    while cur <= hasta:
+        if cur.weekday() < 5 and cur not in feriados:
+            result.add(cur)
+        cur += timedelta(days=1)
+    return result
+
+
+def _fechas_del_registro(tipo, fecha_desde_str, fecha_hasta_str, fechas_sueltas_json, feriados):
+    """Conjunto de dates efectivas de un registro francos_tomados."""
+    if tipo == "SUELTAS":
+        try:
+            lista = json.loads(fechas_sueltas_json or "[]")
+        except Exception:
+            lista = []
+        result = set()
+        for s in lista:
+            f = _parse_fecha(s)
+            if f:
+                result.add(f.date() if isinstance(f, datetime) else f)
+        return result
+    desde = _parse_fecha(fecha_desde_str)
+    hasta = _parse_fecha(fecha_hasta_str)
+    if not desde or not hasta:
+        return set()
+    return _fechas_habiles_set(desde, hasta, feriados)
+
+
+def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
+                          fechas_sueltas_lista, exclude_id=None):
+    """
+    Valida que las fechas sean hábiles y no se superpongan con registros existentes.
+    Devuelve string con el error, o None si todo está bien.
+    """
+    feriados = _cargar_feriados_config()
+
+    # Construir el set de fechas nuevas
+    if tipo == "SUELTAS":
+        nuevas = set()
+        for s in fechas_sueltas_lista:
+            f = _parse_fecha(s)
+            if f:
+                if isinstance(f, datetime): f = f.date()
+                if f.weekday() >= 5:
+                    return f"La fecha {f.strftime('%d/%m/%Y')} es fin de semana"
+                if f in feriados:
+                    return f"La fecha {f.strftime('%d/%m/%Y')} es feriado"
+                nuevas.add(f)
+    elif tipo == "UNICO":
+        f = _parse_fecha(fecha_desde_str)
+        if not f:
+            return "Fecha inválida"
+        if isinstance(f, datetime): f = f.date()
+        if f.weekday() >= 5:
+            return f"La fecha {f.strftime('%d/%m/%Y')} es fin de semana"
+        if f in feriados:
+            return f"La fecha {f.strftime('%d/%m/%Y')} es feriado"
+        nuevas = {f}
+    else:  # RANGO
+        desde = _parse_fecha(fecha_desde_str)
+        hasta = _parse_fecha(fecha_hasta_str)
+        if not desde or not hasta:
+            return "Fechas inválidas"
+        nuevas = _fechas_habiles_set(desde, hasta, feriados)
+
+    if not nuevas:
+        return "El período no contiene días hábiles"
+
+    # Verificar superposición con registros existentes del mismo empleado
+    query = "SELECT id, tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_tomados WHERE legajo=?"
+    params = [str(legajo)]
+    if exclude_id:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    for row in conn.execute(query, params).fetchall():
+        existentes = _fechas_del_registro(
+            row["tipo"] if isinstance(row, sqlite3.Row) else row[1],
+            row["fecha_desde"] if isinstance(row, sqlite3.Row) else row[2],
+            row["fecha_hasta"] if isinstance(row, sqlite3.Row) else row[3],
+            row["fechas_sueltas"] if isinstance(row, sqlite3.Row) else row[4],
+            feriados,
+        )
+        solapadas = nuevas & existentes
+        if solapadas:
+            primera = min(solapadas).strftime("%d/%m/%Y")
+            return f"El empleado ya tiene franco registrado el {primera}"
+
+    return None
+
+
 @app.route("/francos")
 def francos():
     if not _autenticado(): return _requiere_auth()
@@ -2069,15 +2204,17 @@ def francos():
 def francos_saldos():
     if not _autenticado(): return _requiere_auth()
     with _get_db() as conn:
-        iniciales = {r["legajo"]: dict(r) for r in conn.execute("SELECT * FROM francos_saldo_inicial")}
-    empleados_grupos = []
+        iniciales   = {r["legajo"]: dict(r) for r in conn.execute("SELECT * FROM francos_saldo_inicial")}
+        gen_manual  = [dict(r) for r in conn.execute(
+            "SELECT * FROM francos_generados ORDER BY cargado_en DESC, id DESC"
+        )]
     empleados_raw = _empleados_conocidos()
     por_depto = {}
     for e in empleados_raw:
         dep = e["departamento"] or "Sin departamento"
         por_depto.setdefault(dep, []).append(e)
-    for dep, emps in sorted(por_depto.items()):
-        empleados_grupos.append({"departamento": dep, "empleados": emps})
+    empleados_grupos = [{"departamento": dep, "empleados": emps} for dep, emps in sorted(por_depto.items())]
+    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"]})
     # Agrupar saldos por departamento
     saldos_raw = _calcular_saldos()
     saldos_grupos = {}
@@ -2088,7 +2225,9 @@ def francos_saldos():
     return render_template("francos_saldos.html",
                            saldos_por_depto=saldos_por_depto,
                            iniciales=iniciales,
-                           empleados_grupos=empleados_grupos)
+                           empleados_grupos=empleados_grupos,
+                           gen_manual=gen_manual,
+                           departamentos=departamentos)
 
 
 @app.route("/francos/saldos/guardar", methods=["POST"])
@@ -2113,6 +2252,39 @@ def francos_saldos_guardar():
         conn.commit()
     return redirect(url_for("francos_saldos"))
 
+
+@app.route("/francos/generados/nuevo", methods=["POST"])
+def francos_generados_nuevo():
+    if not _autenticado(): return _requiere_auth()
+    legajo      = request.form.get("legajo", "").strip()
+    nombre      = request.form.get("nombre", "").strip()
+    departamento = request.form.get("departamento", "").strip()
+    descripcion = request.form.get("descripcion", "").strip()
+    try:
+        dias = int(request.form.get("dias", "1").strip())
+    except ValueError:
+        dias = 1
+    if not legajo or not nombre or dias < 1:
+        return redirect(url_for("francos_saldos") + "?error=generados_datos_requeridos")
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _get_db() as conn:
+        conn.execute("""
+            INSERT INTO francos_generados (legajo, nombre, departamento, descripcion, dias, cargado_en)
+            VALUES (?,?,?,?,?,?)
+        """, (legajo, nombre, departamento, descripcion, dias, ahora))
+        conn.commit()
+    return redirect(url_for("francos_saldos"))
+
+
+@app.route("/francos/generados/eliminar/<int:gen_id>", methods=["POST"])
+def francos_generados_eliminar(gen_id):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        conn.execute("DELETE FROM francos_generados WHERE id=?", (gen_id,))
+        conn.commit()
+    return redirect(url_for("francos_saldos"))
+
+
 @app.route("/francos/nuevo", methods=["POST"])
 def francos_nuevo():
     if not _autenticado(): return _requiere_auth()
@@ -2128,6 +2300,7 @@ def francos_nuevo():
     if not legajo or not nombre:
         return redirect(url_for("francos") + "?error=legajo_requerido")
 
+    fechas_sueltas_lista = []
     if tipo == "UNICO":
         fecha_unica = request.form.get("fecha_unica", "").strip()
         if not fecha_unica:
@@ -2151,12 +2324,18 @@ def francos_nuevo():
         fechas_lista = [f for f in fechas_lista if _parse_fecha(f)]
         if not fechas_lista:
             return redirect(url_for("francos") + "?error=fechas_requeridas")
+        fechas_sueltas_lista = fechas_lista
         dias = len(fechas_lista)
         fechas_sueltas_json = json.dumps(sorted(fechas_lista))
         fecha_desde = min(fechas_lista)
         fecha_hasta = max(fechas_lista)
 
     with _get_db() as conn:
+        error_val = _validar_franco_nuevo(
+            conn, legajo, tipo, fecha_desde, fecha_hasta, fechas_sueltas_lista
+        )
+        if error_val:
+            return redirect(url_for("francos") + "?error=" + error_val)
         conn.execute(
             """INSERT INTO francos_tomados
                (legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones, fecha_emision, autorizado_por, cargado_en)
@@ -2173,6 +2352,172 @@ def francos_eliminar(fid):
         conn.execute("DELETE FROM francos_tomados WHERE id=?", (fid,))
         conn.commit()
     return redirect(url_for("francos"))
+
+
+# ═══════════════════════════════════════════════
+# CONFIGURACION DE EMAIL
+# ═══════════════════════════════════════════════
+_EMAIL_CFG_FILE = Path("config_email.json")
+
+
+def _leer_email_cfg():
+    try:
+        return json.loads(_EMAIL_CFG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _guardar_email_cfg(data):
+    _EMAIL_CFG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.route("/configuracion/email", methods=["GET"])
+def configuracion_email():
+    if not _autenticado(): return _requiere_auth()
+    cfg = _leer_email_cfg()
+    with _get_db() as conn:
+        supervisores = [dict(r) for r in conn.execute(
+            "SELECT * FROM supervisores ORDER BY nombre"
+        )]
+    for s in supervisores:
+        try:
+            s["deptos_lista"] = json.loads(s["departamentos"])
+        except Exception:
+            s["deptos_lista"] = []
+    departamentos = sorted({e["departamento"] for e in _empleados_conocidos() if e["departamento"]})
+    return render_template("configuracion_email.html",
+                           cfg=cfg,
+                           supervisores=supervisores,
+                           departamentos=departamentos)
+
+
+@app.route("/configuracion/email/smtp", methods=["POST"])
+def configuracion_email_smtp():
+    if not _autenticado(): return _requiere_auth()
+    cfg = _leer_email_cfg()
+    cfg["smtp_user"]  = request.form.get("smtp_user",  "").strip()
+    cfg["smtp_pass"]  = request.form.get("smtp_pass",  "").strip()
+    cfg["smtp_host"]  = request.form.get("smtp_host",  "smtp-mail.outlook.com").strip()
+    cfg["smtp_port"]  = int(request.form.get("smtp_port", "587") or "587")
+    cfg["smtp_from_name"] = request.form.get("smtp_from_name", "CM Horas Extras").strip()
+    _guardar_email_cfg(cfg)
+    return redirect(url_for("configuracion_email") + "?ok=smtp")
+
+
+@app.route("/configuracion/supervisores/nuevo", methods=["POST"])
+def supervisores_nuevo():
+    if not _autenticado(): return _requiere_auth()
+    nombre    = request.form.get("nombre", "").strip()
+    email     = request.form.get("email",  "").strip()
+    deptos    = request.form.getlist("departamentos")
+    if not nombre or not email or not deptos:
+        return redirect(url_for("configuracion_email") + "?error=sup_datos_requeridos")
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _get_db() as conn:
+        conn.execute(
+            "INSERT INTO supervisores (nombre, email, departamentos, cargado_en) VALUES (?,?,?,?)",
+            (nombre, email, json.dumps(deptos), ahora)
+        )
+        conn.commit()
+    return redirect(url_for("configuracion_email") + "?ok=supervisor")
+
+
+@app.route("/configuracion/supervisores/eliminar/<int:sid>", methods=["POST"])
+def supervisores_eliminar(sid):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        conn.execute("DELETE FROM supervisores WHERE id=?", (sid,))
+        conn.commit()
+    return redirect(url_for("configuracion_email"))
+
+
+# ═══════════════════════════════════════════════
+# EMPLEADOS EXTRA (depts sin fichadas automáticas)
+# ═══════════════════════════════════════════════
+_ODS_PERSONAL = Path(r"I:\Desde Facturacion\PERSONAL POR SECTOR.ods")
+
+
+def _leer_ods_personal():
+    """Parsea el ODS y devuelve lista de {nombre, departamento}."""
+    try:
+        import pandas as pd
+        df = pd.read_excel(str(_ODS_PERSONAL), engine="odf", header=None)
+    except Exception as exc:
+        return [], str(exc)
+
+    resultado = []
+    depto_actual = ""
+    for _, row in df.iterrows():
+        val = str(row[0]).strip() if len(row) > 0 and not (hasattr(row[0], '__class__') and row[0].__class__.__name__ == 'float') else ""
+        import math
+        raw = row[0]
+        if raw is None or (isinstance(raw, float) and math.isnan(raw)):
+            continue
+        val = str(raw).strip()
+        if not val:
+            continue
+        # Heurística: nombre en mayúsculas sin coma y sin espacios intermedios de 1 palabra
+        # → es encabezado de sección si no tiene dos palabras separadas por espacio (apellido nombre)
+        palabras = val.split()
+        if len(palabras) <= 2 and val == val.upper() and not any(c.isdigit() for c in val):
+            # probablemente es nombre de sector
+            depto_actual = val.title()
+        else:
+            if depto_actual:
+                resultado.append({"nombre": val.upper(), "departamento": depto_actual.upper()})
+    return resultado, None
+
+
+@app.route("/empleados/importar")
+def empleados_importar():
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        existentes = {r["legajo"]: dict(r) for r in conn.execute(
+            "SELECT * FROM empleados_extra WHERE activo=1"
+        )}
+    candidatos, error = _leer_ods_personal()
+    # Solo mostramos sectores que no son los que ya están en sesion/periodos
+    sectores_activos = {e["departamento"].upper() for e in _empleados_conocidos()}
+    return render_template("empleados_importar.html",
+                           candidatos=candidatos,
+                           existentes=existentes,
+                           error=error,
+                           sectores_activos=sectores_activos)
+
+
+@app.route("/empleados/importar/guardar", methods=["POST"])
+def empleados_importar_guardar():
+    if not _autenticado(): return _requiere_auth()
+    nombres      = request.form.getlist("nombre")
+    departamentos = request.form.getlist("departamento")
+    legajos      = request.form.getlist("legajo")
+    ahora        = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    guardados    = 0
+    with _get_db() as conn:
+        for leg, nom, dep in zip(legajos, nombres, departamentos):
+            leg = leg.strip()
+            nom = nom.strip()
+            dep = dep.strip()
+            if not leg or not nom:
+                continue
+            conn.execute("""
+                INSERT INTO empleados_extra (legajo, nombre, departamento, cargado_en)
+                VALUES (?,?,?,?)
+                ON CONFLICT(legajo) DO UPDATE
+                SET nombre=excluded.nombre, departamento=excluded.departamento, activo=1
+            """, (leg, nom, dep))
+            guardados += 1
+        conn.commit()
+    return redirect(url_for("empleados_importar") + f"?ok={guardados}")
+
+
+@app.route("/empleados/extra/eliminar/<legajo>", methods=["POST"])
+def empleados_extra_eliminar(legajo):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        conn.execute("UPDATE empleados_extra SET activo=0 WHERE legajo=?", (legajo,))
+        conn.commit()
+    return redirect(url_for("empleados_importar"))
 
 
 # ═══════════════════════════════════════════════

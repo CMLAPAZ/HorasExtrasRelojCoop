@@ -59,7 +59,7 @@
   {% if request.args.get('error') == 'legajo_requerido' %}Debe seleccionar un empleado.
   {% elif request.args.get('error') == 'fechas_requeridas' %}Debe ingresar las fechas.
   {% elif request.args.get('error') == 'dias_cero' %}El rango no contiene días hábiles.
-  {% else %}Error al guardar. Verifique los datos.
+  {% else %}{{ request.args.get('error') }}
   {% endif %}
 </div>
 {% endif %}
