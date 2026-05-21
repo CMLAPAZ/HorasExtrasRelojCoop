@@ -252,12 +252,106 @@ def _hacer_pdf(emps, departamento, output_path, fecha_str):
 
 
 # ──────────────────────────────────────────────────────
+# Email HTML
+# ──────────────────────────────────────────────────────
+
+def _saldo_color(v):
+    if v > 0:  return "color:#166534;font-weight:bold"
+    if v < 0:  return "color:#b91c1c;font-weight:bold"
+    return "color:#64748b"
+
+
+def _hacer_html_email(sup_nombre, deptos, por_depto, fecha_str):
+    """Genera cuerpo HTML del email con tabla de saldos por departamento."""
+    tablas_html = ""
+    for dep in deptos:
+        emps = None
+        for k, v in por_depto.items():
+            if k.lower() == dep.lower():
+                emps = v
+                break
+        if not emps:
+            continue
+        t_ini = sum(e["saldo_inicial"] for e in emps)
+        t_gen = sum(e["generados"]     for e in emps)
+        t_tom = sum(e["tomados"]       for e in emps)
+        t_act = sum(e["saldo_actual"]  for e in emps)
+
+        filas = ""
+        for e in emps:
+            sa = e["saldo_actual"]
+            filas += (
+                f"<tr>"
+                f"<td>{e['legajo']}</td>"
+                f"<td>{e['nombre']}</td>"
+                f"<td style='text-align:center'>{e['saldo_inicial']}</td>"
+                f"<td style='text-align:center;color:#854d0e;font-weight:bold'>+{e['generados']}</td>"
+                f"<td style='text-align:center;color:#b91c1c;font-weight:bold'>-{e['tomados']}</td>"
+                f"<td style='text-align:center;{_saldo_color(sa)}'>{sa}</td>"
+                f"</tr>"
+            )
+        filas += (
+            f"<tr style='background:#eef2ff;font-weight:bold;border-top:2px solid #c7d4f0'>"
+            f"<td colspan='2' style='text-align:right;color:#64748b'>Subtotal</td>"
+            f"<td style='text-align:center'>{t_ini}</td>"
+            f"<td style='text-align:center;color:#854d0e'>+{t_gen}</td>"
+            f"<td style='text-align:center;color:#b91c1c'>-{t_tom}</td>"
+            f"<td style='text-align:center;{_saldo_color(t_act)}'>{t_act}</td>"
+            f"</tr>"
+        )
+
+        tablas_html += f"""
+<h3 style='color:#1e3a5f;font-size:.95rem;margin:22px 0 8px;
+           border-bottom:2px solid #dbeafe;padding-bottom:4px'>
+  {dep.upper()} &nbsp;<span style='font-size:.8rem;font-weight:normal;color:#64748b'>
+  ({len(emps)} empleados)</span>
+</h3>
+<table style='width:100%;border-collapse:collapse;font-size:.84rem;margin-bottom:16px'>
+  <thead>
+    <tr style='background:#1e3a5f;color:#fff'>
+      <th style='padding:7px 10px;text-align:left'>Legajo</th>
+      <th style='padding:7px 10px;text-align:left'>Nombre</th>
+      <th style='padding:7px 10px;text-align:center'>Saldo Ini.</th>
+      <th style='padding:7px 10px;text-align:center'>Gen.</th>
+      <th style='padding:7px 10px;text-align:center'>Tom.</th>
+      <th style='padding:7px 10px;text-align:center'>Saldo Actual</th>
+    </tr>
+  </thead>
+  <tbody style='font-size:.83rem'>
+    {filas}
+  </tbody>
+</table>"""
+
+    if not tablas_html:
+        tablas_html = "<p style='color:#64748b'>Sin datos para los departamentos asignados.</p>"
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset='UTF-8'></head>
+<body style='font-family:Arial,sans-serif;color:#111827;max-width:720px;margin:0 auto;padding:24px'>
+  <h2 style='color:#0f172a;font-size:1.15rem;margin-bottom:4px'>
+    CM Horas Extras &mdash; Saldos de Francos
+  </h2>
+  <p style='color:#64748b;font-size:.88rem;margin-bottom:20px'>
+    Estimado/a <strong>{sup_nombre}</strong>,
+    se adjuntan los informes de saldos al <strong>{fecha_str}</strong>.
+  </p>
+  {tablas_html}
+  <p style='margin-top:28px;font-size:.75rem;color:#94a3b8;
+            border-top:1px solid #e5e7eb;padding-top:10px'>
+    CM_HorasExtras &mdash; Generado automáticamente el {fecha_str}
+  </p>
+</body>
+</html>"""
+
+
+# ──────────────────────────────────────────────────────
 # Envio de email
 # ──────────────────────────────────────────────────────
 
-def _enviar_email(cfg, destinatario_nombre, destinatario_email, adjuntos, fecha_str):
+def _enviar_email(cfg, destinatario_nombre, destinatario_email, adjuntos, html_body, fecha_str):
     """
-    Envía un email Outlook con los PDFs adjuntos.
+    Envía un email Outlook con cuerpo HTML y PDFs adjuntos.
     adjuntos: lista de Path
     """
     smtp_user      = cfg.get("smtp_user", "")
@@ -266,17 +360,20 @@ def _enviar_email(cfg, destinatario_nombre, destinatario_email, adjuntos, fecha_
     smtp_port      = int(cfg.get("smtp_port", 587))
     smtp_from_name = cfg.get("smtp_from_name", "CM Horas Extras")
 
-    msg = MIMEMultipart()
+    msg = MIMEMultipart("mixed")
     msg["From"]    = f"{smtp_from_name} <{smtp_user}>"
     msg["To"]      = f"{destinatario_nombre} <{destinatario_email}>"
     msg["Subject"] = f"Saldos de Francos — {fecha_str}"
 
-    cuerpo = (
+    body_alt = MIMEMultipart("alternative")
+    plain = (
         f"Estimado/a {destinatario_nombre},\n\n"
         f"Se adjuntan los informes de saldos de francos al {fecha_str}.\n\n"
         f"— CM Horas Extras (generado automáticamente)"
     )
-    msg.attach(MIMEText(cuerpo, "plain", "utf-8"))
+    body_alt.attach(MIMEText(plain,     "plain", "utf-8"))
+    body_alt.attach(MIMEText(html_body, "html",  "utf-8"))
+    msg.attach(body_alt)
 
     for pdf_path in adjuntos:
         with open(pdf_path, "rb") as f:
@@ -347,7 +444,7 @@ def main():
         _notificar("No hay datos de empleados.", "Reporte Francos")
         sys.exit(0)
 
-    # Generar PDFs por departamento
+    # Agrupar por departamento (clave original para PDF, clave lower para lookup)
     por_depto  = {}
     for s in saldos:
         por_depto.setdefault(s["departamento"], []).append(s)
@@ -381,7 +478,8 @@ def main():
             if not adjuntos:
                 continue
             try:
-                _enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, fecha_str)
+                html_body = _hacer_html_email(sup["nombre"], sup["deptos"], por_depto, fecha_str)
+                _enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
                 enviados += 1
             except Exception as exc:
                 errores_mail.append(f"{sup['email']}: {exc}")

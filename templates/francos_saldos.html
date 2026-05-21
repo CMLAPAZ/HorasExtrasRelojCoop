@@ -37,7 +37,7 @@
     .badge-gen{background:#fef9c3;color:#854d0e;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .info-box{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:14px}
     .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
-    .depto-header{background:#f8fafc;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;padding:8px 10px;border-bottom:1px solid #e5e7eb}
+    .depto-header{background:#1e3a5f;color:#e0eaf8;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:9px 12px;border-bottom:1px solid #c7d4f0}
     .hidden{display:none}
     select[disabled]{background:#f1f5f9;color:#94a3b8}
     .td-depto{color:#64748b;font-size:.82rem}
@@ -46,6 +46,12 @@
     .td-gen-pos{color:#166534;font-weight:700}
     .td-gen-neg{color:#b91c1c;font-weight:700}
     .td-nota{font-size:.78rem;color:#94a3b8}
+    .fila-subtotal td{background:#eef2ff;font-weight:700;border-top:1px solid #c7d4f0;border-bottom:2px solid #c7d4f0;font-size:.82rem}
+    .fila-total-gen td{background:#dbeafe;font-weight:800;border-top:2px solid #3b82f6;font-size:.84rem}
+    .badge-count{background:#dbeafe;color:#1e40af;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+    .badge-saldo-pos{background:#bbf7d0;color:#14532d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .badge-saldo-neg{background:#fecaca;color:#7f1d1d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .badge-saldo-zer{background:#e2e8f0;color:#475569;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
   </style>
 </head>
 <body>
@@ -203,6 +209,7 @@
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="filtro-depto" title="Filtrar por departamento" onchange="filtrarDepto()" style="width:auto;padding:6px 10px;font-size:.84rem">
         <option value="">— Seleccioná un departamento —</option>
+        <option value="__todos__">Todos los departamentos</option>
         {% for grupo in saldos_por_depto %}
         <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
         {% endfor %}
@@ -228,7 +235,22 @@
         <tr id="msg-sin-depto"><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;font-size:.88rem">Seleccioná un departamento para ver los saldos</td></tr>
         {% for grupo in saldos_por_depto %}
           <tr class="fila-depto" data-depto="{{ grupo.departamento }}">
-            <td colspan="7" class="depto-header">{{ grupo.departamento | upper }}</td>
+            <td colspan="7" class="depto-header">
+              <span style="display:flex;align-items:center;gap:8px">
+                {{ grupo.departamento | upper }}
+                <span class="badge-count">{{ grupo.empleados | length }} empleados</span>
+                <span style="flex:1"></span>
+                <span>Saldo neto:&nbsp;
+                  {% if grupo.total_actual > 0 %}
+                    <span class="badge-saldo-pos">+{{ grupo.total_actual }}</span>
+                  {% elif grupo.total_actual < 0 %}
+                    <span class="badge-saldo-neg">{{ grupo.total_actual }}</span>
+                  {% else %}
+                    <span class="badge-saldo-zer">0</span>
+                  {% endif %}
+                </span>
+              </span>
+            </td>
           </tr>
           {% for s in grupo.empleados %}
           <tr class="fila-emp" data-depto="{{ grupo.departamento }}">
@@ -249,7 +271,39 @@
             <td class="td-nota">{{ iniciales[s.legajo].nota if s.legajo in iniciales else '—' }}</td>
           </tr>
           {% endfor %}
+          <tr class="fila-subtotal" data-depto="{{ grupo.departamento }}">
+            <td colspan="2" style="text-align:right;color:#64748b;padding-right:16px">Subtotal {{ grupo.departamento | upper }}</td>
+            <td><span class="badge-ini">{{ grupo.total_inicial }}</span></td>
+            <td class="td-gen-pos">+{{ grupo.total_generados }}</td>
+            <td class="td-gen-neg">-{{ grupo.total_tomados }}</td>
+            <td>
+              {% if grupo.total_actual > 0 %}
+                <span class="badge-pos">{{ grupo.total_actual }}</span>
+              {% elif grupo.total_actual < 0 %}
+                <span class="badge-neg">{{ grupo.total_actual }}</span>
+              {% else %}
+                <span class="badge-zer">0</span>
+              {% endif %}
+            </td>
+            <td></td>
+          </tr>
         {% endfor %}
+        <tr id="fila-total-gen" class="fila-total-gen" style="display:none">
+          <td colspan="2" style="text-align:right;color:#1e40af;padding-right:16px">TOTAL GENERAL</td>
+          <td><span class="badge-ini">{{ total_general.inicial }}</span></td>
+          <td class="td-gen-pos">+{{ total_general.generados }}</td>
+          <td class="td-gen-neg">-{{ total_general.tomados }}</td>
+          <td>
+            {% if total_general.actual > 0 %}
+              <span class="badge-pos">{{ total_general.actual }}</span>
+            {% elif total_general.actual < 0 %}
+              <span class="badge-neg">{{ total_general.actual }}</span>
+            {% else %}
+              <span class="badge-zer">0</span>
+            {% endif %}
+          </td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -329,19 +383,27 @@ function filtrarLegajosGen() {
 function filtrarDepto() {
   const dep = document.getElementById('filtro-depto').value;
   const msg = document.getElementById('msg-sin-depto');
-  const tabla = document.getElementById('tbody-saldos');
+  const totalGen = document.getElementById('fila-total-gen');
+  const btnDl = document.getElementById('btn-descargar');
+  const filas = document.querySelectorAll('.fila-depto,.fila-emp,.fila-subtotal');
   if (!dep) {
-    document.querySelectorAll('.fila-depto,.fila-emp').forEach(tr => tr.style.display = 'none');
+    filas.forEach(tr => tr.style.display = 'none');
     if (msg) msg.style.display = '';
-    document.getElementById('btn-descargar').style.display = 'none';
+    if (totalGen) totalGen.style.display = 'none';
+    btnDl.style.display = 'none';
     return;
   }
   if (msg) msg.style.display = 'none';
-  document.getElementById('btn-descargar').style.display = '';
-  document.querySelectorAll('.fila-depto,.fila-emp').forEach(tr => {
-    tr.style.display = tr.dataset.depto === dep ? '' : 'none';
-  });
-  document.getElementById('btn-descargar').href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep);
+  btnDl.style.display = '';
+  if (dep === '__todos__') {
+    filas.forEach(tr => tr.style.display = '');
+    if (totalGen) totalGen.style.display = '';
+    btnDl.href = '/francos/saldos/exportar';
+    return;
+  }
+  if (totalGen) totalGen.style.display = 'none';
+  filas.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  btnDl.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep);
 }
 window.onload = function() { filtrarDepto(); };
 

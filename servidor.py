@@ -2244,9 +2244,25 @@ def francos_saldos():
     for s in saldos_raw:
         dep = s["departamento"] or "Sin departamento"
         saldos_grupos.setdefault(dep, []).append(s)
-    saldos_por_depto = [{"departamento": k, "empleados": v} for k, v in sorted(saldos_grupos.items())]
+    saldos_por_depto = []
+    for k, v in sorted(saldos_grupos.items()):
+        saldos_por_depto.append({
+            "departamento":    k,
+            "empleados":       v,
+            "total_inicial":   sum(e["saldo_inicial"] for e in v),
+            "total_generados": sum(e["generados"]     for e in v),
+            "total_tomados":   sum(e["tomados"]       for e in v),
+            "total_actual":    sum(e["saldo_actual"]  for e in v),
+        })
+    total_general = {
+        "inicial":   sum(g["total_inicial"]   for g in saldos_por_depto),
+        "generados": sum(g["total_generados"] for g in saldos_por_depto),
+        "tomados":   sum(g["total_tomados"]   for g in saldos_por_depto),
+        "actual":    sum(g["total_actual"]    for g in saldos_por_depto),
+    }
     return render_template("francos_saldos.html",
                            saldos_por_depto=saldos_por_depto,
+                           total_general=total_general,
                            iniciales=iniciales,
                            empleados_grupos=empleados_grupos,
                            gen_manual=gen_manual,
