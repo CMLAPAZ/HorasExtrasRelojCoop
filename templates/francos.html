@@ -94,17 +94,16 @@
       </div>
     </div>
 
-    <div class="field">
-      <label>Tipo</label>
-      <select name="tipo" id="sel-tipo" onchange="cambiarTipo()">
-        <option value="UNICO">Día único</option>
-        <option value="RANGO">Rango de fechas (días corridos hábiles)</option>
-        <option value="SUELTAS">Fechas sueltas (días no consecutivos)</option>
-      </select>
-    </div>
-
-    <div id="campos-unico">
+    <div class="grid-2">
       <div class="field">
+        <label>Tipo</label>
+        <select name="tipo" id="sel-tipo" title="Tipo de franco" onchange="cambiarTipo()">
+          <option value="UNICO">Día único</option>
+          <option value="RANGO">Rango de fechas (días corridos hábiles)</option>
+          <option value="SUELTAS">Fechas sueltas (días no consecutivos)</option>
+        </select>
+      </div>
+      <div id="campos-unico" class="field">
         <label>Fecha</label>
         <input type="date" name="fecha_unica" id="f-unico">
       </div>
@@ -298,7 +297,7 @@ function buscarLegajo() {
 
 function cambiarTipo() {
   const t = document.getElementById('sel-tipo').value;
-  document.getElementById('campos-unico').style.display  = t === 'UNICO'   ? 'block' : 'none';
+  document.getElementById('campos-unico').style.display  = t === 'UNICO'   ? '' : 'none';
   document.getElementById('campos-rango').style.display  = t === 'RANGO'   ? 'block' : 'none';
   document.getElementById('campos-sueltas').style.display= t === 'SUELTAS' ? 'block' : 'none';
 }
