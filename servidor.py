@@ -2111,13 +2111,25 @@ def _fechas_del_registro(tipo, fecha_desde_str, fecha_hasta_str, fechas_sueltas_
     return _fechas_habiles_set(desde, hasta, feriados)
 
 
+def _es_guardias(conn, legajo):
+    """Devuelve True si el empleado pertenece al departamento GUARDIAS."""
+    row = conn.execute(
+        "SELECT departamento FROM empleados_extra WHERE legajo=? AND activo=1", (str(legajo),)
+    ).fetchone()
+    if row:
+        dep = (row["departamento"] or "").upper().strip()
+    return dep in ("GUARDIAS", "GUARDIA")
+    return False
+
 def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
                           fechas_sueltas_lista, exclude_id=None):
     """
     Valida que las fechas sean hábiles y no se superpongan con registros existentes.
     Devuelve string con el error, o None si todo está bien.
+    Los empleados de GUARDIAS pueden tomar franco cualquier día (feriados y fines de semana incluidos).
     """
     feriados = _cargar_feriados_config()
+    guardias = _es_guardias(conn, legajo)
 
     # Construir el set de fechas nuevas
     if tipo == "SUELTAS":
@@ -2126,9 +2138,9 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
             f = _parse_fecha(s)
             if f:
                 if isinstance(f, datetime): f = f.date()
-                if f.weekday() >= 5:
+                if not guardias and f.weekday() >= 5:
                     return f"La fecha {f.strftime('%d/%m/%Y')} es fin de semana"
-                if f in feriados:
+                if not guardias and f in feriados:
                     return f"La fecha {f.strftime('%d/%m/%Y')} es feriado"
                 nuevas.add(f)
     elif tipo == "UNICO":
@@ -2136,9 +2148,9 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
         if not f:
             return "Fecha inválida"
         if isinstance(f, datetime): f = f.date()
-        if f.weekday() >= 5:
+        if not guardias and f.weekday() >= 5:
             return f"La fecha {f.strftime('%d/%m/%Y')} es fin de semana"
-        if f in feriados:
+        if not guardias and f in feriados:
             return f"La fecha {f.strftime('%d/%m/%Y')} es feriado"
         nuevas = {f}
     else:  # RANGO
@@ -2146,10 +2158,20 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
         hasta = _parse_fecha(fecha_hasta_str)
         if not desde or not hasta:
             return "Fechas inválidas"
-        nuevas = _fechas_habiles_set(desde, hasta, feriados)
+        if guardias:
+            # Para guardias contar todos los días corridos
+            if isinstance(desde, datetime): desde = desde.date()
+            if isinstance(hasta, datetime): hasta = hasta.date()
+            nuevas = set()
+            cur = desde
+            while cur <= hasta:
+                nuevas.add(cur)
+                cur += timedelta(days=1)
+        else:
+            nuevas = _fechas_habiles_set(desde, hasta, feriados)
 
     if not nuevas:
-        return "El período no contiene días hábiles"
+        return "El período no contiene días válidos"
 
     # Verificar superposición con registros existentes del mismo empleado
     query = "SELECT id, tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_tomados WHERE legajo=?"
