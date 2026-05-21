@@ -158,7 +158,16 @@
 <div class="card">
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
-    <a href="/francos/saldos" style="font-size:.8rem;color:#1d4ed8;text-decoration:none;font-weight:700">Cargar saldo inicial →</a>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <select id="filtro-depto-francos" title="Filtrar por departamento" onchange="filtrarDeptoFrancos()" style="padding:6px 10px;font-size:.84rem;border:1px solid #d7dde5;border-radius:7px">
+        <option value="">— Seleccioná un departamento —</option>
+        {% set deptos = saldos | map(attribute='departamento') | unique | sort %}
+        {% for dep in deptos %}
+        <option value="{{ dep }}">{{ dep | upper }}</option>
+        {% endfor %}
+      </select>
+      <a id="btn-dl-francos" href="/francos/saldos/exportar" style="display:none;height:34px;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;display:none;align-items:center">⬇ CSV</a>
+    </div>
   </div>
   <div class="tabla-wrap">
     <table>
@@ -173,9 +182,10 @@
           <th>Saldo actual</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="tbody-saldos-francos">
+        <tr id="msg-sin-depto-francos"><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;font-size:.88rem">Seleccioná un departamento para ver los saldos</td></tr>
         {% for s in saldos %}
-        <tr>
+        <tr class="fila-saldo" data-depto="{{ s.departamento }}" style="display:none">
           <td>{{ s.legajo }}</td>
           <td>{{ s.nombre }}</td>
           <td style="font-size:.78rem;color:#64748b">{{ s.departamento }}</td>
@@ -303,6 +313,17 @@ function calcularDias() {
   let count = 0, cur = new Date(desde);
   while (cur <= hasta) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate()+1); }
   el.textContent = count + ' día' + (count !== 1 ? 's' : '') + ' hábil' + (count !== 1 ? 'es' : '') + ' (sin feriados — el total exacto se calcula al guardar)';
+}
+
+function filtrarDeptoFrancos() {
+  const dep = document.getElementById('filtro-depto-francos').value;
+  const msg = document.getElementById('msg-sin-depto-francos');
+  const btn = document.getElementById('btn-dl-francos');
+  document.querySelectorAll('.fila-saldo').forEach(tr => {
+    tr.style.display = (dep && tr.dataset.depto === dep) ? '' : 'none';
+  });
+  if (msg) msg.style.display = dep ? 'none' : '';
+  if (btn) { btn.style.display = dep ? 'inline-flex' : 'none'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
 }
 
 function contarSueltas() {
