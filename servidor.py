@@ -2116,10 +2116,10 @@ def _es_guardias(conn, legajo):
     row = conn.execute(
         "SELECT departamento FROM empleados_extra WHERE legajo=? AND activo=1", (str(legajo),)
     ).fetchone()
-    if row:
-        dep = (row["departamento"] or "").upper().strip()
+    if not row:
+        return False
+    dep = (row["departamento"] or "").upper().strip()
     return dep in ("GUARDIAS", "GUARDIA")
-    return False
 
 def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
                           fechas_sueltas_lista, exclude_id=None):
