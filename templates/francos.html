@@ -42,6 +42,31 @@
     .legajo-row input[type=number]{width:110px;flex-shrink:0}
     .nombre-display{font-size:.9rem;color:#374151;font-weight:600;padding:9px 0}
     .legajo-error{font-size:.78rem;color:#b91c1c;margin-top:3px;display:none}
+    .depto-header-f{background:#1e3a5f;color:#e0eaf8;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:9px 12px;border-bottom:1px solid #c7d4f0}
+    .badge-count-f{background:#dbeafe;color:#1e40af;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+    .badge-snp{background:#bbf7d0;color:#14532d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .badge-snn{background:#fecaca;color:#7f1d1d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .badge-snz{background:#e2e8f0;color:#475569;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .fila-subt-f td{background:#eef2ff;font-weight:700;border-top:1px solid #c7d4f0;border-bottom:2px solid #c7d4f0;font-size:.82rem}
+    .fila-totgen-f td{background:#dbeafe;font-weight:800;border-top:2px solid #3b82f6;font-size:.84rem}
+    .badge-ini-f{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-pos-f{background:#dcfce7;color:#166534;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-neg-f{background:#fecaca;color:#b91c1c;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-zer-f{background:#f1f5f9;color:#64748b;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .btn-print-f{height:34px;padding:0 14px;background:#0f5132;color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer}
+    .btn-print-f:hover{background:#166534}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+    .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
+    @media print{
+      .topbar,.nav,.card-form-f,.card-registros-f,.no-print{display:none!important}
+      body{background:#fff;padding:8px;max-width:100%}
+      .card{box-shadow:none;border:none;padding:4px}
+      .fila-depto-f,.fila-emp-f,.fila-subt-f,#fila-totgen-f{display:table-row!important}
+      #msg-sin-depto-francos{display:none!important}
+      .depto-header-f{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .fila-subt-f td{background:#eef2ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .fila-totgen-f td{background:#dbeafe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    }
   </style>
 </head>
 <body>
@@ -69,7 +94,7 @@
 {% endif %}
 
 <!-- Formulario alta -->
-<div class="card">
+<div class="card card-form-f">
   <div class="card-title">Registrar Franco Tomado</div>
   <form method="post" action="/francos/nuevo">
 
@@ -153,19 +178,20 @@
 </div>
 
 <!-- Saldos -->
-{% if saldos %}
+{% if saldos_por_depto %}
 <div class="card">
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="filtro-depto-francos" title="Filtrar por departamento" onchange="filtrarDeptoFrancos()" style="padding:6px 10px;font-size:.84rem;border:1px solid #d7dde5;border-radius:7px">
         <option value="">— Seleccioná un departamento —</option>
-        {% set deptos = saldos | map(attribute='departamento') | unique | sort %}
-        {% for dep in deptos %}
-        <option value="{{ dep }}">{{ dep | upper }}</option>
+        <option value="__todos__">Todos los departamentos</option>
+        {% for grupo in saldos_por_depto %}
+        <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
         {% endfor %}
       </select>
-      <a id="btn-dl-francos" href="/francos/saldos/exportar" style="display:none;height:34px;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;display:none;align-items:center">⬇ CSV</a>
+      <a id="btn-dl-francos" href="/francos/saldos/exportar" style="display:none;height:34px;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;align-items:center">⬇ CSV</a>
+      <button class="btn-print-f no-print" onclick="imprimirSaldosFrancos()">🖨 Imprimir</button>
     </div>
   </div>
   <div class="tabla-wrap">
@@ -174,7 +200,6 @@
         <tr>
           <th>Legajo</th>
           <th>Nombre</th>
-          <th>Depto</th>
           <th>Saldo inicial</th>
           <th>Generados</th>
           <th>Tomados</th>
@@ -182,22 +207,59 @@
         </tr>
       </thead>
       <tbody id="tbody-saldos-francos">
-        <tr id="msg-sin-depto-francos"><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;font-size:.88rem">Seleccioná un departamento para ver los saldos</td></tr>
-        {% for s in saldos %}
-        <tr class="fila-saldo" data-depto="{{ s.departamento }}" style="display:none">
-          <td>{{ s.legajo }}</td>
-          <td>{{ s.nombre }}</td>
-          <td style="font-size:.78rem;color:#64748b">{{ s.departamento }}</td>
-          <td style="color:#64748b">{{ s.saldo_inicial }}</td>
-          <td style="color:#166534">+{{ s.generados }}</td>
-          <td style="color:#b91c1c">-{{ s.tomados }}</td>
+        <tr id="msg-sin-depto-francos"><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;font-size:.88rem">Seleccioná un departamento para ver los saldos</td></tr>
+        {% for grupo in saldos_por_depto %}
+          <tr class="fila-depto-f" data-depto="{{ grupo.departamento }}">
+            <td colspan="6" class="depto-header-f">
+              <span style="display:flex;align-items:center;gap:8px">
+                {{ grupo.departamento | upper }}
+                <span class="badge-count-f">{{ grupo.empleados | length }} empleados</span>
+                <span style="flex:1"></span>
+                <span>Saldo neto:&nbsp;
+                  {% if grupo.total_actual > 0 %}<span class="badge-snp">+{{ grupo.total_actual }}</span>
+                  {% elif grupo.total_actual < 0 %}<span class="badge-snn">{{ grupo.total_actual }}</span>
+                  {% else %}<span class="badge-snz">0</span>{% endif %}
+                </span>
+              </span>
+            </td>
+          </tr>
+          {% for s in grupo.empleados %}
+          <tr class="fila-emp-f" data-depto="{{ grupo.departamento }}">
+            <td>{{ s.legajo }}</td>
+            <td>{{ s.nombre }}</td>
+            <td><span class="badge-ini-f">{{ s.saldo_inicial }}</span></td>
+            <td style="color:#166534;font-weight:700">+{{ s.generados }}</td>
+            <td style="color:#b91c1c;font-weight:700">-{{ s.tomados }}</td>
+            <td>
+              {% if s.saldo_actual > 0 %}<span class="badge-pos-f">{{ s.saldo_actual }}</span>
+              {% elif s.saldo_actual < 0 %}<span class="badge-neg-f">{{ s.saldo_actual }}</span>
+              {% else %}<span class="badge-zer-f">0</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          <tr class="fila-subt-f" data-depto="{{ grupo.departamento }}">
+            <td colspan="2" style="text-align:right;color:#64748b;padding-right:16px">Subtotal {{ grupo.departamento | upper }}</td>
+            <td><span class="badge-ini-f">{{ grupo.total_inicial }}</span></td>
+            <td style="color:#166534;font-weight:700">+{{ grupo.total_generados }}</td>
+            <td style="color:#b91c1c;font-weight:700">-{{ grupo.total_tomados }}</td>
+            <td>
+              {% if grupo.total_actual > 0 %}<span class="badge-pos-f">{{ grupo.total_actual }}</span>
+              {% elif grupo.total_actual < 0 %}<span class="badge-neg-f">{{ grupo.total_actual }}</span>
+              {% else %}<span class="badge-zer-f">0</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        <tr id="fila-totgen-f" class="fila-totgen-f" style="display:none">
+          <td colspan="2" style="text-align:right;color:#1e40af;padding-right:16px">TOTAL GENERAL</td>
+          <td><span class="badge-ini-f">{{ total_general.inicial }}</span></td>
+          <td style="color:#166534;font-weight:800">+{{ total_general.generados }}</td>
+          <td style="color:#b91c1c;font-weight:800">-{{ total_general.tomados }}</td>
           <td>
-            <span class="badge-dias" style="background:{% if s.saldo_actual < 0 %}#fecaca;color:#b91c1c{% elif s.saldo_actual == 0 %}#f1f5f9;color:#64748b{% else %}#dcfce7;color:#166534{% endif %}">
-              {{ s.saldo_actual }}
-            </span>
+            {% if total_general.actual > 0 %}<span class="badge-pos-f">{{ total_general.actual }}</span>
+            {% elif total_general.actual < 0 %}<span class="badge-neg-f">{{ total_general.actual }}</span>
+            {% else %}<span class="badge-zer-f">0</span>{% endif %}
           </td>
         </tr>
-        {% endfor %}
       </tbody>
     </table>
   </div>
@@ -205,7 +267,7 @@
 {% endif %}
 
 <!-- Listado -->
-<div class="card">
+<div class="card card-registros-f">
   <div class="card-title">Francos Registrados ({{ registros|length }})</div>
   {% if registros %}
   <div class="tabla-wrap">
@@ -318,11 +380,31 @@ function filtrarDeptoFrancos() {
   const dep = document.getElementById('filtro-depto-francos').value;
   const msg = document.getElementById('msg-sin-depto-francos');
   const btn = document.getElementById('btn-dl-francos');
-  document.querySelectorAll('.fila-saldo').forEach(tr => {
-    tr.style.display = (dep && tr.dataset.depto === dep) ? '' : 'none';
-  });
-  if (msg) msg.style.display = dep ? 'none' : '';
-  if (btn) { btn.style.display = dep ? 'inline-flex' : 'none'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+  const totalGen = document.getElementById('fila-totgen-f');
+  const filas = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
+  if (!dep) {
+    filas.forEach(tr => tr.style.display = 'none');
+    if (msg) msg.style.display = '';
+    if (totalGen) totalGen.style.display = 'none';
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  if (msg) msg.style.display = 'none';
+  if (dep === '__todos__') {
+    filas.forEach(tr => tr.style.display = '');
+    if (totalGen) totalGen.style.display = '';
+    if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
+    return;
+  }
+  if (totalGen) totalGen.style.display = 'none';
+  filas.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+}
+
+function imprimirSaldosFrancos() {
+  document.getElementById('filtro-depto-francos').value = '__todos__';
+  filtrarDeptoFrancos();
+  setTimeout(() => window.print(), 120);
 }
 
 function contarSueltas() {
