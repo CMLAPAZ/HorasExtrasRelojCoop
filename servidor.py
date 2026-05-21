@@ -1042,6 +1042,7 @@ def logout():
 # RUTAS SUPERVISOR (protegidas)
 # ═══════════════════════════════════════════════
 @app.route("/")
+@app.route("/supervisor")
 def index():
     if not _autenticado(): return _requiere_auth()
     return render_template("supervisor.html")
@@ -2228,6 +2229,29 @@ def francos_saldos():
                            empleados_grupos=empleados_grupos,
                            gen_manual=gen_manual,
                            departamentos=departamentos)
+
+
+@app.route("/francos/saldos/exportar")
+def francos_saldos_exportar():
+    if not _autenticado(): return _requiere_auth()
+    depto_filtro = request.args.get("depto", "").strip().lower()
+    saldos_raw = _calcular_saldos()
+    from io import StringIO
+    import csv as csv_mod
+    si = StringIO()
+    w = csv_mod.writer(si, delimiter=";")
+    w.writerow(["Departamento", "Legajo", "Nombre", "Saldo inicial", "Generados", "Tomados", "Saldo actual"])
+    for s in saldos_raw:
+        dep = s.get("departamento") or ""
+        if depto_filtro and dep.lower() != depto_filtro:
+            continue
+        w.writerow([dep, s["legajo"], s["nombre"],
+                    s["saldo_inicial"], s["generados"], s["tomados"], s["saldo_actual"]])
+    output = si.getvalue().encode("utf-8-sig")
+    from flask import Response
+    nombre_archivo = f"saldos_francos_{depto_filtro or 'todos'}.csv"
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"})
 
 
 @app.route("/francos/saldos/guardar", methods=["POST"])

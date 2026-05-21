@@ -200,7 +200,15 @@
 <div class="card">
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
-    <span style="font-size:.78rem;color:#94a3b8">Saldo inicial + Generados − Tomados</span>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <select id="filtro-depto" title="Filtrar por departamento" onchange="filtrarDepto()" style="width:auto;padding:6px 10px;font-size:.84rem">
+        <option value="">Todos los departamentos</option>
+        {% for grupo in saldos_por_depto %}
+        <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
+        {% endfor %}
+      </select>
+      <a id="btn-descargar" href="/francos/saldos/exportar" style="height:34px;display:inline-flex;align-items:center;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none">⬇ Descargar CSV</a>
+    </div>
   </div>
   {% if saldos_por_depto %}
   <div class="tabla-wrap">
@@ -216,11 +224,13 @@
           <th>Nota</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="tbody-saldos">
         {% for grupo in saldos_por_depto %}
-          <tr><td colspan="7" class="depto-header">{{ grupo.departamento | upper }}</td></tr>
+          <tr class="fila-depto" data-depto="{{ grupo.departamento }}">
+            <td colspan="7" class="depto-header">{{ grupo.departamento | upper }}</td>
+          </tr>
           {% for s in grupo.empleados %}
-          <tr>
+          <tr class="fila-emp" data-depto="{{ grupo.departamento }}">
             <td>{{ s.legajo }}</td>
             <td>{{ s.nombre }}</td>
             <td><span class="badge-ini">{{ s.saldo_inicial }}</span></td>
@@ -313,6 +323,16 @@ function filtrarLegajosGen() {
     o.textContent = e.legajo + ' — ' + e.nombre;
     selLeg.appendChild(o);
   }
+}
+
+function filtrarDepto() {
+  const dep = document.getElementById('filtro-depto').value;
+  document.querySelectorAll('.fila-depto,.fila-emp').forEach(tr => {
+    tr.style.display = (!dep || tr.dataset.depto === dep) ? '' : 'none';
+  });
+  const btn = document.getElementById('btn-descargar');
+  btn.href = dep ? '/francos/saldos/exportar?depto=' + encodeURIComponent(dep)
+                 : '/francos/saldos/exportar';
 }
 
 function completarNombreGen() {
