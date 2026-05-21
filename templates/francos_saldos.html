@@ -202,7 +202,7 @@
     <div class="card-title-inline">Saldo Actual por Empleado</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="filtro-depto" title="Filtrar por departamento" onchange="filtrarDepto()" style="width:auto;padding:6px 10px;font-size:.84rem">
-        <option value="">Todos los departamentos</option>
+        <option value="">— Seleccioná un departamento —</option>
         {% for grupo in saldos_por_depto %}
         <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
         {% endfor %}
@@ -225,6 +225,7 @@
         </tr>
       </thead>
       <tbody id="tbody-saldos">
+        <tr id="msg-sin-depto"><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;font-size:.88rem">Seleccioná un departamento para ver los saldos</td></tr>
         {% for grupo in saldos_por_depto %}
           <tr class="fila-depto" data-depto="{{ grupo.departamento }}">
             <td colspan="7" class="depto-header">{{ grupo.departamento | upper }}</td>
@@ -327,13 +328,22 @@ function filtrarLegajosGen() {
 
 function filtrarDepto() {
   const dep = document.getElementById('filtro-depto').value;
+  const msg = document.getElementById('msg-sin-depto');
+  const tabla = document.getElementById('tbody-saldos');
+  if (!dep) {
+    document.querySelectorAll('.fila-depto,.fila-emp').forEach(tr => tr.style.display = 'none');
+    if (msg) msg.style.display = '';
+    document.getElementById('btn-descargar').style.display = 'none';
+    return;
+  }
+  if (msg) msg.style.display = 'none';
+  document.getElementById('btn-descargar').style.display = '';
   document.querySelectorAll('.fila-depto,.fila-emp').forEach(tr => {
-    tr.style.display = (!dep || tr.dataset.depto === dep) ? '' : 'none';
+    tr.style.display = tr.dataset.depto === dep ? '' : 'none';
   });
-  const btn = document.getElementById('btn-descargar');
-  btn.href = dep ? '/francos/saldos/exportar?depto=' + encodeURIComponent(dep)
-                 : '/francos/saldos/exportar';
+  document.getElementById('btn-descargar').href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep);
 }
+window.onload = function() { filtrarDepto(); };
 
 function completarNombreGen() {
   const sel = document.getElementById('sel-legajo-gen');
