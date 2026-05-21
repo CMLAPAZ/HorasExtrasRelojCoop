@@ -52,6 +52,19 @@
     .badge-saldo-pos{background:#bbf7d0;color:#14532d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
     .badge-saldo-neg{background:#fecaca;color:#7f1d1d;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
     .badge-saldo-zer{background:#e2e8f0;color:#475569;font-size:.69rem;font-weight:700;padding:2px 8px;border-radius:999px;vertical-align:middle}
+    .btn-print{height:34px;padding:0 14px;background:#0f5132;color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer}
+    .btn-print:hover{background:#166534}
+    @media print{
+      .topbar,.nav,.card-forms,.card-gen,#filtro-wrap{display:none!important}
+      body{background:#fff;padding:8px;max-width:100%}
+      .card{box-shadow:none;border:none;padding:4px}
+      .fila-depto,.fila-emp,.fila-subtotal,#fila-total-gen{display:table-row!important}
+      #msg-sin-depto{display:none!important}
+      .depto-header{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .fila-subtotal td{background:#eef2ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .fila-total-gen td{background:#dbeafe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .badge-pos,.badge-neg,.badge-zer,.badge-ini,.badge-gen{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    }
   </style>
 </head>
 <body>
@@ -84,7 +97,7 @@
 </div>
 
 <!-- Formulario: saldo inicial -->
-<div class="card">
+<div class="card card-forms">
   <div class="card-title">Cargar / Actualizar Saldo Inicial</div>
   <form method="post" action="/francos/saldos/guardar">
     <div class="grid-4">
@@ -118,7 +131,7 @@
 </div>
 
 <!-- Formulario: generados manuales -->
-<div class="card">
+<div class="card card-forms">
   <div class="card-title">Carga Manual de Francos Generados</div>
   <p style="font-size:.84rem;color:#64748b;margin-bottom:14px">
     Para departamentos sin procesamiento automático de fichadas (o correcciones manuales).
@@ -161,7 +174,7 @@
 
 <!-- Tabla de generados manuales -->
 {% if gen_manual %}
-<div class="card">
+<div class="card card-gen">
   <div class="card-header">
     <div class="card-title-inline">Registros de Generados Manuales</div>
     <span style="font-size:.78rem;color:#94a3b8">{{ gen_manual | length }} registro(s)</span>
@@ -206,7 +219,7 @@
 <div class="card">
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div id="filtro-wrap" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="filtro-depto" title="Filtrar por departamento" onchange="filtrarDepto()" style="width:auto;padding:6px 10px;font-size:.84rem">
         <option value="">— Seleccioná un departamento —</option>
         <option value="__todos__">Todos los departamentos</option>
@@ -215,6 +228,7 @@
         {% endfor %}
       </select>
       <a id="btn-descargar" href="/francos/saldos/exportar" style="height:34px;display:inline-flex;align-items:center;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none">⬇ Descargar CSV</a>
+      <button class="btn-print" onclick="imprimirSaldos()">🖨 Imprimir</button>
     </div>
   </div>
   {% if saldos_por_depto %}
@@ -406,6 +420,12 @@ function filtrarDepto() {
   btnDl.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep);
 }
 window.onload = function() { filtrarDepto(); };
+
+function imprimirSaldos() {
+  document.getElementById('filtro-depto').value = '__todos__';
+  filtrarDepto();
+  setTimeout(() => window.print(), 120);
+}
 
 function completarNombreGen() {
   const sel = document.getElementById('sel-legajo-gen');
