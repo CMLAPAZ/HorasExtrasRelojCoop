@@ -61,7 +61,6 @@
       .topbar,.nav,.card-form-f,.card-registros-f,.no-print{display:none!important}
       body{background:#fff;padding:8px;max-width:100%}
       .card{box-shadow:none;border:none;padding:4px}
-      .fila-depto-f,.fila-emp-f,.fila-subt-f,#fila-totgen-f{display:table-row!important}
       #msg-sin-depto-francos{display:none!important}
       .depto-header-f{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .fila-subt-f td{background:#eef2ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -402,8 +401,11 @@ function filtrarDeptoFrancos() {
 }
 
 function imprimirSaldosFrancos() {
-  document.getElementById('filtro-depto-francos').value = '__todos__';
-  filtrarDeptoFrancos();
+  const dep = document.getElementById('filtro-depto-francos').value;
+  if (!dep) {
+    document.getElementById('filtro-depto-francos').value = '__todos__';
+    filtrarDeptoFrancos();
+  }
   setTimeout(() => window.print(), 120);
 }
 

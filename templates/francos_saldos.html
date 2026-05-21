@@ -58,7 +58,6 @@
       .topbar,.nav,.card-forms,.card-gen,#filtro-wrap{display:none!important}
       body{background:#fff;padding:8px;max-width:100%}
       .card{box-shadow:none;border:none;padding:4px}
-      .fila-depto,.fila-emp,.fila-subtotal,#fila-total-gen{display:table-row!important}
       #msg-sin-depto{display:none!important}
       .depto-header{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .fila-subtotal td{background:#eef2ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -422,8 +421,11 @@ function filtrarDepto() {
 window.onload = function() { filtrarDepto(); };
 
 function imprimirSaldos() {
-  document.getElementById('filtro-depto').value = '__todos__';
-  filtrarDepto();
+  const dep = document.getElementById('filtro-depto').value;
+  if (!dep) {
+    document.getElementById('filtro-depto').value = '__todos__';
+    filtrarDepto();
+  }
   setTimeout(() => window.print(), 120);
 }
 
