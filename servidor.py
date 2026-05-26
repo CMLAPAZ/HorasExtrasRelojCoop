@@ -1916,13 +1916,36 @@ def periodos_ver(pid):
         empleados.append(d)
     empleados = _aplicar_semanas_visibles(empleados, dict(p))
     semanas = list(range(p["semana_desde"], p["semana_hasta"]+1))
+    fd = p["fecha_desde"] or ""
+    fh = p["fecha_hasta"] or ""
+    francos_cierre = []
+    if fd and fh:
+        with _get_db() as conn2:
+            rows_ft = conn2.execute("""
+                SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas,
+                       dias, estado, fecha_emision, autorizado_por, observaciones
+                FROM francos_tomados
+                WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
+                ORDER BY CAST(legajo AS INTEGER), fecha_desde
+            """, (fh, fd)).fetchall()
+        for r in rows_ft:
+            d = dict(r)
+            if d["tipo"] == "SUELTAS":
+                try:
+                    d["fechas_lista"] = json.loads(d["fechas_sueltas"])
+                except Exception:
+                    d["fechas_lista"] = []
+            else:
+                d["fechas_lista"] = []
+            francos_cierre.append(d)
     return render_template("periodo_detalle.html",
                            pid=pid,
                            cerrado_en=(p["cerrado_en"] or "")[:16].replace("T", " "),
-                           fecha_desde=p["fecha_desde"] or "",
-                           fecha_hasta=p["fecha_hasta"] or "",
+                           fecha_desde=fd,
+                           fecha_hasta=fh,
                            semanas=semanas,
                            empleados=empleados,
+                           francos_cierre=francos_cierre,
                            firma=FIRMA_SUPERVISOR)
 
 

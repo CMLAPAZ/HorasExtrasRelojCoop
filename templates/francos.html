@@ -58,13 +58,16 @@
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
     .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
     @media print{
-      .topbar,.nav,.card-form-f,.card-registros-f,.no-print{display:none!important}
+      .topbar,.nav,.card-form-f,.no-print{display:none!important}
+      .card-registros-f{display:none!important}
       body{background:#fff;padding:8px;max-width:100%}
       .card{box-shadow:none;border:none;padding:4px}
       #msg-sin-depto-francos{display:none!important}
       .depto-header-f{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .fila-subt-f td{background:#eef2ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .fila-totgen-f td{background:#dbeafe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body.print-detalle .card-registros-f{display:block!important}
+      body.print-detalle .card-saldos-f{display:none!important}
     }
   </style>
 </head>
@@ -178,7 +181,7 @@
 
 <!-- Saldos -->
 {% if saldos_por_depto %}
-<div class="card">
+<div class="card card-saldos-f">
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -267,7 +270,10 @@
 
 <!-- Listado -->
 <div class="card card-registros-f">
-  <div class="card-title">Francos Registrados ({{ registros|length }})</div>
+  <div class="card-header">
+    <div class="card-title-inline">Francos Registrados ({{ registros|length }})</div>
+    <button type="button" class="btn-print-f no-print" onclick="imprimirDetalleFrancos()">🖨 Imprimir detalle</button>
+  </div>
   {% if registros %}
   <div class="tabla-wrap">
     <table>
@@ -398,6 +404,12 @@ function filtrarDeptoFrancos() {
   if (totalGen) totalGen.style.display = 'none';
   filas.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+}
+
+function imprimirDetalleFrancos() {
+  document.body.classList.add('print-detalle');
+  window.print();
+  document.body.classList.remove('print-detalle');
 }
 
 function imprimirSaldosFrancos() {

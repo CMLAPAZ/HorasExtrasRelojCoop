@@ -40,6 +40,14 @@
     .total-row .ot50{color:#fcd34d}
     .total-row .ot100{color:#fca5a5}
 
+    /* ── FRANCOS CIERRE ─── */
+    .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-dias{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .depto-header-ft td{background:#1e3a5f;color:#e0eaf8;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:9px 10px}
+    .btn-impr{height:34px;padding:0 14px;background:#0f5132;color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer}
+    .btn-impr:hover{background:#166534}
+
     /* ── PRINT ─────────────────────────────── */
     .print-block{display:none}
     @media print{
@@ -50,6 +58,7 @@
       .depto-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .subtotal-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .total-row td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .depto-header-ft td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#1e3a5f!important;color:#e0eaf8!important}
       .print-block{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #172033}
       .print-block h2{font-size:1.1rem;color:#0f172a}
       .print-block p{font-size:.78rem;color:#555;margin-top:3px}
@@ -136,6 +145,47 @@
     </div>
   </div>
 
+{% if francos_cierre %}
+  <div class="card" id="card-francos-cierre">
+    <div class="card-header">
+      <span class="card-title">Francos tomados en el período</span>
+      <button type="button" class="btn-impr no-print" onclick="window.print()">🖨 Imprimir</button>
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Legajo</th><th>Nombre</th><th>Tipo</th>
+            <th>Fechas</th><th>Días</th><th>Estado</th>
+            <th>F. Emisión</th><th>Autorizado por</th><th>Obs.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in francos_cierre %}
+            <tr>
+              <td>{{ r.legajo }}</td>
+              <td>{{ r.nombre }}</td>
+              <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
+              <td style="font-size:.82rem">
+                {% if r.tipo == 'UNICO' %}{{ r.fecha_desde }}
+                {% elif r.tipo == 'RANGO' %}{{ r.fecha_desde }} → {{ r.fecha_hasta }}
+                {% else %}{{ r.fechas_lista | join(', ') }}{% endif %}
+              </td>
+              <td><span class="badge-dias">{{ r.dias }}</span></td>
+              <td>
+                {% if r.estado == 'Aprobado' %}<span class="badge-aprobado">Aprobado</span>
+                {% else %}<span class="badge-pendiente">Pendiente</span>{% endif %}
+              </td>
+              <td style="font-size:.82rem;color:#64748b">{{ r.fecha_emision or '—' }}</td>
+              <td style="font-size:.82rem;color:#64748b">{{ r.autorizado_por or '—' }}</td>
+              <td style="font-size:.82rem;color:#64748b">{{ r.observaciones or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
 </div>
 
 <script>
