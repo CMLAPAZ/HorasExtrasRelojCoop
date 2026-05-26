@@ -494,7 +494,7 @@ async function cargarSemanas() {
 
 // ─── Guardar francos de una semana ───────────────
 async function guardarFrancosSemana(n) {
-  if (!confirm(`¿Guardar saldo parcial de francos de la semana ${n}? Reemplaza el guardado anterior de esa semana.`)) return;
+  if (!confirm(`¿Guardar saldo parcial de francos de la semana ${n}? Actualiza el saldo de esa semana.`)) return;
   try {
     const res  = await fetch(`/semanas/${n}/guardar-francos`, { method: 'POST' });
     const data = await res.json();
