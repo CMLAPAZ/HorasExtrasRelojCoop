@@ -173,6 +173,19 @@ def _init_db():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_semana_manual (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo       TEXT NOT NULL,
+                nombre       TEXT NOT NULL,
+                departamento TEXT NOT NULL DEFAULT '',
+                semana_num   INTEGER NOT NULL,
+                mes          TEXT NOT NULL DEFAULT '',
+                dias         INTEGER NOT NULL DEFAULT 0,
+                guardado_en  TEXT DEFAULT '',
+                UNIQUE(legajo, semana_num, mes)
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_cierre_detalle (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 periodo_id    INTEGER NOT NULL,
@@ -2206,12 +2219,13 @@ def _calcular_saldos():
         gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
         gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
         gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
+        gen_manual_sem = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
         tomados      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
     resultado = []
     for emp in _empleados_conocidos():
         leg = emp["legajo"]
         si  = iniciales.get(leg, 0)
-        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_parcial.get(leg, 0)
+        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_parcial.get(leg, 0) + gen_manual_sem.get(leg, 0)
         tom = tomados.get(leg, 0)
         resultado.append({
             "legajo":       leg,
@@ -2436,11 +2450,32 @@ def francos():
         "tomados":   sum(g["total_tomados"]   for g in saldos_por_depto_f),
         "actual":    sum(g["total_actual"]    for g in saldos_por_depto_f),
     }
+    # Deptos manuales con valores guardados por semana/mes
+    mes_actual = datetime.now().strftime("%Y-%m")
+    with _get_db() as conn:
+        emps_extra = conn.execute(
+            "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1 ORDER BY departamento, CAST(legajo AS INTEGER)"
+        ).fetchall()
+        manual_guardados = {}
+        for r in conn.execute(
+            "SELECT legajo, semana_num, dias FROM francos_semana_manual WHERE mes=?", (mes_actual,)
+        ):
+            manual_guardados.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["dias"]
+    deptos_manuales = {}
+    for e in emps_extra:
+        dep = e["departamento"] or "Sin departamento"
+        deptos_manuales.setdefault(dep, []).append({
+            "legajo": e["legajo"], "nombre": e["nombre"],
+            "semanas": manual_guardados.get(str(e["legajo"]), {})
+        })
+    deptos_manuales_list = [{"departamento": k, "empleados": v} for k, v in sorted(deptos_manuales.items())]
     return render_template("francos.html",
                            registros=registros,
                            saldos_por_depto=saldos_por_depto_f,
                            total_general=total_general_f,
-                           empleados_grupos=empleados_grupos)
+                           empleados_grupos=empleados_grupos,
+                           deptos_manuales=deptos_manuales_list,
+                           mes_actual=mes_actual)
 
 
 @app.route("/francos/saldos")
@@ -2634,6 +2669,33 @@ def francos_eliminar(fid):
         conn.execute("DELETE FROM francos_tomados WHERE id=?", (fid,))
         conn.commit()
     return redirect(url_for("francos"))
+
+
+@app.route("/francos/guardar-manual-semana", methods=["POST"])
+def francos_guardar_manual_semana():
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    semana_num = int(request.form.get("semana_num", 0))
+    mes        = request.form.get("mes", "").strip()
+    if not semana_num or not mes:
+        return jsonify({"error": "Semana y mes son requeridos"}), 400
+    ahora = datetime.now().isoformat(timespec="seconds")
+    guardados = 0
+    with _get_db() as conn:
+        emps = conn.execute(
+            "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1"
+        ).fetchall()
+        for emp in emps:
+            key = f"dias_{emp['legajo']}"
+            val = request.form.get(key, "").strip()
+            dias = int(val) if val.isdigit() else 0
+            conn.execute("""
+                INSERT INTO francos_semana_manual (legajo, nombre, departamento, semana_num, mes, dias, guardado_en)
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(legajo, semana_num, mes) DO UPDATE SET dias=excluded.dias, guardado_en=excluded.guardado_en
+            """, (emp["legajo"], emp["nombre"], emp["departamento"] or "", semana_num, mes, dias, ahora))
+            guardados += 1
+        conn.commit()
+    return jsonify({"ok": True, "guardados": guardados})
 
 
 # ═══════════════════════════════════════════════

@@ -268,6 +268,60 @@
 </div>
 {% endif %}
 
+<!-- Francos manuales por semana -->
+{% if deptos_manuales %}
+<div class="card no-print">
+  <div class="card-header">
+    <div class="card-title-inline">Francos generados — Guardias / Internet / Telefonía</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select id="sel-semana-manual" title="Semana" onchange="actualizarInputsSemana()" style="padding:6px 10px;font-size:.84rem;border:1px solid #d7dde5;border-radius:7px">
+        <option value="1">Semana 1</option>
+        <option value="2">Semana 2</option>
+        <option value="3">Semana 3</option>
+        <option value="4">Semana 4</option>
+        <option value="5">Semana 5</option>
+      </select>
+      <span style="font-size:.82rem;color:#64748b">Mes: <strong>{{ mes_actual }}</strong></span>
+      <button type="button" class="btn-print-f" onclick="guardarManualSemana()" style="background:#1e40af">💾 Guardar</button>
+    </div>
+  </div>
+
+  {% for grupo in deptos_manuales %}
+  <div style="margin-bottom:16px">
+    <div class="depto-header-f">{{ grupo.departamento | upper }} — {{ grupo.empleados | length }} empleados</div>
+    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem">
+      <thead>
+        <tr>
+          <th style="background:#f8fafc;text-align:left;padding:8px 10px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb">Legajo</th>
+          <th style="background:#f8fafc;text-align:left;padding:8px 10px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb">Nombre</th>
+          <th style="background:#f8fafc;text-align:center;padding:8px 10px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;width:80px">Días Franco</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in grupo.empleados %}
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #eef2f7">{{ e.legajo }}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #eef2f7">{{ e.nombre }}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:center">
+            <input type="number" min="0" max="7" id="dias_{{ e.legajo }}"
+                   data-legajo="{{ e.legajo }}"
+                   data-sem1="{{ e.semanas.get(1, 0) }}"
+                   data-sem2="{{ e.semanas.get(2, 0) }}"
+                   data-sem3="{{ e.semanas.get(3, 0) }}"
+                   data-sem4="{{ e.semanas.get(4, 0) }}"
+                   data-sem5="{{ e.semanas.get(5, 0) }}"
+                   value="{{ e.semanas.get(1, 0) }}"
+                   style="width:60px;text-align:center;padding:5px;border:1px solid #d7dde5;border-radius:6px;font-size:.9rem">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Listado -->
 <div class="card card-registros-f">
   <div class="card-header">
@@ -404,6 +458,34 @@ function filtrarDeptoFrancos() {
   if (totalGen) totalGen.style.display = 'none';
   filas.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+}
+
+function actualizarInputsSemana() {
+  const sem = parseInt(document.getElementById('sel-semana-manual').value);
+  document.querySelectorAll('[data-legajo]').forEach(inp => {
+    inp.value = inp.dataset['sem' + sem] || 0;
+  });
+}
+
+async function guardarManualSemana() {
+  const sem = document.getElementById('sel-semana-manual').value;
+  const mes = '{{ mes_actual }}';
+  const fd  = new FormData();
+  fd.append('semana_num', sem);
+  fd.append('mes', mes);
+  document.querySelectorAll('[data-legajo]').forEach(inp => {
+    fd.append('dias_' + inp.dataset.legajo, inp.value || 0);
+  });
+  try {
+    const res  = await fetch('/francos/guardar-manual-semana', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    // actualizar data-sem para reflejar lo guardado
+    document.querySelectorAll('[data-legajo]').forEach(inp => {
+      inp.dataset['sem' + sem] = inp.value;
+    });
+    alert(`✓ Francos semana ${sem} (${mes}) guardados.`);
+  } catch(ex) { alert('Error de conexión.'); }
 }
 
 function imprimirDetalleFrancos() {
