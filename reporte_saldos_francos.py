@@ -101,6 +101,19 @@ def _calcular_saldos():
                         "nombre":       r["nombre"],
                         "departamento": r["departamento"] or "Sin departamento",
                     }
+            # Empleados de empleados_extra (solo saldo inicial, sin fichadas)
+            try:
+                for r in conn.execute(
+                    "SELECT DISTINCT legajo, nombre, departamento FROM empleados_extra"
+                ):
+                    leg = str(r["legajo"])
+                    if leg not in emps_db:
+                        emps_db[leg] = {
+                            "nombre":       r["nombre"],
+                            "departamento": r["departamento"] or "Sin departamento",
+                        }
+            except Exception:
+                pass
 
     gen_sesion = {}
     emps_ses   = {}
@@ -125,7 +138,7 @@ def _calcular_saldos():
         resultado.append({
             "legajo":        leg,
             "nombre":        info["nombre"],
-            "departamento":  info["departamento"],
+            "departamento":  (info["departamento"] or "Sin departamento").upper(),
             "saldo_inicial": si,
             "generados":     gen,
             "tomados":       tom,
@@ -395,6 +408,37 @@ def _enviar_email(cfg, destinatario_nombre, destinatario_email, adjuntos, html_b
 
 
 # ──────────────────────────────────────────────────────
+# Guardar parciales de francos en DB
+# ──────────────────────────────────────────────────────
+
+def _guardar_francos_parciales(sesion):
+    """Snapshot semanal: guarda francos del sesion activo en francos_semana_parcial."""
+    if not DB_FILE.exists() or not sesion:
+        return
+    ahora = datetime.now().isoformat(timespec="seconds")
+    por_semana = {}
+    for d in sesion.values():
+        leg = str(d.get("legajo", "")).strip()
+        if not leg:
+            continue
+        sem = d.get("semana", 0)
+        por_semana.setdefault(sem, []).append(d)
+    try:
+        with _get_db() as conn:
+            for sem, tokens in por_semana.items():
+                conn.execute("DELETE FROM francos_semana_parcial WHERE semana_num=?", (sem,))
+                for d in tokens:
+                    dias = int((d.get("totales") or {}).get("francos", 0) or 0)
+                    conn.execute(
+                        "INSERT INTO francos_semana_parcial (legajo, nombre, departamento, semana_num, dias, guardado_en) VALUES (?,?,?,?,?,?)",
+                        (str(d.get("legajo","")), d.get("nombre",""), d.get("departamento",""), sem, dias, ahora)
+                    )
+            conn.commit()
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────────────
 # Notificacion Windows
 # ──────────────────────────────────────────────────────
 
@@ -433,6 +477,9 @@ def main():
 
     fecha_str  = datetime.now().strftime("%d/%m/%Y")
     fecha_arch = datetime.now().strftime("%Y%m%d")
+
+    sesion = _leer_sesion()
+    _guardar_francos_parciales(sesion)
 
     try:
         saldos = _calcular_saldos()
