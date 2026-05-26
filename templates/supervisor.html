@@ -480,7 +480,7 @@ async function cargarSemanas() {
             <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
             <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
             <button type="button" class="btn-del"     onclick="eliminarSemana(${s.numero})">Eliminar</button>
-            <button type="button" class="btn-francos" onclick="guardarFrancosSemana(${s.numero})">Guardar francos</button>
+            <button type="button" class="btn-francos" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}')">Guardar francos</button>
           </div>
         </td>
       </tr>`;
@@ -493,13 +493,14 @@ async function cargarSemanas() {
 }
 
 // ─── Guardar francos de una semana ───────────────
-async function guardarFrancosSemana(n) {
-  if (!confirm(`¿Guardar saldo parcial de francos de la semana ${n}? Actualiza el saldo de esa semana.`)) return;
+async function guardarFrancosSemana(n, depto, numDepto) {
+  const label = depto ? `Sem. ${numDepto} — ${depto}` : `Sem. ${numDepto}`;
+  if (!confirm(`¿Guardar saldo parcial de francos de ${label}? Actualiza el saldo de esa semana.`)) return;
   try {
     const res  = await fetch(`/semanas/${n}/guardar-francos`, { method: 'POST' });
     const data = await res.json();
     if (data.error) { alert('Error: ' + data.error); return; }
-    alert(`✓ Francos semana ${n} guardados (${data.empleados} empleados). Los saldos ya están actualizados.`);
+    alert(`✓ Francos de ${label} guardados (${data.empleados} empleados). Los saldos ya están actualizados.`);
   } catch(ex) {
     alert('Error de conexión.');
   }
