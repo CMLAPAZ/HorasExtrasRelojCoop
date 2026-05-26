@@ -173,6 +173,17 @@ def _init_db():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_semana_parcial (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo       TEXT NOT NULL,
+                nombre       TEXT NOT NULL,
+                departamento TEXT NOT NULL DEFAULT '',
+                semana_num   INTEGER NOT NULL,
+                dias         INTEGER NOT NULL DEFAULT 0,
+                guardado_en  TEXT DEFAULT ''
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS supervisores (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre        TEXT NOT NULL,
@@ -1352,6 +1363,26 @@ def eliminar_semana(n):
     return jsonify({"ok": True})
 
 
+@app.route("/semanas/<int:n>/guardar-francos", methods=["POST"])
+def guardar_francos_semana(n):
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    ahora = datetime.now().isoformat(timespec="seconds")
+    tokens_semana = [(t, d) for t, d in _sesion.items() if d.get("semana") == n]
+    if not tokens_semana:
+        return jsonify({"error": f"No hay datos de semana {n} en sesión"}), 404
+    with _get_db() as conn:
+        conn.execute("DELETE FROM francos_semana_parcial WHERE semana_num=?", (n,))
+        for _, d in tokens_semana:
+            dias = int(d.get("totales", {}).get("francos", 0))
+            conn.execute(
+                "INSERT INTO francos_semana_parcial (legajo, nombre, departamento, semana_num, dias, guardado_en) VALUES (?,?,?,?,?,?)",
+                (str(d.get("legajo", "")), d.get("nombre", ""), d.get("departamento", ""), n, dias, ahora)
+            )
+        conn.commit()
+    guardados = len(tokens_semana)
+    return jsonify({"ok": True, "semana": n, "empleados": guardados})
+
+
 @app.route("/semanas/<int:n>/regenerar", methods=["POST"])
 def regenerar_semana(n):
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
@@ -1779,6 +1810,11 @@ def periodo_cerrar():
                  json.dumps([semanas_visibles_mapa.get(int(s), s) for s in e.get("semanas",[])]),
                  1 if e.get("confirmado") else 0)
             )
+        # Borrar parciales de francos de las semanas cerradas
+        conn.execute(
+            "DELETE FROM francos_semana_parcial WHERE semana_num BETWEEN ? AND ?",
+            (desde, hasta)
+        )
         conn.commit()
 
     # Limpiar solo los tokens del rango cerrado
@@ -2031,12 +2067,13 @@ def _calcular_saldos():
         iniciales    = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
         gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
         gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
+        gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
         tomados      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
     resultado = []
     for emp in _empleados_conocidos():
         leg = emp["legajo"]
         si  = iniciales.get(leg, 0)
-        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0)
+        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_parcial.get(leg, 0)
         tom = tomados.get(leg, 0)
         resultado.append({
             "legajo":       leg,

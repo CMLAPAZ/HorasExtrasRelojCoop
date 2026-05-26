@@ -30,6 +30,8 @@
     .btn-warn:hover{background:#fef3c7}
     .btn-del{color:#b91c1c;border-color:#fecaca;background:#fff}
     .btn-del:hover{background:#fef2f2}
+    .btn-francos{height:30px;padding:0 10px;background:#fff;border:1px solid #bbf7d0;border-radius:7px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;color:#166534}
+    .btn-francos:hover{background:#dcfce7}
     .btn-reset{padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px}
     .warn-dup,.aviso-local{color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;font-size:.84rem;margin-top:10px}
     .aviso-local{margin-bottom:10px}
@@ -478,6 +480,7 @@ async function cargarSemanas() {
             <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
             <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
             <button type="button" class="btn-del"     onclick="eliminarSemana(${s.numero})">Eliminar</button>
+            <button type="button" class="btn-francos" onclick="guardarFrancosSemana(${s.numero})">Guardar francos</button>
           </div>
         </td>
       </tr>`;
@@ -486,6 +489,19 @@ async function cargarSemanas() {
     body.innerHTML = html;
   } catch(ex) {
     body.innerHTML = '<div class="vacio">Error al cargar semanas.</div>';
+  }
+}
+
+// ─── Guardar francos de una semana ───────────────
+async function guardarFrancosSemana(n) {
+  if (!confirm(`¿Guardar saldo parcial de francos de la semana ${n}? Reemplaza el guardado anterior de esa semana.`)) return;
+  try {
+    const res  = await fetch(`/semanas/${n}/guardar-francos`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    alert(`✓ Francos semana ${n} guardados (${data.empleados} empleados). Los saldos ya están actualizados.`);
+  } catch(ex) {
+    alert('Error de conexión.');
   }
 }
 
