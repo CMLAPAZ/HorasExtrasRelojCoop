@@ -2461,8 +2461,12 @@ def francos():
             "SELECT legajo, semana_num, dias FROM francos_semana_manual WHERE mes=?", (mes_actual,)
         ):
             manual_guardados.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["dias"]
+    _DEPTOS_AUTO = {"redes", "administracion"}
     deptos_manuales = {}
     for e in emps_extra:
+        dep_norm = _normalizar_departamento_web(e["departamento"] or "")
+        if dep_norm in _DEPTOS_AUTO:
+            continue
         dep = e["departamento"] or "Sin departamento"
         deptos_manuales.setdefault(dep, []).append({
             "legajo": e["legajo"], "nombre": e["nombre"],
