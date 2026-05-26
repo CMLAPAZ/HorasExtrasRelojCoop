@@ -27,7 +27,7 @@ DB_FILE        = DATOS_DIR / "cierres.db"
 TELEFONOS_FILE = Path("recursos/telefonos.json")
 
 # Prefijos de área por legajo (excepciones a la regla general)
-_AREA_CODES = {100: "343", 141: "3435", 145: "353"}
+_AREA_CODES = {100: "343", 141: "3435", 151: "353"}
 _AREA_DEFAULT = "3437"
 
 _DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
