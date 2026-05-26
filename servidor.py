@@ -173,6 +173,24 @@ def _init_db():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_cierre_detalle (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                periodo_id    INTEGER NOT NULL,
+                legajo        TEXT NOT NULL,
+                nombre        TEXT NOT NULL,
+                departamento  TEXT NOT NULL DEFAULT '',
+                tipo          TEXT NOT NULL DEFAULT '',
+                fecha_desde   TEXT DEFAULT '',
+                fecha_hasta   TEXT DEFAULT '',
+                fechas_sueltas TEXT DEFAULT '[]',
+                dias          INTEGER NOT NULL DEFAULT 0,
+                estado        TEXT DEFAULT '',
+                fecha_emision TEXT DEFAULT '',
+                autorizado_por TEXT DEFAULT '',
+                observaciones TEXT DEFAULT ''
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_semana_parcial (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 legajo       TEXT NOT NULL,
@@ -480,6 +498,114 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
         texto = f"Hola {nombre_corto}, confirmá tus horas extras en este link: {url}"
     msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
+
+def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta):
+    """Copia francos_tomados del período a francos_cierre_detalle y genera PDF."""
+    if not fecha_desde or not fecha_hasta:
+        return
+    rows = conn.execute("""
+        SELECT legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
+               fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+        FROM francos_tomados
+        WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
+        ORDER BY departamento, CAST(legajo AS INTEGER), fecha_desde
+    """, (fecha_hasta, fecha_desde)).fetchall()
+    for r in rows:
+        conn.execute("""
+            INSERT INTO francos_cierre_detalle
+              (periodo_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
+               fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (pid, r["legajo"], r["nombre"], r["departamento"] or "", r["tipo"],
+              r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
+              r["dias"], r["estado"] or "", r["fecha_emision"] or "",
+              r["autorizado_por"] or "", r["observaciones"] or ""))
+    _generar_pdf_francos_cierre(pid, [dict(r) for r in rows], fecha_desde, fecha_hasta)
+
+
+def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
+    """Genera PDF con detalle de francos tomados para el cierre."""
+    try:
+        from fpdf import FPDF
+        FONTS_DIR = Path("recursos/fonts")
+        FONT_REG  = FONTS_DIR / "DejaVuSans.ttf"
+        FONT_BOLD = FONTS_DIR / "DejaVuSans-Bold.ttf"
+
+        class PDF(FPDF):
+            def __init__(self):
+                super().__init__(orientation="L", unit="mm", format="A4")
+                self.set_auto_page_break(auto=True, margin=15)
+                self._unicode = False
+                if FONT_REG.exists() and FONT_BOLD.exists():
+                    try:
+                        self.add_font("DejaVu", "",  str(FONT_REG),  uni=True)
+                        self.add_font("DejaVu", "B", str(FONT_BOLD), uni=True)
+                        self._unicode = True
+                    except Exception:
+                        pass
+            def fam(self): return "DejaVu" if self._unicode else "Helvetica"
+            def header(self):
+                self.set_font(self.fam(), "B", 12)
+                self.cell(0, 9, f"Francos Tomados — Cierre #{pid}   ({fecha_desde} al {fecha_hasta})", ln=1, align="C")
+                self.ln(2)
+            def footer(self):
+                self.set_y(-13)
+                self.set_font(self.fam(), "", 7)
+                self.cell(0, 8, f"Pag. {self.page_no()}  |  CM_HorasExtras", 0, 0, "C")
+
+        pdf = PDF()
+        pdf.add_page()
+        f = pdf.fam()
+        COLS   = ["Leg.", "Nombre", "Tipo", "Fechas", "Días", "Estado", "Autorizado por", "Obs."]
+        ANCHOS = [14,     75,       18,     70,        12,     22,       45,               31]
+
+        def cabecera():
+            pdf.set_fill_color(200, 215, 240)
+            pdf.set_font(f, "B", 8)
+            for col, ancho in zip(COLS, ANCHOS):
+                pdf.cell(ancho, 6, col, 1, 0, "C", fill=True)
+            pdf.ln()
+
+        cabecera()
+        depto_act = None
+        for r in francos:
+            if pdf.get_y() + 7 > pdf.h - pdf.b_margin:
+                pdf.add_page(); cabecera()
+            dep = (r.get("departamento") or "").upper()
+            if dep != depto_act:
+                depto_act = dep
+                pdf.set_fill_color(30, 58, 95)
+                pdf.set_text_color(224, 234, 248)
+                pdf.set_font(f, "B", 8)
+                pdf.cell(sum(ANCHOS), 6, f"  {dep}", 1, 1, "L", fill=True)
+                pdf.set_text_color(0, 0, 0)
+            tipo = r.get("tipo", "")
+            if tipo == "UNICO":
+                fechas = r.get("fecha_desde", "")
+            elif tipo == "RANGO":
+                fechas = f"{r.get('fecha_desde','')} → {r.get('fecha_hasta','')}"
+            else:
+                try:
+                    fl = json.loads(r.get("fechas_sueltas") or "[]")
+                    fechas = ", ".join(fl)
+                except Exception:
+                    fechas = r.get("fecha_desde", "")
+            pdf.set_font(f, "", 8)
+            pdf.cell(ANCHOS[0], 6, str(r.get("legajo","")),        1, 0, "C")
+            pdf.cell(ANCHOS[1], 6, r.get("nombre",""),              1, 0, "L")
+            pdf.cell(ANCHOS[2], 6, tipo,                            1, 0, "C")
+            pdf.cell(ANCHOS[3], 6, fechas,                          1, 0, "L")
+            pdf.cell(ANCHOS[4], 6, str(r.get("dias", 0)),           1, 0, "C")
+            pdf.cell(ANCHOS[5], 6, r.get("estado",""),              1, 0, "C")
+            pdf.cell(ANCHOS[6], 6, r.get("autorizado_por","") or "",1, 0, "L")
+            pdf.cell(ANCHOS[7], 6, r.get("observaciones","") or "", 1, 1, "L")
+
+        Path("reportes").mkdir(exist_ok=True)
+        ts = fecha_desde.replace("-","") if fecha_desde else datetime.now().strftime("%Y%m%d")
+        pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
+    except Exception:
+        pass
+
 
 def _parse_td(s):
     if not s or s == "00:00:00":
@@ -1810,6 +1936,8 @@ def periodo_cerrar():
                  json.dumps([semanas_visibles_mapa.get(int(s), s) for s in e.get("semanas",[])]),
                  1 if e.get("confirmado") else 0)
             )
+        # Snapshot de francos tomados para historial del cierre
+        _snapshot_francos_cierre(conn, pid, fecha_desde_p, fecha_hasta_p)
         # Borrar parciales de francos de las semanas cerradas
         conn.execute(
             "DELETE FROM francos_semana_parcial WHERE semana_num BETWEEN ? AND ?",
@@ -1955,25 +2083,24 @@ def periodos_ver(pid):
     fd = p["fecha_desde"] or ""
     fh = p["fecha_hasta"] or ""
     francos_cierre = []
-    if fd and fh:
-        with _get_db() as conn2:
-            rows_ft = conn2.execute("""
-                SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas,
-                       dias, estado, fecha_emision, autorizado_por, observaciones
-                FROM francos_tomados
-                WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
-                ORDER BY CAST(legajo AS INTEGER), fecha_desde
-            """, (fh, fd)).fetchall()
-        for r in rows_ft:
-            d = dict(r)
-            if d["tipo"] == "SUELTAS":
-                try:
-                    d["fechas_lista"] = json.loads(d["fechas_sueltas"])
-                except Exception:
-                    d["fechas_lista"] = []
-            else:
+    with _get_db() as conn2:
+        rows_ft = conn2.execute("""
+            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas,
+                   dias, estado, fecha_emision, autorizado_por, observaciones
+            FROM francos_cierre_detalle
+            WHERE periodo_id = ?
+            ORDER BY departamento, CAST(legajo AS INTEGER), fecha_desde
+        """, (pid,)).fetchall()
+    for r in rows_ft:
+        d = dict(r)
+        if d["tipo"] == "SUELTAS":
+            try:
+                d["fechas_lista"] = json.loads(d["fechas_sueltas"])
+            except Exception:
                 d["fechas_lista"] = []
-            francos_cierre.append(d)
+        else:
+            d["fechas_lista"] = []
+        francos_cierre.append(d)
     return render_template("periodo_detalle.html",
                            pid=pid,
                            cerrado_en=(p["cerrado_en"] or "")[:16].replace("T", " "),
@@ -1983,6 +2110,17 @@ def periodos_ver(pid):
                            empleados=empleados,
                            francos_cierre=francos_cierre,
                            firma=FIRMA_SUPERVISOR)
+
+
+@app.route("/periodos/francos_pdf/<int:pid>")
+def periodos_francos_pdf(pid):
+    if not _autenticado(): return _requiere_auth()
+    import glob as _glob
+    matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid}_*.pdf"))))
+    if not matches:
+        return "PDF de francos no encontrado para este cierre.", 404
+    return send_file(matches[-1], as_attachment=True,
+                     download_name=Path(matches[-1]).name)
 
 
 @app.route("/periodos/confirmaciones_pdf/<int:pid>")
