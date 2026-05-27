@@ -58,6 +58,7 @@ def _requiere_auth():
 # PERSISTENCIA
 # ═══════════════════════════════════════════════
 def _cargar_sesion():
+    """Lee sesion.json (período activo en memoria). Retorna {} si no existe o está corrupto."""
     if SESION_FILE.exists():
         try:
             return json.loads(SESION_FILE.read_text(encoding="utf-8"))
@@ -66,6 +67,7 @@ def _cargar_sesion():
     return {}
 
 def _guardar_sesion(s):
+    """Persiste el período activo en sesion.json. No commitear — contiene datos personales."""
     SESION_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def _cargar_metadata():
@@ -90,6 +92,8 @@ def _get_db():
     return conn
 
 def _init_db():
+    """Crea las tablas si no existen y aplica migraciones de columnas nuevas via ALTER TABLE.
+    Se llama al arrancar el servidor. Las migraciones usan try/except para ser idempotentes."""
     with _get_db() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS periodos (

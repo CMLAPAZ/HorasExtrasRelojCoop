@@ -67,6 +67,8 @@ def _fmt(td):
     return f"{s//3600:02}:{(s%3600)//60:02}:{s%60:02}"
 
 def _round(td):
+    """Redondea un timedelta al número de horas enteras más cercano (umbral: 30 min).
+    Convenio Luz y Fuerza: las fracciones de hora se redondean, no se truncan."""
     if td <= timedelta(0):
         return timedelta(0)
     mins = td.total_seconds() / 60
@@ -161,7 +163,12 @@ def obtener_horario_paro(depto, d, config):
 
 
 def resolver_hora_inicio(d, depto, inicio_grupal, config, es_paro, legajo):
+    """Devuelve la hora de inicio que aplica para un empleado en una fecha dada.
 
+    Prioridad: día de paro > horario fijo > cuadrilla inferida > 06:00 por defecto.
+    Los días de paro nunca usan cuadrilla ni horario fijo — tienen su propio horario
+    para que el cálculo de tardanza sea correcto.
+    """
     depto = normalizar_depto(depto)
 
     # PARO: nunca debe caer en cuadrilla ni en horario fijo.
@@ -279,6 +286,12 @@ def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro
 # PREPROCESAMIENTO
 # =========================================================
 def _df_to_registros(df: pd.DataFrame):
+    """Convierte el DataFrame del reloj biométrico a lista de tuplas normalizadas.
+
+    Renombra columnas del formato del exportador del reloj, filtra tipos inválidos
+    y retorna: [(departamento, legajo, nombre, datetime, tipo), ...]
+    Solo se conservan registros de tipo ENTRADA, SALIDA o BREAK.
+    """
     df = df.rename(columns={
         "Nro. de usuario": "Legajo",
         "Fecha/Hora": "FechaHora",
@@ -324,6 +337,7 @@ def _df_to_registros(df: pd.DataFrame):
 
 
 def _agrupar_por_empleado(registros):
+    """Agrupa registros por (depto, legajo, nombre) y los ordena cronológicamente."""
     grupos = defaultdict(list)
 
     for depto, legajo, nombre, dt, tipo in registros:
@@ -529,12 +543,6 @@ def _calcular_por_dia(
                 es_paro=es_paro,
                 legajo=legajo
             )
-        if str(legajo) == "132" and str(d) == "2026-03-13":
-            print(
-                f"[DEBUG DIA] legajo={legajo} fecha={d} "
-                f"dyn_start={dyn_start} "
-                f"horario_fin={(datetime.combine(d, dyn_start) + JORNADA_NORMAL).time()}"
-            )
         normal_start_dt = datetime.combine(d, dyn_start)
         horario_fin = normal_start_dt + JORNADA_NORMAL
         corte_21 = datetime.combine(d, OT100_NIGHT_START)
@@ -699,6 +707,8 @@ def _calcular_por_dia(
         
         # =====================================================
         # FRANCO
+        # Genera 1 franco solo si es feriado/fin de semana Y trabajó ≥4h.
+        # El convenio no genera franco por OT nocturna en día hábil.
         # =====================================================
         if es_especial and total_100 >= timedelta(hours=4):
             total_franco = 1
