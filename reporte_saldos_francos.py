@@ -62,11 +62,12 @@ def _calcular_saldos():
     """
     sesion = _leer_sesion()
 
-    iniciales_db = {}
-    gen_periodos = {}
-    gen_manual   = {}
-    tomados_db   = {}
-    emps_db      = {}
+    iniciales_db        = {}
+    gen_periodos        = {}
+    gen_manual          = {}
+    tomados_db          = {}
+    detalle_tomados_db  = {}
+    emps_db             = {}
 
     if DB_FILE.exists():
         with _get_db() as conn:
@@ -84,6 +85,13 @@ def _calcular_saldos():
                 "SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo"
             ):
                 tomados_db[str(r["legajo"])] = r["total"] or 0
+            detalle_tomados_db = {}
+            for r in conn.execute(
+                "SELECT legajo, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones "
+                "FROM francos_tomados ORDER BY fecha_desde, id"
+            ):
+                leg = str(r["legajo"])
+                detalle_tomados_db.setdefault(leg, []).append(dict(r))
             for r in conn.execute(
                 "SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"
             ):
@@ -136,13 +144,14 @@ def _calcular_saldos():
         gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_sesion.get(leg, 0)
         tom = tomados_db.get(leg, 0)
         resultado.append({
-            "legajo":        leg,
-            "nombre":        info["nombre"],
-            "departamento":  (info["departamento"] or "Sin departamento").upper(),
-            "saldo_inicial": si,
-            "generados":     gen,
-            "tomados":       tom,
-            "saldo_actual":  si + gen - tom,
+            "legajo":           leg,
+            "nombre":           info["nombre"],
+            "departamento":     (info["departamento"] or "Sin departamento").upper(),
+            "saldo_inicial":    si,
+            "generados":        gen,
+            "tomados":          tom,
+            "saldo_actual":     si + gen - tom,
+            "detalle_tomados":  detalle_tomados_db.get(leg, []),
         })
 
     resultado.sort(key=lambda e: (
@@ -171,6 +180,33 @@ def _leer_supervisores():
         return result
     except Exception:
         return []
+
+
+# ──────────────────────────────────────────────────────
+# Helpers de fechas para detalle
+# ──────────────────────────────────────────────────────
+
+def _fmt_fecha(s):
+    """'2025-03-10' -> '10/03/2025'."""
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return s or ""
+
+
+def _desc_fecha_detalle(rec):
+    tipo = (rec.get("tipo") or "").upper()
+    if tipo == "SUELTAS":
+        try:
+            fechas = json.loads(rec.get("fechas_sueltas") or "[]")
+            return ", ".join(_fmt_fecha(f) for f in sorted(fechas))
+        except Exception:
+            return ""
+    fd = _fmt_fecha(rec.get("fecha_desde", ""))
+    fh = _fmt_fecha(rec.get("fecha_hasta", ""))
+    if fh and fh != fd:
+        return f"{fd} → {fh}"
+    return fd
 
 
 # ──────────────────────────────────────────────────────
@@ -261,6 +297,28 @@ def _hacer_pdf(emps, departamento, output_path, fecha_str):
         pdf.set_text_color(0, 0, 0)
         pdf.ln()
 
+        # Sub-filas de detalle francos tomados
+        for det in emp.get("detalle_tomados", []):
+            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+                _encabezado_cols()
+            pdf.set_font(fam, "I", 7)
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_fill_color(248, 248, 252)
+            fecha_txt  = _desc_fecha_detalle(det)
+            estado_txt = (det.get("estado") or "").capitalize()
+            obs_txt    = (det.get("observaciones") or "").strip()
+            detalle_txt = f"  {fecha_txt}   {estado_txt}"
+            if obs_txt:
+                detalle_txt += f"   ({obs_txt})"
+            dias_det = str(det.get("dias", ""))
+            pdf.cell(ANCHOS[0], 5, "", "LB", 0, "C", fill=True)
+            pdf.cell(ANCHOS[1] + ANCHOS[2] + ANCHOS[3], 5, detalle_txt, "LB", 0, "L", fill=True)
+            pdf.cell(ANCHOS[4], 5, dias_det, "LRB", 0, "C", fill=True)
+            pdf.cell(ANCHOS[5], 5, "", "RB", 0, "C", fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln()
+
     pdf.output(str(output_path))
 
 
@@ -303,6 +361,21 @@ def _hacer_html_email(sup_nombre, deptos, por_depto, fecha_str):
                 f"<td style='text-align:center;{_saldo_color(sa)}'>{sa}</td>"
                 f"</tr>"
             )
+            for det in e.get("detalle_tomados", []):
+                fecha_txt  = _desc_fecha_detalle(det)
+                estado_txt = (det.get("estado") or "").capitalize()
+                obs_txt    = (det.get("observaciones") or "").strip()
+                obs_part   = f" &mdash; {obs_txt}" if obs_txt else ""
+                filas += (
+                    f"<tr style='background:#f8f8fc;font-size:.78rem;color:#64748b'>"
+                    f"<td></td>"
+                    f"<td colspan='3' style='padding-left:18px;font-style:italic'>"
+                    f"{fecha_txt} &nbsp; <span style='color:#b91c1c'>{estado_txt}</span>{obs_part}"
+                    f"</td>"
+                    f"<td style='text-align:center;color:#b91c1c'>{det.get('dias','')}</td>"
+                    f"<td></td>"
+                    f"</tr>"
+                )
         filas += (
             f"<tr style='background:#eef2ff;font-weight:bold;border-top:2px solid #c7d4f0'>"
             f"<td colspan='2' style='text-align:right;color:#64748b'>Subtotal</td>"
