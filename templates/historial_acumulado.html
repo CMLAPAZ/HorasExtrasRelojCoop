@@ -75,6 +75,7 @@
     .total-row .sem-totales-inline{padding:10px 14px}
     .total-row .tot{color:#94a3b8}
     .total-row .tot strong{color:#fff}
+    .total-row .sem-row-header{background:#172033;border-color:#334155}
     .total-row .tot.ot50 strong{color:#fcd34d}
     .total-row .tot.ot100 strong{color:#fca5a5}
 
@@ -216,8 +217,8 @@
               {{ dia.dia_semana[:3] if dia.dia_semana else '' }}
               {{ dia.fecha[8:10] }}/{{ dia.fecha[5:7] }}
             </span>
-            {% if dia.ot50 and dia.ot50 != '0h' %}<span class="dia-ot50">OT50: {{ dia.ot50 }}</span>{% endif %}
-            {% if dia.ot100 and dia.ot100 != '0h' %}<span class="dia-ot100">OT100: {{ dia.ot100 }}</span>{% endif %}
+            {% if dia.ot50 and dia.ot50 not in ('0h','00:00:00','') %}<span class="dia-ot50">OT50: {{ dia.ot50[:5] }}</span>{% endif %}
+            {% if dia.ot100 and dia.ot100 not in ('0h','00:00:00','') %}<span class="dia-ot100">OT100: {{ dia.ot100[:5] }}</span>{% endif %}
             {% if dia.franco %}<span class="dia-franco">Franco</span>{% endif %}
             {% if dia.comida %}<span class="dia-comida">Com.×{{ dia.comida }}</span>{% endif %}
             {% if dia.tipo_dia and dia.tipo_dia != 'normal' %}<span class="tipo-tag">{{ dia.tipo_dia }}</span>{% endif %}

@@ -1747,6 +1747,9 @@ def historial_acumulado():
             if d.get("descripcion", "").strip()
         ]
 
+        dias_raw = sorted(item.get("dias", []), key=lambda d: d["fecha"])
+        if excluido:
+            dias_raw = [dict(d, ot50="00:00:00", ot100="00:00:00") for d in dias_raw]
         e["por_semana"][sem] = {
             "ot50": _fmt_hm(ot50_td),
             "ot100": _fmt_hm(ot100_td),
@@ -1754,7 +1757,7 @@ def historial_acumulado():
             "francos": francos,
             "tardanzas": tardanzas,
             "comentarios": comentarios,
-            "dias_list": sorted(item.get("dias", []), key=lambda d: d["fecha"]),
+            "dias_list": dias_raw,
         }
         e["total"]["ot50"] += ot50_td
         e["total"]["ot100"] += ot100_td
