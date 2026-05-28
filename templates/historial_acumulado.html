@@ -79,6 +79,10 @@
     .total-row .tot.ot100 strong{color:#fca5a5}
 
     .vacio{background:#fff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;color:#64748b;padding:38px;font-size:.92rem}
+    .emp-check{width:18px;height:18px;cursor:pointer;accent-color:#172033;flex-shrink:0}
+    .sel-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+    .sel-count{font-size:.82rem;color:#64748b;font-weight:700}
+    @media print{.emp-check,.sel-bar{display:none!important}.emp-card.no-print{display:none!important}}
 
     @media (max-width:760px){
       body{padding:12px}
@@ -153,11 +157,17 @@
     </div>
     <button class="btn btn-primary" type="submit">Aplicar</button>
     <a class="btn" href="/historial/acumulado">Limpiar</a>
+    <button type="button" class="btn btn-primary" onclick="imprimirSeleccionados()">Imprimir seleccionados</button>
   </form>
 
   {% if not deptos %}
   <div class="vacio">No hay confirmaciones registradas para el período activo.</div>
   {% else %}
+  <div class="sel-bar">
+    <button class="btn" type="button" onclick="toggleTodos(true)">Tildar todos</button>
+    <button class="btn" type="button" onclick="toggleTodos(false)">Destildar todos</button>
+    <span class="sel-count" id="sel-count"></span>
+  </div>
 
   {% for depto in deptos %}
   <div class="depto-section">
@@ -170,6 +180,9 @@
     {% for emp in depto.empleados %}
     <div class="emp-card">
       <div class="emp-header">
+        <input type="checkbox" class="emp-check" title="Incluir en impresión"
+          {% if emp.total.ot50 != '0h' or emp.total.ot100 != '0h' %}checked{% endif %}
+          onchange="actualizarConteo()">
         <span class="emp-nombre">{{ emp.nombre }}</span>
         <span class="emp-legajo">Leg. {{ emp.legajo }}</span>
       </div>
@@ -250,6 +263,29 @@
   const el2 = document.getElementById('fecha-pie');
   if(el1) el1.textContent = ahora;
   if(el2) el2.textContent = ahora;
+
+  function actualizarConteo() {
+    const total = document.querySelectorAll('.emp-check').length;
+    const sel   = document.querySelectorAll('.emp-check:checked').length;
+    const el    = document.getElementById('sel-count');
+    if (el) el.textContent = sel + ' de ' + total + ' seleccionados';
+  }
+
+  function toggleTodos(estado) {
+    document.querySelectorAll('.emp-check').forEach(cb => cb.checked = estado);
+    actualizarConteo();
+  }
+
+  function imprimirSeleccionados() {
+    document.querySelectorAll('.emp-card').forEach(card => {
+      const cb = card.querySelector('.emp-check');
+      if (cb && !cb.checked) card.classList.add('no-print');
+    });
+    window.print();
+    document.querySelectorAll('.emp-card.no-print').forEach(c => c.classList.remove('no-print'));
+  }
+
+  actualizarConteo();
 </script>
 </body>
 </html>

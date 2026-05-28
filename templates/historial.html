@@ -61,6 +61,10 @@
     .sem-conf-fecha{font-size:.72rem;color:#94a3b8}
     .sem-head .totales{padding:0;gap:6px}
     .vacio{background:#fff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;color:#64748b;padding:38px;font-size:.92rem}
+    .emp-check{width:18px;height:18px;cursor:pointer;accent-color:#172033;flex-shrink:0}
+    .sel-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+    .sel-count{font-size:.82rem;color:#64748b;font-weight:700}
+    @media print{.emp-check,.sel-bar{display:none!important}.card.no-print{display:none!important}}
     @media (max-width:760px){
       body{padding:14px}
       .topbar{display:block}
@@ -120,7 +124,7 @@
     </div>
     <button class="btn btn-primary" type="submit">Aplicar</button>
     <button class="btn" type="button" onclick="window.location.href='/historial'">Limpiar</button>
-    <button class="btn" type="button" onclick="window.print()">Imprimir</button>
+    <button class="btn btn-primary" type="button" onclick="imprimirSeleccionados()">Imprimir seleccionados</button>
   </form>
 
   <div class="summary">
@@ -146,11 +150,19 @@
   {% if not items %}
   <div class="vacio">No hay confirmaciones registradas para el filtro seleccionado.</div>
   {% else %}
+    <div class="sel-bar">
+      <button class="btn" type="button" onclick="toggleTodos(true)">Tildar todos</button>
+      <button class="btn" type="button" onclick="toggleTodos(false)">Destildar todos</button>
+      <span class="sel-count" id="sel-count"></span>
+    </div>
     {% for legajo_key, semanas_emp in items | groupby('legajo') %}
     {% set semanas_list = semanas_emp | sort(attribute='semana') %}
     {% set primer = semanas_list | first %}
+    {% set tiene_horas = namespace(val=false) %}
+    {% for c in semanas_list %}{% if c.totales.ot50 != '0h' or c.totales.ot100 != '0h' %}{% set tiene_horas.val = true %}{% endif %}{% endfor %}
     <div class="card">
       <div class="emp-head">
+        <input type="checkbox" class="emp-check" {% if tiene_horas.val %}checked{% endif %} title="Incluir en impresión" onchange="actualizarConteo()">
         <div>
           <div class="emp-nombre">{{ primer.nombre }}</div>
           <div class="emp-info">Legajo {{ primer.legajo }} · {{ primer.departamento or '-' }}</div>
@@ -198,6 +210,29 @@
 <script>
 document.getElementById('departamento').addEventListener('change', () => document.getElementById('filtros').submit());
 document.getElementById('semana').addEventListener('change', () => document.getElementById('filtros').submit());
+
+function actualizarConteo() {
+  const total = document.querySelectorAll('.emp-check').length;
+  const sel   = document.querySelectorAll('.emp-check:checked').length;
+  const el    = document.getElementById('sel-count');
+  if (el) el.textContent = sel + ' de ' + total + ' seleccionados';
+}
+
+function toggleTodos(estado) {
+  document.querySelectorAll('.emp-check').forEach(cb => cb.checked = estado);
+  actualizarConteo();
+}
+
+function imprimirSeleccionados() {
+  document.querySelectorAll('.card').forEach(card => {
+    const cb = card.querySelector('.emp-check');
+    if (cb && !cb.checked) card.classList.add('no-print');
+  });
+  window.print();
+  document.querySelectorAll('.card.no-print').forEach(c => c.classList.remove('no-print'));
+}
+
+actualizarConteo();
 </script>
 </body>
 </html>
