@@ -159,7 +159,7 @@
     {% set semanas_list = semanas_emp | sort(attribute='semana') %}
     {% set primer = semanas_list | first %}
     {% set tiene_horas = namespace(val=false) %}
-    {% for c in semanas_list %}{% if c.totales.ot50 != '0h' or c.totales.ot100 != '0h' %}{% set tiene_horas.val = true %}{% endif %}{% endfor %}
+    {% for c in semanas_list %}{% if c.totales.ot50 != '0h' or c.totales.ot100 != '0h' or c.totales.comidas or c.totales.francos or c.totales.tardanzas %}{% set tiene_horas.val = true %}{% endif %}{% endfor %}
     <div class="card">
       <div class="emp-head">
         <input type="checkbox" class="emp-check" {% if tiene_horas.val %}checked{% endif %} title="Incluir en impresión" onchange="actualizarConteo()">

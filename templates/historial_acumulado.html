@@ -181,7 +181,7 @@
     <div class="emp-card">
       <div class="emp-header">
         <input type="checkbox" class="emp-check" title="Incluir en impresión"
-          {% if emp.total.ot50 != '0h' or emp.total.ot100 != '0h' %}checked{% endif %}
+          {% if emp.total.ot50 != '0h' or emp.total.ot100 != '0h' or emp.total.comidas or emp.total.francos or emp.total.tardanzas %}checked{% endif %}
           onchange="actualizarConteo()">
         <span class="emp-nombre">{{ emp.nombre }}</span>
         <span class="emp-legajo">Leg. {{ emp.legajo }}</span>
