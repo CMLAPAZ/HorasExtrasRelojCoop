@@ -440,7 +440,8 @@ def _leer_historial(semana=None, departamento=None):
                  "franco": x.get("franco", 0), "comida": x.get("comida", 0),
                  "tipo_dia": x.get("tipo_dia", "normal"),
                  "dia_semana": x.get("dia_semana") or _dia_semana(x["fecha"]),
-                 "descripcion": x.get("descripcion", "")}
+                 "descripcion": x.get("descripcion", ""),
+                 "tramos": x.get("tramos", [])}
                 for x in d.get("dias", []) if x.get("tiene_ot")
             ],
         })
@@ -1165,7 +1166,8 @@ def confirmar(token):
             "dias": [
                 {"fecha": d["fecha"], "ot50": d["ot50"], "ot100": d["ot100"],
                  "franco": d.get("franco",0), "comida": d.get("comida",0),
-                 "tipo_dia": d.get("tipo_dia","normal"), "descripcion": d.get("descripcion","")}
+                 "tipo_dia": d.get("tipo_dia","normal"), "descripcion": d.get("descripcion",""),
+                 "tramos": d.get("tramos", [])}
                 for d in data["dias"] if d["tiene_ot"]
             ],
         }, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1713,6 +1715,16 @@ def historial_acumulado():
                 }
 
     excluidos = _cargar_excluidos_ot()
+
+    # Mapa (legajo, fecha) → tramos desde _sesion para enriquecer archivos viejos sin tramos
+    tramos_sesion = {}
+    for d in _sesion.values():
+        leg = str(d.get("legajo", ""))
+        for dia in d.get("dias", []):
+            t = dia.get("tramos", [])
+            if leg and dia.get("fecha") and t:
+                tramos_sesion[(leg, dia["fecha"])] = t
+
     por_empleado = {}
     semanas_set = set()
 
@@ -1748,6 +1760,11 @@ def historial_acumulado():
         ]
 
         dias_raw = sorted(item.get("dias", []), key=lambda d: d["fecha"])
+        # Enriquecer con tramos de _sesion si el archivo de confirmación no los tiene
+        dias_raw = [
+            dict(d, tramos=d.get("tramos") or tramos_sesion.get((legajo, d["fecha"]), []))
+            for d in dias_raw
+        ]
         if excluido:
             dias_raw = [dict(d, ot50="00:00:00", ot100="00:00:00") for d in dias_raw]
         e["por_semana"][sem] = {
