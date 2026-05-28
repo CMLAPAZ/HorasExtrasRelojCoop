@@ -1681,6 +1681,111 @@ def historial():
                            semana_actual=semana)
 
 
+@app.route("/historial/acumulado")
+def historial_acumulado():
+    if not _autenticado(): return _requiere_auth()
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+
+    todos_sin_filtro = _leer_historial()
+    deptos_map = {}
+    for item in todos_sin_filtro:
+        valor = _normalizar_departamento_web(item.get("departamento", ""))
+        if not valor or valor == "todos":
+            continue
+        deptos_map[valor] = _nombre_departamento_visible(item.get("departamento", ""))
+    departamentos = [
+        {"valor": v, "nombre": n}
+        for v, n in sorted(deptos_map.items(), key=lambda x: x[1])
+    ]
+
+    todos = _leer_historial(departamento=departamento if departamento else None)
+
+    meta = _cargar_metadata()
+    sem_fechas = {}
+    for s in meta.get("semanas", []):
+        depto_s = _normalizar_departamento_web(s.get("departamento", "") or "Todos")
+        if not departamento or depto_s == departamento or depto_s == "todos":
+            nd = s.get("num_depto", s.get("numero"))
+            if nd is not None and nd not in sem_fechas:
+                sem_fechas[nd] = {
+                    "desde": s.get("fecha_desde", ""),
+                    "hasta": s.get("fecha_hasta", ""),
+                }
+
+    excluidos = _cargar_excluidos_ot()
+    por_empleado = {}
+    semanas_set = set()
+
+    for item in todos:
+        depto = _normalizar_departamento_web(item.get("departamento", "") or "Todos")
+        legajo = str(item["legajo"])
+        sem = item.get("semana_depto") or item.get("semana", 0)
+        semanas_set.add(sem)
+
+        clave = (depto, legajo)
+        if clave not in por_empleado:
+            por_empleado[clave] = {
+                "legajo": legajo,
+                "nombre": item["nombre"],
+                "departamento": _nombre_departamento_visible(depto),
+                "departamento_key": depto,
+                "por_semana": {},
+                "total": {"ot50": timedelta(0), "ot100": timedelta(0),
+                          "comidas": 0, "francos": 0, "tardanzas": 0},
+            }
+
+        e = por_empleado[clave]
+        excluido = item.get("excluido_ot") or legajo in excluidos
+        ot50_td = _parse_hm(item["totales"]["ot50"]) if not excluido else timedelta(0)
+        ot100_td = _parse_hm(item["totales"]["ot100"]) if not excluido else timedelta(0)
+        comidas = item["totales"].get("comidas", 0)
+        francos = sum(1 for d in item.get("dias", []) if d.get("franco"))
+        tardanzas = item["totales"].get("tardanzas", 0)
+        comentarios = [
+            {"fecha": d["fecha"], "texto": d["descripcion"]}
+            for d in item.get("dias", [])
+            if d.get("descripcion", "").strip()
+        ]
+
+        e["por_semana"][sem] = {
+            "ot50": _fmt_hm(ot50_td),
+            "ot100": _fmt_hm(ot100_td),
+            "comidas": comidas,
+            "francos": francos,
+            "tardanzas": tardanzas,
+            "comentarios": comentarios,
+            "dias_list": sorted(item.get("dias", []), key=lambda d: d["fecha"]),
+        }
+        e["total"]["ot50"] += ot50_td
+        e["total"]["ot100"] += ot100_td
+        e["total"]["comidas"] += comidas
+        e["total"]["francos"] += francos
+        e["total"]["tardanzas"] += tardanzas
+
+    empleados_lista = []
+    for clave, e in sorted(por_empleado.items(),
+                           key=lambda x: _legajo_key({"legajo": x[1]["legajo"]})):
+        e["total"]["ot50"] = _fmt_hm(e["total"]["ot50"])
+        e["total"]["ot100"] = _fmt_hm(e["total"]["ot100"])
+        empleados_lista.append(e)
+
+    semanas = sorted(semanas_set)
+
+    deptos_resultado = {}
+    for e in empleados_lista:
+        dk = e["departamento_key"]
+        if dk not in deptos_resultado:
+            deptos_resultado[dk] = {"nombre": e["departamento"], "empleados": []}
+        deptos_resultado[dk]["empleados"].append(e)
+
+    return render_template("historial_acumulado.html",
+                           deptos=list(deptos_resultado.values()),
+                           semanas=semanas,
+                           sem_fechas=sem_fechas,
+                           departamentos=departamentos,
+                           departamento_actual=departamento)
+
+
 @app.route("/periodo")
 def periodo():
     if not _autenticado(): return _requiere_auth()

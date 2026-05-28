@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Informe Parcial Acumulado</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;padding:22px}
+    .shell{max-width:1100px;margin:0 auto}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
+    .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;margin-bottom:4px}
+    .subtitle{font-size:.9rem;color:#64748b;margin-top:4px}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .nav a,.btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
+    .nav a:hover,.btn:hover{border-color:#94a3b8;background:#f8fafc}
+    .btn-primary{background:#172033;color:#fff;border-color:#172033}
+    .btn-primary:hover{background:#25314a;border-color:#25314a}
+    .filters{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+    .field{display:flex;flex-direction:column;gap:5px}
+    label{font-size:.76rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:800}
+    select{height:36px;min-width:220px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#111827;padding:0 10px;font-size:.86rem}
+
+    /* Departamento */
+    .depto-section{margin-bottom:28px}
+    .depto-titulo{font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;font-weight:900;color:#fff;background:#172033;padding:9px 16px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:10px}
+    .depto-count{font-size:.72rem;font-weight:700;background:rgba(255,255,255,.15);padding:2px 8px;border-radius:999px}
+
+    /* Empleado */
+    .emp-card{background:#fff;border:1px solid #e5e7eb;border-top:none;overflow:hidden}
+    .emp-card:last-child{border-radius:0 0 8px 8px}
+    .emp-header{display:flex;align-items:center;gap:10px;padding:11px 16px;background:#1e293b;border-bottom:1px solid #334155}
+    .emp-nombre{font-weight:800;color:#f8fafc;font-size:.95rem}
+    .emp-legajo{font-size:.75rem;color:#94a3b8;background:rgba(255,255,255,.1);padding:2px 8px;border-radius:999px;font-weight:700}
+
+    /* Fila de semana */
+    .sem-row{border-bottom:1px solid #eef2f7}
+    .sem-row:last-of-type{border-bottom:none}
+    .sem-row-header{display:flex;align-items:center;gap:0;padding:0;background:#f8fafc;border-bottom:1px solid #eef2f7}
+    .sem-label{min-width:130px;padding:9px 14px;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#475569;border-right:1px solid #eef2f7;flex-shrink:0}
+    .sem-rango{font-size:.7rem;font-weight:600;color:#94a3b8;padding:9px 12px;border-right:1px solid #eef2f7;flex-shrink:0;white-space:nowrap}
+    .sem-totales-inline{display:flex;gap:14px;padding:9px 14px;flex-wrap:wrap;align-items:center}
+    .tot{font-size:.82rem;color:#475569}
+    .tot strong{color:#0f172a}
+    .tot.ot50 strong{color:#d97706}
+    .tot.ot100 strong{color:#dc2626}
+    .tot.tard strong{color:#7c3aed}
+
+    /* Días dentro de la semana */
+    .dias-detalle{padding:8px 14px 10px 130px;display:flex;flex-direction:column;gap:4px}
+    .dia-row{font-size:.79rem;padding:5px 8px;border-radius:5px;border:1px solid #f1f5f9;background:#fbfcff;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+    .dia-row.feriado{background:#fff7ed;border-color:#fed7aa}
+    .dia-row.sabado{background:#eff6ff;border-color:#bfdbfe}
+    .dia-row.domingo{background:#f5f3ff;border-color:#ddd6fe}
+    .dia-row.paro{background:#f0fdf4;border-color:#bbf7d0}
+    .dia-fecha{font-weight:800;color:#1e293b;min-width:90px;font-size:.78rem}
+    .dia-ot50{color:#d97706;font-weight:700;font-size:.76rem}
+    .dia-ot100{color:#dc2626;font-weight:700;font-size:.76rem}
+    .dia-franco{color:#166534;font-weight:700;font-size:.76rem}
+    .dia-comida{color:#0369a1;font-weight:700;font-size:.76rem}
+    .tipo-tag{font-size:.62rem;font-weight:800;text-transform:uppercase;padding:2px 6px;border-radius:999px;background:#e2e8f0;color:#475569}
+    .feriado .tipo-tag{background:#fed7aa;color:#9a3412}
+    .sabado .tipo-tag{background:#bfdbfe;color:#1e40af}
+    .domingo .tipo-tag{background:#ddd6fe;color:#5b21b6}
+    .paro .tipo-tag{background:#bbf7d0;color:#166534}
+    .dia-desc{width:100%;font-size:.73rem;color:#475569;font-style:italic;padding-left:2px}
+
+    .sem-sin-datos{padding:9px 14px;font-size:.8rem;color:#94a3b8;font-style:italic}
+
+    /* Fila total acumulado */
+    .total-row{border-top:2px solid #172033;background:#172033}
+    .total-row .sem-label{color:#cbd5e1;background:#172033;border-right-color:#334155}
+    .total-row .sem-rango{display:none}
+    .total-row .sem-totales-inline{padding:10px 14px}
+    .total-row .tot{color:#94a3b8}
+    .total-row .tot strong{color:#fff}
+    .total-row .tot.ot50 strong{color:#fcd34d}
+    .total-row .tot.ot100 strong{color:#fca5a5}
+
+    .vacio{background:#fff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;color:#64748b;padding:38px;font-size:.92rem}
+
+    @media (max-width:760px){
+      body{padding:12px}
+      .topbar{display:block}
+      .nav{justify-content:flex-start;margin-top:10px}
+      .dias-detalle{padding-left:14px}
+      .sem-rango{display:none}
+    }
+
+    @media print{
+      body{background:#fff;padding:8px}
+      .topbar .nav,.filters,.btn{display:none!important}
+      .shell{max-width:100%}
+      .depto-section{page-break-inside:avoid;margin-bottom:16px}
+      .emp-card{page-break-inside:avoid}
+      .emp-header{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .depto-titulo{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .total-row{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .print-header{display:flex!important;justify-content:space-between;align-items:flex-start;margin-bottom:14px;border-bottom:2px solid #1a1a2e;padding-bottom:8px}
+      .print-header-left h2{font-size:1rem;color:#1a1a2e}
+      .print-header-left p{font-size:.75rem;color:#555;margin-top:2px}
+      .print-header-right{text-align:right;font-size:.75rem;color:#555}
+      .print-footer{display:flex!important;justify-content:space-between;margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:.7rem;color:#888}
+    }
+    .print-header{display:none}
+    .print-footer{display:none}
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="print-header">
+    <div class="print-header-left">
+      <h2>CELP — Horas Extras | Informe Parcial Acumulado</h2>
+      <p>
+        {% if departamento_actual %}Departamento:
+          {% for d in departamentos %}{% if d.valor == departamento_actual %}{{ d.nombre }}{% endif %}{% endfor %}
+        {% else %}Todos los departamentos{% endif %}
+        &nbsp;·&nbsp; Semanas: {{ semanas | join(', ') }}
+      </p>
+    </div>
+    <div class="print-header-right">
+      <strong>CM Horas Extras</strong>
+      Generado: <span id="fecha-impresion"></span>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Informe parcial</div>
+      <h1>Acumulado por semanas</h1>
+      <div class="subtitle">Totales y días detallados — antes del cierre.</div>
+    </div>
+    <div class="nav">
+      <a href="/historial">Historial</a>
+      <a href="/periodo">Períodos</a>
+      <a href="/">Panel</a>
+      <a href="/logout">Salir</a>
+      <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir / PDF</button>
+    </div>
+  </div>
+
+  <form class="filters" method="get" action="/historial/acumulado">
+    <div class="field">
+      <label for="departamento">Departamento</label>
+      <select id="departamento" name="departamento" onchange="this.form.submit()">
+        <option value="">Todos</option>
+        {% for d in departamentos %}
+        <option value="{{ d.valor }}" {% if d.valor == departamento_actual %}selected{% endif %}>{{ d.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Aplicar</button>
+    <a class="btn" href="/historial/acumulado">Limpiar</a>
+  </form>
+
+  {% if not deptos %}
+  <div class="vacio">No hay confirmaciones registradas para el período activo.</div>
+  {% else %}
+
+  {% for depto in deptos %}
+  <div class="depto-section">
+    <div class="depto-titulo">
+      {{ depto.nombre }}
+      <span class="depto-count">{{ depto.empleados | length }} empleado{{ 's' if depto.empleados | length != 1 else '' }}</span>
+      <span class="depto-count">Sem. {{ semanas | join(' · ') }}</span>
+    </div>
+
+    {% for emp in depto.empleados %}
+    <div class="emp-card">
+      <div class="emp-header">
+        <span class="emp-nombre">{{ emp.nombre }}</span>
+        <span class="emp-legajo">Leg. {{ emp.legajo }}</span>
+      </div>
+
+      {% for sem in semanas %}
+      {% set datos = emp.por_semana.get(sem) %}
+      <div class="sem-row">
+        <div class="sem-row-header">
+          <div class="sem-label">Semana {{ sem }}</div>
+          {% if sem_fechas.get(sem) %}
+          <div class="sem-rango">{{ sem_fechas[sem].desde }} — {{ sem_fechas[sem].hasta }}</div>
+          {% endif %}
+          {% if datos %}
+          <div class="sem-totales-inline">
+            <span class="tot ot50">OT 50%: <strong>{{ datos.ot50 }}</strong></span>
+            <span class="tot ot100">OT 100%: <strong>{{ datos.ot100 }}</strong></span>
+            <span class="tot">Francos: <strong>{{ datos.francos }}</strong></span>
+            <span class="tot">Comidas: <strong>{{ datos.comidas }}</strong></span>
+            {% if datos.tardanzas %}<span class="tot tard">Tard.: <strong>{{ datos.tardanzas }}</strong></span>{% endif %}
+          </div>
+          {% else %}
+          <div class="sem-sin-datos">Sin confirmación</div>
+          {% endif %}
+        </div>
+
+        {% if datos and datos.dias_list %}
+        <div class="dias-detalle">
+          {% for dia in datos.dias_list %}
+          <div class="dia-row {{ dia.tipo_dia if dia.tipo_dia != 'normal' else '' }}">
+            <span class="dia-fecha">
+              {{ dia.dia_semana[:3] if dia.dia_semana else '' }}
+              {{ dia.fecha[8:10] }}/{{ dia.fecha[5:7] }}
+            </span>
+            {% if dia.ot50 and dia.ot50 != '0h' %}<span class="dia-ot50">OT50: {{ dia.ot50 }}</span>{% endif %}
+            {% if dia.ot100 and dia.ot100 != '0h' %}<span class="dia-ot100">OT100: {{ dia.ot100 }}</span>{% endif %}
+            {% if dia.franco %}<span class="dia-franco">Franco</span>{% endif %}
+            {% if dia.comida %}<span class="dia-comida">Com.×{{ dia.comida }}</span>{% endif %}
+            {% if dia.tipo_dia and dia.tipo_dia != 'normal' %}<span class="tipo-tag">{{ dia.tipo_dia }}</span>{% endif %}
+            {% if dia.descripcion %}<span class="dia-desc">"{{ dia.descripcion }}"</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <!-- Total acumulado al final del empleado -->
+      <div class="sem-row total-row">
+        <div class="sem-row-header">
+          <div class="sem-label">TOTAL</div>
+          <div class="sem-totales-inline">
+            <span class="tot ot50">OT 50%: <strong>{{ emp.total.ot50 }}</strong></span>
+            <span class="tot ot100">OT 100%: <strong>{{ emp.total.ot100 }}</strong></span>
+            <span class="tot">Francos: <strong>{{ emp.total.francos }}</strong></span>
+            <span class="tot">Comidas: <strong>{{ emp.total.comidas }}</strong></span>
+            {% if emp.total.tardanzas %}<span class="tot tard">Tard.: <strong>{{ emp.total.tardanzas }}</strong></span>{% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /emp-card -->
+    {% endfor %}
+  </div><!-- /depto-section -->
+  {% endfor %}
+
+  {% endif %}
+
+  <div class="print-footer">
+    <span>CELP — CM Horas Extras</span>
+    <span>Informe parcial — período activo (no cerrado)</span>
+    <span id="fecha-pie"></span>
+  </div>
+</div>
+
+<script>
+  const ahora = new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const el1 = document.getElementById('fecha-impresion');
+  const el2 = document.getElementById('fecha-pie');
+  if(el1) el1.textContent = ahora;
+  if(el2) el2.textContent = ahora;
+</script>
+</body>
+</html>
