@@ -54,6 +54,12 @@
     .sabado .tipo-tag{background:#bfdbfe;color:#1e40af}
     .domingo .tipo-tag{background:#ddd6fe;color:#5b21b6}
     .paro .tipo-tag{background:#bbf7d0;color:#166534}
+    .sem-bloque{border-top:1px solid #eef2f7}
+    .sem-bloque:first-child{border-top:none}
+    .sem-head{display:flex;align-items:center;gap:10px;padding:9px 16px;background:#f8fafc;flex-wrap:wrap}
+    .sem-num{font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#475569;min-width:80px}
+    .sem-conf-fecha{font-size:.72rem;color:#94a3b8}
+    .sem-head .totales{padding:0;gap:6px}
     .vacio{background:#fff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;color:#64748b;padding:38px;font-size:.92rem}
     @media (max-width:760px){
       body{padding:14px}
@@ -140,44 +146,51 @@
   {% if not items %}
   <div class="vacio">No hay confirmaciones registradas para el filtro seleccionado.</div>
   {% else %}
-    {% for c in items %}
+    {% for legajo_key, semanas_emp in items | groupby('legajo') %}
+    {% set semanas_list = semanas_emp | sort(attribute='semana') %}
+    {% set primer = semanas_list | first %}
     <div class="card">
       <div class="emp-head">
         <div>
-          <div class="emp-nombre">{{ c.nombre }}</div>
-          <div class="emp-info">Legajo {{ c.legajo }} · {{ c.departamento or '-' }} · Semana {{ c.semana_depto or c.semana }}</div>
+          <div class="emp-nombre">{{ primer.nombre }}</div>
+          <div class="emp-info">Legajo {{ primer.legajo }} · {{ primer.departamento or '-' }}</div>
         </div>
-        <div>
-          <span class="badge-ok">Confirmado</span>
-          <div class="emp-fecha">{{ c.confirmado_en[:16].replace('T',' ') if c.confirmado_en else '' }}</div>
-        </div>
+        <span class="badge-ok">Confirmado</span>
       </div>
 
-      <div class="totales">
-        <div class="tot"><div class="tot-val ot50">{{ c.totales.ot50 }}</div><div class="tot-lbl">50%</div></div>
-        <div class="tot"><div class="tot-val ot100">{{ c.totales.ot100 }}</div><div class="tot-lbl">100%</div></div>
-        {% if c.totales.comidas %}<div class="tot"><div class="tot-val">{{ c.totales.comidas }}</div><div class="tot-lbl">Comidas</div></div>{% endif %}
-        {% if c.totales.francos %}<div class="tot"><div class="tot-val">{{ c.totales.francos }}</div><div class="tot-lbl">Francos</div></div>{% endif %}
-        {% if c.totales.tardanzas %}<div class="tot"><div class="tot-val">{{ c.totales.tardanzas }}</div><div class="tot-lbl">Tardanzas</div></div>{% endif %}
-      </div>
-
-      {% if c.dias %}
-      <div class="dias-list">
-        {% for d in c.dias %}
-        {% set tipo = d.get('tipo_dia','normal') %}
-        <div class="dia-item {{ tipo }}">
-          <span class="dia-fecha">{{ d.fecha | dia_semana }} {{ d.fecha[5:] }}{% if tipo != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sabado','domingo':'Domingo','paro':'Paro'}.get(tipo,'') }}</span>{% endif %}</span>
-          <span class="dia-horas">
-            {% if d.ot50  != '00:00:00' %}+{{ d.ot50[:5] }} 50%{% endif %}
-            {% if d.ot100 != '00:00:00' %} +{{ d.ot100[:5] }} 100%{% endif %}
-            {% if d.get('franco') %} · Franco{% endif %}
-            {% if d.get('comida') %} · Comida{% endif %}
-          </span>
-          {% if d.descripcion %}<span class="dia-desc">{{ d.descripcion }}</span>{% else %}<span class="sin-desc">Sin descripcion</span>{% endif %}
+      {% for c in semanas_list %}
+      <div class="sem-bloque">
+        <div class="sem-head">
+          <span class="sem-num">Semana {{ c.semana_depto or c.semana }}</span>
+          <div class="totales">
+            <div class="tot"><div class="tot-val ot50">{{ c.totales.ot50 }}</div><div class="tot-lbl">50%</div></div>
+            <div class="tot"><div class="tot-val ot100">{{ c.totales.ot100 }}</div><div class="tot-lbl">100%</div></div>
+            {% if c.totales.comidas %}<div class="tot"><div class="tot-val">{{ c.totales.comidas }}</div><div class="tot-lbl">Comidas</div></div>{% endif %}
+            {% if c.totales.francos %}<div class="tot"><div class="tot-val">{{ c.totales.francos }}</div><div class="tot-lbl">Francos</div></div>{% endif %}
+            {% if c.totales.tardanzas %}<div class="tot"><div class="tot-val">{{ c.totales.tardanzas }}</div><div class="tot-lbl">Tardanzas</div></div>{% endif %}
+          </div>
+          <span class="sem-conf-fecha">{{ c.confirmado_en[:16].replace('T',' ') if c.confirmado_en else '' }}</span>
         </div>
-        {% endfor %}
+
+        {% if c.dias %}
+        <div class="dias-list">
+          {% for d in c.dias %}
+          {% set tipo = d.get('tipo_dia','normal') %}
+          <div class="dia-item {{ tipo }}">
+            <span class="dia-fecha">{{ d.fecha | dia_semana }} {{ d.fecha[5:] }}{% if tipo != 'normal' %}<span class="tipo-tag">{{ {'feriado':'Feriado','sabado':'Sabado','domingo':'Domingo','paro':'Paro'}.get(tipo,'') }}</span>{% endif %}</span>
+            <span class="dia-horas">
+              {% if d.ot50  != '00:00:00' %}+{{ d.ot50[:5] }} 50%{% endif %}
+              {% if d.ot100 != '00:00:00' %} +{{ d.ot100[:5] }} 100%{% endif %}
+              {% if d.get('franco') %} · Franco{% endif %}
+              {% if d.get('comida') %} · Comida{% endif %}
+            </span>
+            {% if d.descripcion %}<span class="dia-desc">{{ d.descripcion }}</span>{% else %}<span class="sin-desc">Sin descripcion</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
-      {% endif %}
+      {% endfor %}
     </div>
     {% endfor %}
   {% endif %}
