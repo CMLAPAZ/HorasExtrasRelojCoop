@@ -2912,10 +2912,12 @@ def supervisores_eliminar(sid):
 def supervisores_enviar(sid):
     if not _autenticado(): return _requiere_auth()
     import reporte_saldos_francos as rrf
+    import traceback
     from datetime import datetime as _dt
 
     with _get_db() as conn:
-        sup = conn.execute("SELECT * FROM supervisores WHERE id=?", (sid,)).fetchone()
+        row = conn.execute("SELECT * FROM supervisores WHERE id=?", (sid,)).fetchone()
+        sup = {k: row[k] for k in row.keys()} if row else None
     if not sup:
         return redirect(url_for("configuracion_email") + "?error=sin_datos")
 
@@ -2926,6 +2928,7 @@ def supervisores_enviar(sid):
     try:
         saldos = rrf._calcular_saldos()
     except Exception:
+        app.logger.error("supervisores_enviar: _calcular_saldos\n" + traceback.format_exc())
         return redirect(url_for("configuracion_email") + "?error=sin_datos")
 
     por_depto = {}
@@ -2946,7 +2949,7 @@ def supervisores_enviar(sid):
             rrf._hacer_pdf(emps, dep.upper(), output_path, fecha_str)
             adjuntos.append(output_path)
         except Exception:
-            pass
+            app.logger.error(f"supervisores_enviar: _hacer_pdf {dep}\n" + traceback.format_exc())
 
     if not adjuntos:
         return redirect(url_for("configuracion_email") + "?error=sin_datos")
@@ -2956,6 +2959,7 @@ def supervisores_enviar(sid):
         html_body = rrf._hacer_html_email(sup["nombre"], deptos, por_depto, fecha_str)
         rrf._enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
     except Exception:
+        app.logger.error("supervisores_enviar: _enviar_email\n" + traceback.format_exc())
         return redirect(url_for("configuracion_email") + "?error=email")
 
     return redirect(url_for("configuracion_email") + f"?ok=reporte&sup_nombre={sup['nombre']}")
