@@ -790,30 +790,33 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
     return _pdf_bytes(pdf)
 
 
-def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
+def _generar_pdf_confirmaciones_parcial(todos, info):
     from pdf_generator import PDFGeneral
 
     pdf = PDFGeneral()
-    pdf.titulo = "Confirmaciones parciales"
+    pdf.titulo = "Horas extras parcial"
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     fam = "DejaVu" if pdf._unicode else "Helvetica"
 
     depto_label = info.get("departamento_label", "Todos")
-    rango = f"{info.get('fecha_desde', '')} al {info.get('fecha_hasta', '')}".strip()
+    rango       = f"{info.get('fecha_desde', '')} al {info.get('fecha_hasta', '')}".strip()
+    n_conf      = sum(1 for e in todos if e.get("confirmado"))
+    n_pend      = len(todos) - n_conf
 
     pdf.set_font(fam, "B", 11)
-    pdf.cell(0, 7, "Confirmaciones - Periodo activo (parcial)", ln=1)
+    pdf.cell(0, 7, "Horas Extras - Periodo activo (parcial)", ln=1)
     pdf.set_font(fam, "", 8)
-    pdf.cell(0, 5, f"Dpto: {depto_label}   Periodo: {rango}   Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}   Confirmados: {len(confirmados)}   Pendientes: {len(pendientes)}", ln=1)
+    pdf.cell(0, 5,
+        f"Dpto: {depto_label}   Periodo: {rango}   "
+        f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}   "
+        f"Total: {len(todos)}   Confirmados: {n_conf}   Pendientes: {n_pend}",
+        ln=1)
     pdf.ln(2)
 
-    # Anchos sub-tabla días (indent 4mm)
-    IND  = 4
-    WD   = {"fecha": 22, "tipo": 22, "ot50": 16, "ot100": 16, "marc": 20}
-    # desc ocupa el resto: page_w - margins - indent - columnas fijas
-    # fpdf default: A4 210mm, left+right margins = 20mm → usable ~190mm
-    # 190 - 4 - 22-22-16-16-20 = 90
+    # Sub-tabla días
+    IND = 4
+    WD  = {"fecha": 22, "tipo": 22, "ot50": 16, "ot100": 16, "marc": 20}
 
     def _dias_header():
         pdf.set_x(pdf.l_margin + IND)
@@ -826,113 +829,79 @@ def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
         pdf.cell(WD["marc"],  4, "Marcas",      1, 0, "C", True)
         pdf.cell(0,           4, "Descripcion", 1, 1, "C", True)
 
-    pdf.set_font(fam, "B", 9)
-    pdf.cell(0, 6, f"Confirmados ({len(confirmados)})", ln=1)
+    depto_actual = None
+    for e in sorted(todos, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
+        depto     = e.get("departamento", "") or "-"
+        dias      = e.get("dias", [])
+        confirmado = e.get("confirmado", False)
 
-    if confirmados:
-        depto_actual = None
-        for c in sorted(confirmados, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
-            depto = c.get("departamento", "") or "-"
-            dias  = [d for d in c.get("dias", []) if d.get("ot50") or d.get("ot100")]
-            # espacio mínimo: banda emp (5) + header días (4) + al menos 1 fila (4)
-            if pdf.get_y() + 13 > pdf.h - pdf.b_margin:
-                pdf.add_page()
+        if pdf.get_y() + 13 > pdf.h - pdf.b_margin:
+            pdf.add_page()
 
-            # Separador de departamento
-            if depto != depto_actual:
-                depto_actual = depto
-                pdf.set_fill_color(224, 231, 255)
-                pdf.set_font(fam, "B", 8)
-                pdf.cell(0, 5, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+        # Separador de departamento
+        if depto != depto_actual:
+            depto_actual = depto
+            pdf.set_fill_color(224, 231, 255)
+            pdf.set_font(fam, "B", 8)
+            pdf.cell(0, 5, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
 
-            # Banda resumen del empleado
-            sems = ", ".join(str(s) for s in c.get("semanas", []))
-            conf_en = (c.get("confirmado_en") or "")[:16].replace("T", " ")
+        # Banda del empleado — color según estado
+        sems    = ", ".join(str(s) for s in e.get("semanas", []))
+        conf_en = (e.get("confirmado_en") or "")[:16].replace("T", " ")
+        estado  = "CONFIRMADO" if confirmado else "PENDIENTE"
+        if confirmado:
+            pdf.set_fill_color(234, 242, 255)   # azul claro
+        else:
+            pdf.set_fill_color(255, 249, 235)   # amarillo claro
+
+        pdf.set_font(fam, "B", 7)
+        linea1 = (f"{e.get('legajo','')} - {_pdf_cell_text(e.get('nombre',''))}   "
+                  f"Sems: {sems}   "
+                  f"OT50: {e.get('ot50','0h')}   OT100: {e.get('ot100','0h')}   "
+                  f"Com: {e.get('comidas',0)}   Fr: {e.get('francos',0)}")
+        # Ancho disponible para la línea principal menos el badge de estado (30mm)
+        W_estado = 30
+        W_linea  = pdf.w - pdf.l_margin - pdf.r_margin - W_estado
+        x0 = pdf.get_x()
+        y0 = pdf.get_y()
+        pdf.cell(W_linea,  5, linea1,  "LTB", 0, "L", True)
+        pdf.set_font(fam, "B", 7)
+        if confirmado:
+            pdf.set_text_color(22, 101, 52)    # verde
+        else:
+            pdf.set_text_color(146, 64, 14)    # naranja
+        pdf.cell(W_estado, 5, estado, "RTB", 1, "C", True)
+        pdf.set_text_color(0, 0, 0)
+
+        # Fecha de confirmación (segunda línea, solo si confirmado)
+        if confirmado and conf_en:
             pdf.set_fill_color(234, 242, 255)
-            pdf.set_font(fam, "B", 7)
-            resumen = (f"{c.get('legajo','')} - {c.get('nombre','')}   "
-                       f"Confirmado: {conf_en}   Sems: {sems}   "
-                       f"OT50: {c.get('ot50','0h')}   OT100: {c.get('ot100','0h')}   "
-                       f"Com: {c.get('comidas',0)}   Fr: {c.get('francos',0)}")
-            pdf.cell(0, 5, _pdf_cell_text(resumen), "LRB", 1, "L", True)
+            pdf.set_font(fam, "", 6)
+            pdf.cell(0, 3, f"    Confirmado el: {conf_en}", 0, 1, "L", True)
 
-            # Detalle de días
-            if dias:
-                _dias_header()
-                pdf.set_font(fam, "", 6)
-                for d in sorted(dias, key=lambda x: x.get("fecha", "")):
-                    if pdf.get_y() + 4 > pdf.h - pdf.b_margin:
-                        pdf.add_page()
-                        _dias_header()
-                    marcas = []
-                    if d.get("franco"): marcas.append("Franco")
-                    if d.get("comida"): marcas.append("Comida")
-                    desc = _pdf_cell_text(d.get("descripcion") or "")
-                    pdf.set_x(pdf.l_margin + IND)
-                    y0 = pdf.get_y()
-                    pdf.cell(WD["fecha"], 4, _pdf_cell_text(d.get("fecha", "")),       1)
-                    pdf.cell(WD["tipo"],  4, _pdf_cell_text(d.get("tipo_dia", "")),    1)
-                    pdf.cell(WD["ot50"],  4, _pdf_cell_text(d.get("ot50", "")),        1, 0, "C")
-                    pdf.cell(WD["ot100"], 4, _pdf_cell_text(d.get("ot100", "")),       1, 0, "C")
-                    pdf.cell(WD["marc"],  4, ", ".join(marcas),                        1, 0, "C")
-                    pdf.multi_cell(0,     4, desc,                                     1)
-                    if pdf.get_y() < y0 + 4:
-                        pdf.set_y(y0 + 4)
-            pdf.ln(1)
-    else:
-        pdf.set_font(fam, "", 8)
-        pdf.cell(0, 5, "No hay confirmaciones en este periodo.", ln=1)
-
-    # ── Pendientes: misma estructura que confirmados ────────
-    if pendientes:
-        pdf.ln(3)
-        pdf.set_font(fam, "B", 9)
-        pdf.cell(0, 6, f"Pendientes ({len(pendientes)})", ln=1)
-
-        depto_actual = None
-        for e in sorted(pendientes, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
-            depto = e.get("departamento", "") or "-"
-            dias  = e.get("dias", [])
-            if pdf.get_y() + 13 > pdf.h - pdf.b_margin:
-                pdf.add_page()
-
-            if depto != depto_actual:
-                depto_actual = depto
-                pdf.set_fill_color(255, 237, 213)
-                pdf.set_font(fam, "B", 8)
-                pdf.cell(0, 5, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
-
-            sems = ", ".join(str(s) for s in e.get("semanas", []))
-            pdf.set_fill_color(255, 249, 235)
-            pdf.set_font(fam, "B", 7)
-            resumen = (f"{e.get('legajo','')} - {e.get('nombre','')}   "
-                       f"Sems: {sems}   "
-                       f"OT50: {e.get('ot50','0h')}   OT100: {e.get('ot100','0h')}   "
-                       f"Com: {e.get('comidas',0)}   Fr: {e.get('francos',0)}")
-            pdf.cell(0, 5, _pdf_cell_text(resumen), "LRB", 1, "L", True)
-
-            if dias:
-                _dias_header()
-                pdf.set_font(fam, "", 6)
-                for d in sorted(dias, key=lambda x: x.get("fecha", "")):
-                    if pdf.get_y() + 4 > pdf.h - pdf.b_margin:
-                        pdf.add_page()
-                        _dias_header()
-                    marcas = []
-                    if d.get("franco"): marcas.append("Franco")
-                    if d.get("comida"): marcas.append("Comida")
-                    desc = _pdf_cell_text(d.get("descripcion") or "")
-                    pdf.set_x(pdf.l_margin + IND)
-                    y0 = pdf.get_y()
-                    pdf.cell(WD["fecha"], 4, _pdf_cell_text(d.get("fecha", "")),    1)
-                    pdf.cell(WD["tipo"],  4, _pdf_cell_text(d.get("tipo_dia", "")), 1)
-                    pdf.cell(WD["ot50"],  4, _pdf_cell_text(d.get("ot50", "")),     1, 0, "C")
-                    pdf.cell(WD["ot100"], 4, _pdf_cell_text(d.get("ot100", "")),    1, 0, "C")
-                    pdf.cell(WD["marc"],  4, ", ".join(marcas),                     1, 0, "C")
-                    pdf.multi_cell(0,     4, desc,                                  1)
-                    if pdf.get_y() < y0 + 4:
-                        pdf.set_y(y0 + 4)
-            pdf.ln(1)
+        # Detalle de días
+        if dias:
+            _dias_header()
+            pdf.set_font(fam, "", 6)
+            for d in dias:
+                if pdf.get_y() + 4 > pdf.h - pdf.b_margin:
+                    pdf.add_page()
+                    _dias_header()
+                marcas = []
+                if d.get("franco"): marcas.append("Franco")
+                if d.get("comida"): marcas.append("Comida")
+                desc = _pdf_cell_text(d.get("descripcion") or "")
+                pdf.set_x(pdf.l_margin + IND)
+                y1 = pdf.get_y()
+                pdf.cell(WD["fecha"], 4, _pdf_cell_text(d.get("fecha", "")),    1)
+                pdf.cell(WD["tipo"],  4, _pdf_cell_text(d.get("tipo_dia", "")), 1)
+                pdf.cell(WD["ot50"],  4, _pdf_cell_text(d.get("ot50", "")),     1, 0, "C")
+                pdf.cell(WD["ot100"], 4, _pdf_cell_text(d.get("ot100", "")),    1, 0, "C")
+                pdf.cell(WD["marc"],  4, ", ".join(marcas),                     1, 0, "C")
+                pdf.multi_cell(0,     4, desc,                                  1)
+                if pdf.get_y() < y1 + 4:
+                    pdf.set_y(y1 + 4)
+        pdf.ln(1)
 
     return _pdf_bytes(pdf)
 
@@ -2150,33 +2119,21 @@ def periodo_confirmaciones_pdf():
     if not departamento or not fecha_desde or not fecha_hasta:
         return "Departamento y rango de fechas requeridos.", 400
 
-    todos       = _calcular_periodo(desde, hasta, departamento)
-    confirmados = [e for e in todos if     e["confirmado"]]
-    pendientes  = [e for e in todos if not e["confirmado"]]
+    todos = _calcular_periodo(desde, hasta, departamento)
 
-    # Fecha de confirmación más reciente por empleado + días de confirmados
+    # Fecha confirmación más reciente por empleado (del historial)
     hist = [c for c in _leer_historial(departamento=departamento)
             if desde <= c.get("semana", 0) <= hasta]
-    conf_en_map  = {}
-    conf_dias_map = {}
+    conf_en_map = {}
     for c in hist:
         leg   = str(c.get("legajo", ""))
         fecha = c.get("confirmado_en") or ""
         if fecha > conf_en_map.get(leg, ""):
             conf_en_map[leg] = fecha
-        conf_dias_map.setdefault(leg, []).extend(
-            [d for d in c.get("dias", []) if d.get("ot50") or d.get("ot100")]
-        )
-    for e in confirmados:
-        leg = str(e.get("legajo", ""))
-        e["confirmado_en"] = conf_en_map.get(leg, "")
-        e["dias"] = sorted(conf_dias_map.get(leg, []), key=lambda x: x.get("fecha", ""))
 
-    # Días de pendientes desde _sesion
-    pend_dias_map = {}
+    # Días: de _sesion para todos — incluye OT, comidas y francos
+    dias_map = {}
     for d in _sesion.values():
-        if d.get("confirmado"):
-            continue
         depto_d = _normalizar_departamento_web(d.get("departamento", "") or "Todos")
         if departamento and depto_d != departamento:
             continue
@@ -2184,12 +2141,21 @@ def periodo_confirmaciones_pdf():
         if not (desde <= sem <= hasta):
             continue
         leg = str(d.get("legajo", ""))
-        pend_dias_map.setdefault(leg, []).extend(
-            [x for x in d.get("dias", []) if x.get("tiene_ot")]
+        dias_map.setdefault(leg, []).extend(
+            [x for x in d.get("dias", [])
+             if x.get("tiene_ot") or x.get("comida") or x.get("franco")]
         )
-    for e in pendientes:
+
+    for e in todos:
         leg = str(e.get("legajo", ""))
-        e["dias"] = sorted(pend_dias_map.get(leg, []), key=lambda x: x.get("fecha", ""))
+        e["confirmado_en"] = conf_en_map.get(leg, "")
+        # deduplicar por fecha, priorizar el que tenga más datos
+        por_fecha = {}
+        for d in dias_map.get(leg, []):
+            f = d.get("fecha", "")
+            if f not in por_fecha or d.get("tiene_ot"):
+                por_fecha[f] = d
+        e["dias"] = sorted(por_fecha.values(), key=lambda x: x.get("fecha", ""))
 
     info = {
         "departamento_label": _nombre_departamento_visible(departamento),
@@ -2197,7 +2163,7 @@ def periodo_confirmaciones_pdf():
         "fecha_hasta": fecha_hasta,
     }
     try:
-        pdf_data = _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info)
+        pdf_data = _generar_pdf_confirmaciones_parcial(todos, info)
         nombre = f"confirmaciones_{departamento}_{fecha_desde}_{fecha_hasta}.pdf"
         return send_file(BytesIO(pdf_data), mimetype="application/pdf",
                          as_attachment=True, download_name=nombre)
