@@ -64,12 +64,18 @@
 <div class="ok-box">Configuración SMTP guardada.</div>
 {% elif request.args.get('ok') == 'supervisor' %}
 <div class="ok-box">Supervisor agregado correctamente.</div>
+{% elif request.args.get('ok') == 'reporte' %}
+<div class="ok-box">Reporte enviado correctamente a {{ request.args.get('sup_nombre','') }}.</div>
 {% endif %}
 
 {% if request.args.get('error') %}
 <div class="error-box">
   {% if request.args.get('error') == 'sup_datos_requeridos' %}
     Nombre, email y al menos un departamento son requeridos.
+  {% elif request.args.get('error') == 'sin_datos' %}
+    No hay datos para los departamentos de este supervisor.
+  {% elif request.args.get('error') == 'email' %}
+    Error al enviar el email. Verificá la configuración SMTP.
   {% else %}
     Error en el formulario.
   {% endif %}
@@ -180,7 +186,11 @@
             <span class="badge-dep">{{ dep | upper }}</span>
             {% endfor %}
           </td>
-          <td class="td-accion">
+          <td class="td-accion" style="display:flex;gap:6px">
+            <form method="post" action="/configuracion/supervisores/enviar/{{ s.id }}"
+                  onsubmit="return confirm('¿Enviar reporte ahora a {{ s.nombre }} ({{ s.email }})?')">
+              <button type="submit" class="btn-sm" style="background:#16a34a;color:#fff">Enviar</button>
+            </form>
             <form method="post" action="/configuracion/supervisores/eliminar/{{ s.id }}"
                   onsubmit="return confirm('¿Eliminar este supervisor?')">
               <button type="submit" class="btn-sm">Eliminar</button>

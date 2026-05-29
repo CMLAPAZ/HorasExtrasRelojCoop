@@ -2908,6 +2908,59 @@ def supervisores_eliminar(sid):
     return redirect(url_for("configuracion_email"))
 
 
+@app.route("/configuracion/supervisores/enviar/<int:sid>", methods=["POST"])
+def supervisores_enviar(sid):
+    if not _autenticado(): return _requiere_auth()
+    import reporte_saldos_francos as rrf
+    from datetime import datetime as _dt
+
+    with _get_db() as conn:
+        sup = conn.execute("SELECT * FROM supervisores WHERE id=?", (sid,)).fetchone()
+    if not sup:
+        return redirect(url_for("configuracion_email") + "?error=sin_datos")
+
+    deptos = json.loads(sup["departamentos"])
+    fecha_str  = _dt.now().strftime("%d/%m/%Y")
+    fecha_arch = _dt.now().strftime("%Y%m%d")
+
+    try:
+        saldos = rrf._calcular_saldos()
+    except Exception:
+        return redirect(url_for("configuracion_email") + "?error=sin_datos")
+
+    por_depto = {}
+    for s in saldos:
+        por_depto.setdefault(s["departamento"], []).append(s)
+
+    reportes_dir = Path(__file__).parent / "reportes"
+    reportes_dir.mkdir(exist_ok=True)
+
+    adjuntos = []
+    for dep in deptos:
+        emps = next((v for k, v in por_depto.items() if k.lower() == dep.lower()), None)
+        if not emps:
+            continue
+        dep_limpio = dep.replace(" ", "_").replace("/", "-").upper()
+        output_path = reportes_dir / f"reporte_francos_{dep_limpio}_{fecha_arch}.pdf"
+        try:
+            rrf._hacer_pdf(emps, dep.upper(), output_path, fecha_str)
+            adjuntos.append(output_path)
+        except Exception:
+            pass
+
+    if not adjuntos:
+        return redirect(url_for("configuracion_email") + "?error=sin_datos")
+
+    cfg = rrf._leer_email_cfg()
+    try:
+        html_body = rrf._hacer_html_email(sup["nombre"], deptos, por_depto, fecha_str)
+        rrf._enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
+    except Exception:
+        return redirect(url_for("configuracion_email") + "?error=email")
+
+    return redirect(url_for("configuracion_email") + f"?ok=reporte&sup_nombre={sup['nombre']}")
+
+
 # ═══════════════════════════════════════════════
 # EMPLEADOS EXTRA (depts sin fichadas automáticas)
 # ═══════════════════════════════════════════════
