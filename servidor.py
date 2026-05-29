@@ -808,90 +808,131 @@ def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
     pdf.cell(0, 5, f"Dpto: {depto_label}   Periodo: {rango}   Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}   Confirmados: {len(confirmados)}   Pendientes: {len(pendientes)}", ln=1)
     pdf.ln(2)
 
-    # ── Anchos columnas confirmados ──────────────────────────
-    W = {"leg": 14, "nom": 52, "dep": 28, "fecha": 26, "sem": 12,
-         "ot50": 17, "ot100": 17, "com": 11, "fr": 11}
+    # Anchos sub-tabla días (indent 4mm)
+    IND  = 4
+    WD   = {"fecha": 22, "tipo": 22, "ot50": 16, "ot100": 16, "marc": 20}
+    # desc ocupa el resto: page_w - margins - indent - columnas fijas
+    # fpdf default: A4 210mm, left+right margins = 20mm → usable ~190mm
+    # 190 - 4 - 22-22-16-16-20 = 90
 
-    def _tabla_header_conf():
-        pdf.set_fill_color(220, 235, 255)
-        pdf.set_font(fam, "B", 7)
-        pdf.cell(W["leg"],  5, "Legajo",       1, 0, "C", True)
-        pdf.cell(W["nom"],  5, "Nombre",        1, 0, "C", True)
-        pdf.cell(W["dep"],  5, "Depto",         1, 0, "C", True)
-        pdf.cell(W["fecha"],5, "Confirmado",    1, 0, "C", True)
-        pdf.cell(W["sem"],  5, "Sems.",         1, 0, "C", True)
-        pdf.cell(W["ot50"], 5, "OT50",          1, 0, "C", True)
-        pdf.cell(W["ot100"],5, "OT100",         1, 0, "C", True)
-        pdf.cell(W["com"],  5, "Com.",          1, 0, "C", True)
-        pdf.cell(W["fr"],   5, "Fr.",           1, 1, "C", True)
+    def _dias_header():
+        pdf.set_x(pdf.l_margin + IND)
+        pdf.set_fill_color(240, 244, 255)
+        pdf.set_font(fam, "B", 6)
+        pdf.cell(WD["fecha"], 4, "Fecha",       1, 0, "C", True)
+        pdf.cell(WD["tipo"],  4, "Tipo dia",    1, 0, "C", True)
+        pdf.cell(WD["ot50"],  4, "OT50",        1, 0, "C", True)
+        pdf.cell(WD["ot100"], 4, "OT100",       1, 0, "C", True)
+        pdf.cell(WD["marc"],  4, "Marcas",      1, 0, "C", True)
+        pdf.cell(0,           4, "Descripcion", 1, 1, "C", True)
 
     pdf.set_font(fam, "B", 9)
     pdf.cell(0, 6, f"Confirmados ({len(confirmados)})", ln=1)
+
     if confirmados:
-        _tabla_header_conf()
         depto_actual = None
         for c in sorted(confirmados, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
-            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
-                pdf.add_page()
-                _tabla_header_conf()
             depto = c.get("departamento", "") or "-"
+            dias  = [d for d in c.get("dias", []) if d.get("ot50") or d.get("ot100")]
+            # espacio mínimo: banda emp (5) + header días (4) + al menos 1 fila (4)
+            if pdf.get_y() + 13 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+
+            # Separador de departamento
             if depto != depto_actual:
                 depto_actual = depto
-                pdf.set_fill_color(235, 240, 255)
-                pdf.set_font(fam, "B", 7)
-                pdf.cell(0, 4, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+                pdf.set_fill_color(224, 231, 255)
+                pdf.set_font(fam, "B", 8)
+                pdf.cell(0, 5, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+
+            # Banda resumen del empleado
             sems = ", ".join(str(s) for s in c.get("semanas", []))
-            pdf.set_font(fam, "", 7)
-            pdf.cell(W["leg"],  5, _pdf_cell_text(str(c.get("legajo", ""))),              1)
-            pdf.cell(W["nom"],  5, _pdf_cell_text(c.get("nombre", ""))[:30],               1)
-            pdf.cell(W["dep"],  5, _pdf_cell_text(depto)[:16],                             1)
-            pdf.cell(W["fecha"],5, (c.get("confirmado_en") or "")[:16].replace("T", " "),  1)
-            pdf.cell(W["sem"],  5, sems,                                                   1, 0, "C")
-            pdf.cell(W["ot50"], 5, _pdf_cell_text(c.get("ot50",  "0h")),                  1, 0, "C")
-            pdf.cell(W["ot100"],5, _pdf_cell_text(c.get("ot100", "0h")),                  1, 0, "C")
-            pdf.cell(W["com"],  5, str(c.get("comidas", 0)),                               1, 0, "C")
-            pdf.cell(W["fr"],   5, str(c.get("francos", 0)),                               1, 1, "C")
+            conf_en = (c.get("confirmado_en") or "")[:16].replace("T", " ")
+            pdf.set_fill_color(234, 242, 255)
+            pdf.set_font(fam, "B", 7)
+            resumen = (f"{c.get('legajo','')} - {c.get('nombre','')}   "
+                       f"Confirmado: {conf_en}   Sems: {sems}   "
+                       f"OT50: {c.get('ot50','0h')}   OT100: {c.get('ot100','0h')}   "
+                       f"Com: {c.get('comidas',0)}   Fr: {c.get('francos',0)}")
+            pdf.cell(0, 5, _pdf_cell_text(resumen), "LRB", 1, "L", True)
+
+            # Detalle de días
+            if dias:
+                _dias_header()
+                pdf.set_font(fam, "", 6)
+                for d in sorted(dias, key=lambda x: x.get("fecha", "")):
+                    if pdf.get_y() + 4 > pdf.h - pdf.b_margin:
+                        pdf.add_page()
+                        _dias_header()
+                    marcas = []
+                    if d.get("franco"): marcas.append("Franco")
+                    if d.get("comida"): marcas.append("Comida")
+                    desc = _pdf_cell_text(d.get("descripcion") or "")
+                    pdf.set_x(pdf.l_margin + IND)
+                    y0 = pdf.get_y()
+                    pdf.cell(WD["fecha"], 4, _pdf_cell_text(d.get("fecha", "")),       1)
+                    pdf.cell(WD["tipo"],  4, _pdf_cell_text(d.get("tipo_dia", "")),    1)
+                    pdf.cell(WD["ot50"],  4, _pdf_cell_text(d.get("ot50", "")),        1, 0, "C")
+                    pdf.cell(WD["ot100"], 4, _pdf_cell_text(d.get("ot100", "")),       1, 0, "C")
+                    pdf.cell(WD["marc"],  4, ", ".join(marcas),                        1, 0, "C")
+                    pdf.multi_cell(0,     4, desc,                                     1)
+                    if pdf.get_y() < y0 + 4:
+                        pdf.set_y(y0 + 4)
+            pdf.ln(1)
     else:
         pdf.set_font(fam, "", 8)
         pdf.cell(0, 5, "No hay confirmaciones en este periodo.", ln=1)
 
+    # ── Pendientes: misma estructura que confirmados ────────
     if pendientes:
         pdf.ln(3)
         pdf.set_font(fam, "B", 9)
         pdf.cell(0, 6, f"Pendientes ({len(pendientes)})", ln=1)
 
-        # ── Anchos columnas pendientes ───────────────────────
-        WP = {"leg": 14, "nom": 58, "dep": 30, "ot50": 18, "ot100": 18, "sem": 0}
-
-        def _tabla_header_pend():
-            pdf.set_fill_color(255, 243, 220)
-            pdf.set_font(fam, "B", 7)
-            pdf.cell(WP["leg"],  5, "Legajo",  1, 0, "C", True)
-            pdf.cell(WP["nom"],  5, "Nombre",  1, 0, "C", True)
-            pdf.cell(WP["dep"],  5, "Depto",   1, 0, "C", True)
-            pdf.cell(WP["ot50"], 5, "OT50",    1, 0, "C", True)
-            pdf.cell(WP["ot100"],5, "OT100",   1, 0, "C", True)
-            pdf.cell(0,          5, "Semanas", 1, 1, "C", True)
-
-        _tabla_header_pend()
         depto_actual = None
         for e in sorted(pendientes, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
-            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
-                pdf.add_page()
-                _tabla_header_pend()
             depto = e.get("departamento", "") or "-"
+            dias  = e.get("dias", [])
+            if pdf.get_y() + 13 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+
             if depto != depto_actual:
                 depto_actual = depto
-                pdf.set_fill_color(255, 250, 235)
-                pdf.set_font(fam, "B", 7)
-                pdf.cell(0, 4, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
-            pdf.set_font(fam, "", 7)
-            pdf.cell(WP["leg"],  5, _pdf_cell_text(str(e.get("legajo", ""))),     1)
-            pdf.cell(WP["nom"],  5, _pdf_cell_text(e.get("nombre", ""))[:32],      1)
-            pdf.cell(WP["dep"],  5, _pdf_cell_text(depto)[:16],                    1)
-            pdf.cell(WP["ot50"], 5, _pdf_cell_text(e.get("ot50",  "0h")),          1, 0, "C")
-            pdf.cell(WP["ot100"],5, _pdf_cell_text(e.get("ot100", "0h")),          1, 0, "C")
-            pdf.cell(0,          5, ", ".join(str(s) for s in e.get("semanas",[])),1, 1)
+                pdf.set_fill_color(255, 237, 213)
+                pdf.set_font(fam, "B", 8)
+                pdf.cell(0, 5, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+
+            sems = ", ".join(str(s) for s in e.get("semanas", []))
+            pdf.set_fill_color(255, 249, 235)
+            pdf.set_font(fam, "B", 7)
+            resumen = (f"{e.get('legajo','')} - {e.get('nombre','')}   "
+                       f"Sems: {sems}   "
+                       f"OT50: {e.get('ot50','0h')}   OT100: {e.get('ot100','0h')}   "
+                       f"Com: {e.get('comidas',0)}   Fr: {e.get('francos',0)}")
+            pdf.cell(0, 5, _pdf_cell_text(resumen), "LRB", 1, "L", True)
+
+            if dias:
+                _dias_header()
+                pdf.set_font(fam, "", 6)
+                for d in sorted(dias, key=lambda x: x.get("fecha", "")):
+                    if pdf.get_y() + 4 > pdf.h - pdf.b_margin:
+                        pdf.add_page()
+                        _dias_header()
+                    marcas = []
+                    if d.get("franco"): marcas.append("Franco")
+                    if d.get("comida"): marcas.append("Comida")
+                    desc = _pdf_cell_text(d.get("descripcion") or "")
+                    pdf.set_x(pdf.l_margin + IND)
+                    y0 = pdf.get_y()
+                    pdf.cell(WD["fecha"], 4, _pdf_cell_text(d.get("fecha", "")),    1)
+                    pdf.cell(WD["tipo"],  4, _pdf_cell_text(d.get("tipo_dia", "")), 1)
+                    pdf.cell(WD["ot50"],  4, _pdf_cell_text(d.get("ot50", "")),     1, 0, "C")
+                    pdf.cell(WD["ot100"], 4, _pdf_cell_text(d.get("ot100", "")),    1, 0, "C")
+                    pdf.cell(WD["marc"],  4, ", ".join(marcas),                     1, 0, "C")
+                    pdf.multi_cell(0,     4, desc,                                  1)
+                    if pdf.get_y() < y0 + 4:
+                        pdf.set_y(y0 + 4)
+            pdf.ln(1)
 
     return _pdf_bytes(pdf)
 
@@ -2113,17 +2154,42 @@ def periodo_confirmaciones_pdf():
     confirmados = [e for e in todos if     e["confirmado"]]
     pendientes  = [e for e in todos if not e["confirmado"]]
 
-    # Fecha de confirmación más reciente por empleado (solo para mostrar en el PDF)
+    # Fecha de confirmación más reciente por empleado + días de confirmados
     hist = [c for c in _leer_historial(departamento=departamento)
             if desde <= c.get("semana", 0) <= hasta]
-    conf_en_map = {}
+    conf_en_map  = {}
+    conf_dias_map = {}
     for c in hist:
-        key = str(c.get("legajo", ""))
+        leg   = str(c.get("legajo", ""))
         fecha = c.get("confirmado_en") or ""
-        if fecha > conf_en_map.get(key, ""):
-            conf_en_map[key] = fecha
+        if fecha > conf_en_map.get(leg, ""):
+            conf_en_map[leg] = fecha
+        conf_dias_map.setdefault(leg, []).extend(
+            [d for d in c.get("dias", []) if d.get("ot50") or d.get("ot100")]
+        )
     for e in confirmados:
-        e["confirmado_en"] = conf_en_map.get(str(e.get("legajo", "")), "")
+        leg = str(e.get("legajo", ""))
+        e["confirmado_en"] = conf_en_map.get(leg, "")
+        e["dias"] = sorted(conf_dias_map.get(leg, []), key=lambda x: x.get("fecha", ""))
+
+    # Días de pendientes desde _sesion
+    pend_dias_map = {}
+    for d in _sesion.values():
+        if d.get("confirmado"):
+            continue
+        depto_d = _normalizar_departamento_web(d.get("departamento", "") or "Todos")
+        if departamento and depto_d != departamento:
+            continue
+        sem = d.get("semana", 0)
+        if not (desde <= sem <= hasta):
+            continue
+        leg = str(d.get("legajo", ""))
+        pend_dias_map.setdefault(leg, []).extend(
+            [x for x in d.get("dias", []) if x.get("tiene_ot")]
+        )
+    for e in pendientes:
+        leg = str(e.get("legajo", ""))
+        e["dias"] = sorted(pend_dias_map.get(leg, []), key=lambda x: x.get("fecha", ""))
 
     info = {
         "departamento_label": _nombre_departamento_visible(departamento),
