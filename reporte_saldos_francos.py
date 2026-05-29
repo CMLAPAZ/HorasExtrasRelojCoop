@@ -91,7 +91,7 @@ def _calcular_saldos():
                 "FROM francos_tomados ORDER BY fecha_desde, id"
             ):
                 leg = str(r["legajo"])
-                detalle_tomados_db.setdefault(leg, []).append(dict(r))
+                detalle_tomados_db.setdefault(leg, []).append({k: r[k] for k in r.keys()})
             for r in conn.execute(
                 "SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"
             ):
