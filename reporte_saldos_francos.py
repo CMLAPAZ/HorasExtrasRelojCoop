@@ -437,12 +437,12 @@ def _hacer_html_email(sup_nombre, deptos, por_depto, fecha_str):
 
 def _enviar_email(cfg, destinatario_nombre, destinatario_email, adjuntos, html_body, fecha_str):
     """
-    Envía un email Outlook con cuerpo HTML y PDFs adjuntos.
+    Envía un email con cuerpo HTML y PDFs adjuntos (Gmail / cualquier SMTP).
     adjuntos: lista de Path
     """
     smtp_user      = cfg.get("smtp_user", "")
     smtp_pass      = cfg.get("smtp_pass", "")
-    smtp_host      = cfg.get("smtp_host", "smtp-mail.outlook.com")
+    smtp_host      = cfg.get("smtp_host", "smtp.gmail.com")
     smtp_port      = int(cfg.get("smtp_port", 587))
     smtp_from_name = cfg.get("smtp_from_name", "CM Horas Extras")
 

@@ -83,20 +83,20 @@
 
 <!-- Configuración SMTP -->
 <div class="card">
-  <div class="card-title">Cuenta de correo remitente (Outlook / Hotmail)</div>
+  <div class="card-title">Cuenta de correo remitente (Gmail / Outlook / cualquier SMTP)</div>
   <form method="post" action="/configuracion/email/smtp">
     <div class="grid-2" style="margin-bottom:14px">
       <div>
         <label>Email remitente</label>
         <input type="email" name="smtp_user" value="{{ cfg.get('smtp_user','') }}"
-               placeholder="tucuenta@outlook.com" required>
+               placeholder="tucuenta@gmail.com" required>
       </div>
       <div>
         <label>Contraseña</label>
         <input type="password" name="smtp_pass"
                value="{{ cfg.get('smtp_pass','') }}"
-               placeholder="Contraseña de la cuenta Outlook" required>
-        <p class="hint">Si tenés verificación en 2 pasos, generá una "Contraseña de aplicación" en outlook.com.</p>
+               placeholder="Contraseña de aplicación" required>
+        <p class="hint">Si tenés verificación en 2 pasos, generá una "Contraseña de aplicación" en la configuración de tu cuenta.</p>
       </div>
     </div>
     <div class="grid-3" style="margin-bottom:16px">
@@ -109,7 +109,7 @@
       <div>
         <label>Servidor SMTP</label>
         <input type="text" name="smtp_host"
-               value="{{ cfg.get('smtp_host','smtp-mail.outlook.com') }}">
+               value="{{ cfg.get('smtp_host','smtp.gmail.com') }}">
       </div>
       <div>
         <label>Puerto</label>

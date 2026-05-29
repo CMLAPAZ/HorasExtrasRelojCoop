@@ -2874,7 +2874,7 @@ def configuracion_email_smtp():
     cfg = _leer_email_cfg()
     cfg["smtp_user"]  = request.form.get("smtp_user",  "").strip()
     cfg["smtp_pass"]  = request.form.get("smtp_pass",  "").strip()
-    cfg["smtp_host"]  = request.form.get("smtp_host",  "smtp-mail.outlook.com").strip()
+    cfg["smtp_host"]  = request.form.get("smtp_host",  "smtp.gmail.com").strip()
     cfg["smtp_port"]  = int(request.form.get("smtp_port", "587") or "587")
     cfg["smtp_from_name"] = request.form.get("smtp_from_name", "CM Horas Extras").strip()
     _guardar_email_cfg(cfg)
