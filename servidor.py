@@ -819,7 +819,7 @@ def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
         pdf.cell(W["nom"],  5, "Nombre",        1, 0, "C", True)
         pdf.cell(W["dep"],  5, "Depto",         1, 0, "C", True)
         pdf.cell(W["fecha"],5, "Confirmado",    1, 0, "C", True)
-        pdf.cell(W["sem"],  5, "Sem.",          1, 0, "C", True)
+        pdf.cell(W["sem"],  5, "Sems.",         1, 0, "C", True)
         pdf.cell(W["ot50"], 5, "OT50",          1, 0, "C", True)
         pdf.cell(W["ot100"],5, "OT100",         1, 0, "C", True)
         pdf.cell(W["com"],  5, "Com.",          1, 0, "C", True)
@@ -840,17 +840,17 @@ def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
                 pdf.set_fill_color(235, 240, 255)
                 pdf.set_font(fam, "B", 7)
                 pdf.cell(0, 4, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
-            tot = c.get("totales", {})
+            sems = ", ".join(str(s) for s in c.get("semanas", []))
             pdf.set_font(fam, "", 7)
-            pdf.cell(W["leg"],  5, _pdf_cell_text(str(c.get("legajo", ""))),         1)
-            pdf.cell(W["nom"],  5, _pdf_cell_text(c.get("nombre", ""))[:30],          1)
-            pdf.cell(W["dep"],  5, _pdf_cell_text(depto)[:16],                        1)
-            pdf.cell(W["fecha"],5, (c.get("confirmado_en") or "")[:16].replace("T"," "), 1)
-            pdf.cell(W["sem"],  5, str(c.get("semana_depto", c.get("semana", ""))),   1, 0, "C")
-            pdf.cell(W["ot50"], 5, _pdf_cell_text(tot.get("ot50",  "0h")),            1, 0, "C")
-            pdf.cell(W["ot100"],5, _pdf_cell_text(tot.get("ot100", "0h")),            1, 0, "C")
-            pdf.cell(W["com"],  5, str(tot.get("comidas", 0)),                        1, 0, "C")
-            pdf.cell(W["fr"],   5, str(tot.get("francos", 0)),                        1, 1, "C")
+            pdf.cell(W["leg"],  5, _pdf_cell_text(str(c.get("legajo", ""))),              1)
+            pdf.cell(W["nom"],  5, _pdf_cell_text(c.get("nombre", ""))[:30],               1)
+            pdf.cell(W["dep"],  5, _pdf_cell_text(depto)[:16],                             1)
+            pdf.cell(W["fecha"],5, (c.get("confirmado_en") or "")[:16].replace("T", " "),  1)
+            pdf.cell(W["sem"],  5, sems,                                                   1, 0, "C")
+            pdf.cell(W["ot50"], 5, _pdf_cell_text(c.get("ot50",  "0h")),                  1, 0, "C")
+            pdf.cell(W["ot100"],5, _pdf_cell_text(c.get("ot100", "0h")),                  1, 0, "C")
+            pdf.cell(W["com"],  5, str(c.get("comidas", 0)),                               1, 0, "C")
+            pdf.cell(W["fr"],   5, str(c.get("francos", 0)),                               1, 1, "C")
     else:
         pdf.set_font(fam, "", 8)
         pdf.cell(0, 5, "No hay confirmaciones en este periodo.", ln=1)
@@ -2109,12 +2109,21 @@ def periodo_confirmaciones_pdf():
     if not departamento or not fecha_desde or not fecha_hasta:
         return "Departamento y rango de fechas requeridos.", 400
 
-    confirmados = [
-        c for c in _leer_historial(departamento=departamento)
-        if desde <= c.get("semana", 0) <= hasta
-    ]
-    todos      = _calcular_periodo(desde, hasta, departamento)
-    pendientes = [e for e in todos if not e["confirmado"]]
+    todos       = _calcular_periodo(desde, hasta, departamento)
+    confirmados = [e for e in todos if     e["confirmado"]]
+    pendientes  = [e for e in todos if not e["confirmado"]]
+
+    # Fecha de confirmación más reciente por empleado (solo para mostrar en el PDF)
+    hist = [c for c in _leer_historial(departamento=departamento)
+            if desde <= c.get("semana", 0) <= hasta]
+    conf_en_map = {}
+    for c in hist:
+        key = str(c.get("legajo", ""))
+        fecha = c.get("confirmado_en") or ""
+        if fecha > conf_en_map.get(key, ""):
+            conf_en_map[key] = fecha
+    for e in confirmados:
+        e["confirmado_en"] = conf_en_map.get(str(e.get("legajo", "")), "")
 
     info = {
         "departamento_label": _nombre_departamento_visible(departamento),
