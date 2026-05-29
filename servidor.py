@@ -2131,31 +2131,31 @@ def periodo_confirmaciones_pdf():
         if fecha > conf_en_map.get(leg, ""):
             conf_en_map[leg] = fecha
 
-    # Días: de _sesion para todos — incluye OT, comidas y francos
-    dias_map = {}
+    # Días por legajo desde _sesion — solo filtramos por rango de semanas,
+    # sin filtrar departamento (evita desajustes de normalización).
+    # Dedup por fecha dentro de cada legajo.
+    dias_por_leg = {}
     for d in _sesion.values():
-        depto_d = _normalizar_departamento_web(d.get("departamento", "") or "Todos")
-        if departamento and depto_d != departamento:
-            continue
         sem = d.get("semana", 0)
         if not (desde <= sem <= hasta):
             continue
         leg = str(d.get("legajo", ""))
-        dias_map.setdefault(leg, []).extend(
-            [x for x in d.get("dias", [])
-             if x.get("tiene_ot") or x.get("comida") or x.get("franco")]
-        )
+        by_fecha = dias_por_leg.setdefault(leg, {})
+        for x in d.get("dias", []):
+            if not (x.get("tiene_ot") or x.get("comida") or x.get("franco")):
+                continue
+            f = x.get("fecha", "")
+            # Si ya existe la fecha, mantener el registro con más información
+            if f not in by_fecha or x.get("tiene_ot"):
+                by_fecha[f] = x
 
     for e in todos:
         leg = str(e.get("legajo", ""))
         e["confirmado_en"] = conf_en_map.get(leg, "")
-        # deduplicar por fecha, priorizar el que tenga más datos
-        por_fecha = {}
-        for d in dias_map.get(leg, []):
-            f = d.get("fecha", "")
-            if f not in por_fecha or d.get("tiene_ot"):
-                por_fecha[f] = d
-        e["dias"] = sorted(por_fecha.values(), key=lambda x: x.get("fecha", ""))
+        e["dias"] = sorted(
+            dias_por_leg.get(leg, {}).values(),
+            key=lambda x: x.get("fecha", "")
+        )
 
     info = {
         "departamento_label": _nombre_departamento_visible(departamento),
