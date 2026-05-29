@@ -148,6 +148,7 @@
     <div class="acciones">
       <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
       <button type="button" class="btn-green" onclick="descargarCSV()">Descargar CSV</button>
+      <button type="button" class="btn-green" onclick="descargarConfirmacionesPDF()">Confirmaciones PDF</button>
       <button type="button" class="btn-red" onclick="cerrarPeriodo()">Cerrar período ✓</button>
     </div>
   </div>
@@ -473,6 +474,21 @@ function descargarCSV() {
     semana_visible_hasta: semHasta.semanaVisible,
   });
   window.location.href = `/periodo/exportar?${params.toString()}`;
+}
+
+function descargarConfirmacionesPDF() {
+  const departamento = document.getElementById('departamento').value;
+  if (!departamento) { alert('Seleccioná un departamento primero.'); return; }
+  const semDesde = semanaSeleccionada('desde');
+  const semHasta = semanaSeleccionada('hasta');
+  const params = new URLSearchParams({
+    desde: _desde,
+    hasta: _hasta,
+    departamento,
+    fecha_desde: semDesde.fechaDesde,
+    fecha_hasta: semHasta.fechaHasta,
+  });
+  window.location.href = `/periodo/confirmaciones_pdf?${params.toString()}`;
 }
 
 async function cerrarPeriodo() {

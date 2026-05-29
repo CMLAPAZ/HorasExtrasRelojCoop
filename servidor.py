@@ -789,6 +789,113 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
 
     return _pdf_bytes(pdf)
 
+
+def _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info):
+    from pdf_generator import PDFGeneral
+
+    pdf = PDFGeneral()
+    pdf.titulo = "Confirmaciones parciales"
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+
+    depto_label = info.get("departamento_label", "Todos")
+    rango = f"{info.get('fecha_desde', '')} al {info.get('fecha_hasta', '')}".strip()
+
+    pdf.set_font(fam, "B", 11)
+    pdf.cell(0, 7, "Confirmaciones - Periodo activo (parcial)", ln=1)
+    pdf.set_font(fam, "", 8)
+    pdf.cell(0, 5, f"Dpto: {depto_label}   Periodo: {rango}   Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}   Confirmados: {len(confirmados)}   Pendientes: {len(pendientes)}", ln=1)
+    pdf.ln(2)
+
+    # ── Anchos columnas confirmados ──────────────────────────
+    W = {"leg": 14, "nom": 52, "dep": 28, "fecha": 26, "sem": 12,
+         "ot50": 17, "ot100": 17, "com": 11, "fr": 11}
+
+    def _tabla_header_conf():
+        pdf.set_fill_color(220, 235, 255)
+        pdf.set_font(fam, "B", 7)
+        pdf.cell(W["leg"],  5, "Legajo",       1, 0, "C", True)
+        pdf.cell(W["nom"],  5, "Nombre",        1, 0, "C", True)
+        pdf.cell(W["dep"],  5, "Depto",         1, 0, "C", True)
+        pdf.cell(W["fecha"],5, "Confirmado",    1, 0, "C", True)
+        pdf.cell(W["sem"],  5, "Sem.",          1, 0, "C", True)
+        pdf.cell(W["ot50"], 5, "OT50",          1, 0, "C", True)
+        pdf.cell(W["ot100"],5, "OT100",         1, 0, "C", True)
+        pdf.cell(W["com"],  5, "Com.",          1, 0, "C", True)
+        pdf.cell(W["fr"],   5, "Fr.",           1, 1, "C", True)
+
+    pdf.set_font(fam, "B", 9)
+    pdf.cell(0, 6, f"Confirmados ({len(confirmados)})", ln=1)
+    if confirmados:
+        _tabla_header_conf()
+        depto_actual = None
+        for c in sorted(confirmados, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
+            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+                _tabla_header_conf()
+            depto = c.get("departamento", "") or "-"
+            if depto != depto_actual:
+                depto_actual = depto
+                pdf.set_fill_color(235, 240, 255)
+                pdf.set_font(fam, "B", 7)
+                pdf.cell(0, 4, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+            tot = c.get("totales", {})
+            pdf.set_font(fam, "", 7)
+            pdf.cell(W["leg"],  5, _pdf_cell_text(str(c.get("legajo", ""))),         1)
+            pdf.cell(W["nom"],  5, _pdf_cell_text(c.get("nombre", ""))[:30],          1)
+            pdf.cell(W["dep"],  5, _pdf_cell_text(depto)[:16],                        1)
+            pdf.cell(W["fecha"],5, (c.get("confirmado_en") or "")[:16].replace("T"," "), 1)
+            pdf.cell(W["sem"],  5, str(c.get("semana_depto", c.get("semana", ""))),   1, 0, "C")
+            pdf.cell(W["ot50"], 5, _pdf_cell_text(tot.get("ot50",  "0h")),            1, 0, "C")
+            pdf.cell(W["ot100"],5, _pdf_cell_text(tot.get("ot100", "0h")),            1, 0, "C")
+            pdf.cell(W["com"],  5, str(tot.get("comidas", 0)),                        1, 0, "C")
+            pdf.cell(W["fr"],   5, str(tot.get("francos", 0)),                        1, 1, "C")
+    else:
+        pdf.set_font(fam, "", 8)
+        pdf.cell(0, 5, "No hay confirmaciones en este periodo.", ln=1)
+
+    if pendientes:
+        pdf.ln(3)
+        pdf.set_font(fam, "B", 9)
+        pdf.cell(0, 6, f"Pendientes ({len(pendientes)})", ln=1)
+
+        # ── Anchos columnas pendientes ───────────────────────
+        WP = {"leg": 14, "nom": 58, "dep": 30, "ot50": 18, "ot100": 18, "sem": 0}
+
+        def _tabla_header_pend():
+            pdf.set_fill_color(255, 243, 220)
+            pdf.set_font(fam, "B", 7)
+            pdf.cell(WP["leg"],  5, "Legajo",  1, 0, "C", True)
+            pdf.cell(WP["nom"],  5, "Nombre",  1, 0, "C", True)
+            pdf.cell(WP["dep"],  5, "Depto",   1, 0, "C", True)
+            pdf.cell(WP["ot50"], 5, "OT50",    1, 0, "C", True)
+            pdf.cell(WP["ot100"],5, "OT100",   1, 0, "C", True)
+            pdf.cell(0,          5, "Semanas", 1, 1, "C", True)
+
+        _tabla_header_pend()
+        depto_actual = None
+        for e in sorted(pendientes, key=lambda x: (x.get("departamento", ""), _legajo_key(x))):
+            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+                _tabla_header_pend()
+            depto = e.get("departamento", "") or "-"
+            if depto != depto_actual:
+                depto_actual = depto
+                pdf.set_fill_color(255, 250, 235)
+                pdf.set_font(fam, "B", 7)
+                pdf.cell(0, 4, f"  {_pdf_cell_text(depto)}", 0, 1, "L", True)
+            pdf.set_font(fam, "", 7)
+            pdf.cell(WP["leg"],  5, _pdf_cell_text(str(e.get("legajo", ""))),     1)
+            pdf.cell(WP["nom"],  5, _pdf_cell_text(e.get("nombre", ""))[:32],      1)
+            pdf.cell(WP["dep"],  5, _pdf_cell_text(depto)[:16],                    1)
+            pdf.cell(WP["ot50"], 5, _pdf_cell_text(e.get("ot50",  "0h")),          1, 0, "C")
+            pdf.cell(WP["ot100"],5, _pdf_cell_text(e.get("ot100", "0h")),          1, 0, "C")
+            pdf.cell(0,          5, ", ".join(str(s) for s in e.get("semanas",[])),1, 1)
+
+    return _pdf_bytes(pdf)
+
+
 def _pendientes_cierre(confirmaciones, empleados):
     confirmados = {
         (_normalizar_departamento_web(c.get("departamento", "")), str(c.get("legajo", "")))
@@ -1986,6 +2093,41 @@ def periodo_exportar():
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
     )
+
+
+@app.route("/periodo/confirmaciones_pdf")
+def periodo_confirmaciones_pdf():
+    if not _autenticado(): return _requiere_auth()
+    try:
+        desde = int(request.args.get("desde", 1))
+        hasta = int(request.args.get("hasta", 1))
+    except ValueError:
+        return "Parámetros inválidos.", 400
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    fecha_desde  = request.args.get("fecha_desde", "").strip()
+    fecha_hasta  = request.args.get("fecha_hasta", "").strip()
+    if not departamento or not fecha_desde or not fecha_hasta:
+        return "Departamento y rango de fechas requeridos.", 400
+
+    confirmados = [
+        c for c in _leer_historial(departamento=departamento)
+        if desde <= c.get("semana", 0) <= hasta
+    ]
+    todos      = _calcular_periodo(desde, hasta, departamento)
+    pendientes = [e for e in todos if not e["confirmado"]]
+
+    info = {
+        "departamento_label": _nombre_departamento_visible(departamento),
+        "fecha_desde": fecha_desde,
+        "fecha_hasta": fecha_hasta,
+    }
+    try:
+        pdf_data = _generar_pdf_confirmaciones_parcial(confirmados, pendientes, info)
+        nombre = f"confirmaciones_{departamento}_{fecha_desde}_{fecha_hasta}.pdf"
+        return send_file(BytesIO(pdf_data), mimetype="application/pdf",
+                         as_attachment=True, download_name=nombre)
+    except Exception as exc:
+        return f"Error generando PDF: {exc}", 500
 
 
 @app.route("/periodo/cerrar", methods=["POST"])
