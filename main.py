@@ -705,6 +705,7 @@ def abrir_gestor_asignaciones_especiales():
             asignaciones = []
         return data, asignaciones
 
+
     def recargar_grilla():
         for item in tree.get_children():
             tree.delete(item)

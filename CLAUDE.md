@@ -198,6 +198,25 @@ No commiteado (está en `.gitignore`). En PythonAnywhere debe existir una copia 
 
 ---
 
+## Refactoring pendiente — División de servidor.py
+
+**Cuándo:** después del cierre de mayo 2026.
+
+`servidor.py` tiene ~2400 líneas. Cuando todas las features estén estables, dividirlo en módulos.
+
+**Orden sugerido (de menor a mayor riesgo):**
+1. `rutas_email.py` — configuración SMTP, supervisores, reporte semanal
+2. `rutas_francos.py` — francos tomados, saldos, carga manual
+3. `rutas_cierres.py` — períodos, cierre, anulación, PDFs
+4. `servidor.py` — queda solo con auth, sesión, carga de fichadas y rutas principales
+
+**Reglas para hacerlo sin perder nada:**
+- Un módulo a la vez, sin cambiar lógica — solo mover código
+- Verificar en PythonAnywhere después de cada módulo
+- Un commit por módulo para poder revertir si algo falla
+
+---
+
 ## Features pendientes
 
 ### Asignación de horario especial por empleado (Redes)
