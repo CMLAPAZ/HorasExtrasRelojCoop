@@ -2551,7 +2551,10 @@ def _calcular_saldos():
     """Saldo por empleado = saldo_inicial + generados_periodos + generados_manual - tomados."""
     with _get_db() as conn:
         iniciales    = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
-        gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(francos) as total FROM periodo_empleados GROUP BY legajo")}
+        # Solo períodos cerrados DESPUÉS del saldo inicial (04/05/2026); los anteriores ya están en saldo_inicial
+        gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+            "SELECT legajo, SUM(francos) as total FROM periodo_empleados WHERE fecha_hasta > '2026-05-04' GROUP BY legajo"
+        )}
         gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
         gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
         gen_manual_sem = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
