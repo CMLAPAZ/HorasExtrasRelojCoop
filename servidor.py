@@ -2553,7 +2553,9 @@ def _calcular_saldos():
         iniciales    = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
         # Solo períodos cerrados DESPUÉS del saldo inicial (04/05/2026); los anteriores ya están en saldo_inicial
         gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
-            "SELECT legajo, SUM(francos) as total FROM periodo_empleados WHERE fecha_hasta > '2026-05-04' GROUP BY legajo"
+            "SELECT pe.legajo, SUM(pe.francos) as total FROM periodo_empleados pe "
+            "JOIN periodos p ON pe.periodo_id = p.id "
+            "WHERE p.fecha_hasta > '2026-05-04' GROUP BY pe.legajo"
         )}
         gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
         gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
