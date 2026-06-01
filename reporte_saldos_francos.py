@@ -76,7 +76,7 @@ def _calcular_saldos():
             for r in conn.execute(
                 "SELECT pe.legajo, SUM(pe.francos) as total FROM periodo_empleados pe "
                 "JOIN periodos p ON pe.periodo_id = p.id "
-                "WHERE p.fecha_hasta > '2026-05-04' GROUP BY pe.legajo"
+                "WHERE p.fecha_hasta > '2026-05-21' GROUP BY pe.legajo"
             ):
                 gen_periodos[str(r["legajo"])] = r["total"] or 0
             for r in conn.execute(

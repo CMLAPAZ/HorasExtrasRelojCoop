@@ -2555,7 +2555,7 @@ def _calcular_saldos():
         gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
             "SELECT pe.legajo, SUM(pe.francos) as total FROM periodo_empleados pe "
             "JOIN periodos p ON pe.periodo_id = p.id "
-            "WHERE p.fecha_hasta > '2026-05-04' GROUP BY pe.legajo"
+            "WHERE p.fecha_hasta > '2026-05-21' GROUP BY pe.legajo"
         )}
         gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
         gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
