@@ -1659,9 +1659,10 @@ def guardar_francos_todos():
     ahora = datetime.now().isoformat(timespec="seconds")
     total_empleados = 0
     with _get_db() as conn:
+        # Limpiar todo para evitar que queden semanas eliminadas
+        conn.execute("DELETE FROM francos_semana_parcial")
         for n in semanas:
             tokens_semana = [(t, d) for t, d in _sesion.items() if d.get("semana") == n]
-            conn.execute("DELETE FROM francos_semana_parcial WHERE semana_num=?", (n,))
             for _, d in tokens_semana:
                 dias = int(d.get("totales", {}).get("francos", 0))
                 conn.execute(
