@@ -1616,6 +1616,11 @@ def eliminar_semana(n):
     if csv_path.exists():
         csv_path.unlink()
 
+    # Borrar francos parciales de esta semana
+    with _get_db() as conn:
+        conn.execute("DELETE FROM francos_semana_parcial WHERE semana_num=?", (n,))
+        conn.commit()
+
     # Quitar de metadata y reordenar contador si era la última
     meta["semanas"] = [s for s in meta["semanas"] if s["numero"] != n]
     if meta["semana_actual"] == n:
