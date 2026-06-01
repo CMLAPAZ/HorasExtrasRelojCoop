@@ -1645,6 +1645,29 @@ def guardar_francos_semana(n):
     return jsonify({"ok": True, "semana": n, "empleados": guardados})
 
 
+@app.route("/semanas/guardar-francos-todos", methods=["POST"])
+def guardar_francos_todos():
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    semanas = {d.get("semana") for d in _sesion.values() if d.get("semana") is not None}
+    if not semanas:
+        return jsonify({"error": "No hay semanas en sesión"}), 404
+    ahora = datetime.now().isoformat(timespec="seconds")
+    total_empleados = 0
+    with _get_db() as conn:
+        for n in semanas:
+            tokens_semana = [(t, d) for t, d in _sesion.items() if d.get("semana") == n]
+            conn.execute("DELETE FROM francos_semana_parcial WHERE semana_num=?", (n,))
+            for _, d in tokens_semana:
+                dias = int(d.get("totales", {}).get("francos", 0))
+                conn.execute(
+                    "INSERT INTO francos_semana_parcial (legajo, nombre, departamento, semana_num, dias, guardado_en) VALUES (?,?,?,?,?,?)",
+                    (str(d.get("legajo", "")), d.get("nombre", ""), d.get("departamento", ""), n, dias, ahora)
+                )
+            total_empleados += len(tokens_semana)
+        conn.commit()
+    return jsonify({"ok": True, "semanas": len(semanas), "empleados": total_empleados})
+
+
 @app.route("/semanas/<int:n>/regenerar", methods=["POST"])
 def regenerar_semana(n):
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401

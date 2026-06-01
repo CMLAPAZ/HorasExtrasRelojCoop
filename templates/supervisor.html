@@ -207,6 +207,7 @@ async function resetTotal() {
   <div class="card-header">
     <span class="card-title-inline">Semanas registradas</span>
     <button type="button" class="btn-sm" onclick="cargarSemanas()">Actualizar</button>
+    <button type="button" class="btn-francos" onclick="guardarFrancosTodasSemanas()">Guardar francos de todas</button>
   </div>
   <div id="semanas-body"><div class="vacio">Cargando…</div></div>
 </div>
@@ -501,6 +502,19 @@ async function guardarFrancosSemana(n, depto, numDepto) {
     const data = await res.json();
     if (data.error) { alert('Error: ' + data.error); return; }
     alert(`✓ Francos de ${label} guardados (${data.empleados} empleados). Los saldos ya están actualizados.`);
+  } catch(ex) {
+    alert('Error de conexión.');
+  }
+}
+
+// ─── Guardar francos de todas las semanas ────────
+async function guardarFrancosTodasSemanas() {
+  if (!confirm('¿Guardar francos de TODAS las semanas? Reemplaza los datos guardados anteriormente.')) return;
+  try {
+    const res  = await fetch('/semanas/guardar-francos-todos', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    alert(`✓ Francos de ${data.semanas} semanas guardados (${data.empleados} registros). Los saldos ya están actualizados.`);
   } catch(ex) {
     alert('Error de conexión.');
   }
