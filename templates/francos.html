@@ -34,6 +34,7 @@
     .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-dias{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-gen{background:#fef9c3;color:#854d0e;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:.88rem}
     #campos-rango{display:block}
     #campos-sueltas{display:none}
@@ -268,6 +269,87 @@
 </div>
 {% endif %}
 
+<!-- Francos generados manualmente -->
+<div class="card no-print">
+  <div class="card-header">
+    <div>
+      <div class="card-title-inline">Francos Generados — Carga Manual</div>
+      <p style="font-size:.82rem;color:#64748b;margin-top:4px">
+        Usá este formulario para cargar francos generados que el sistema no calcula automáticamente:
+        correcciones de períodos anteriores, ajustes puntuales, o cualquier franco que no salga del procesamiento de fichadas.
+      </p>
+    </div>
+  </div>
+  <form method="post" action="/francos/generados/nuevo">
+    <div class="grid-5">
+      <div>
+        <label>Departamento</label>
+        <select id="sel-depto-gen" onchange="filtrarLegajosGen()" required>
+          <option value="">— Seleccionar —</option>
+          {% for dep in departamentos %}
+          <option value="{{ dep }}">{{ dep | upper }}</option>
+          {% endfor %}
+          <option value="__otro__">Otro / No listado</option>
+        </select>
+      </div>
+      <div>
+        <label>Legajo — Empleado</label>
+        <select name="legajo" id="sel-legajo-gen" onchange="completarNombreGen()" required disabled>
+          <option value="">— Primero seleccioná depto —</option>
+        </select>
+        <input type="hidden" name="nombre" id="campo-nombre-gen">
+        <input type="hidden" name="departamento" id="campo-depto-gen">
+      </div>
+      <div>
+        <label>Descripción del período</label>
+        <input type="text" name="descripcion" placeholder="ej: Semana 2 Mayo 2026" required>
+      </div>
+      <div>
+        <label>Días generados</label>
+        <input type="number" name="dias" min="1" value="1" required>
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <button type="submit" class="btn" style="width:100%">Agregar</button>
+      </div>
+    </div>
+  </form>
+  {% if gen_manual %}
+  <div class="tabla-wrap" style="margin-top:16px">
+    <table>
+      <thead>
+        <tr>
+          <th>Legajo</th>
+          <th>Nombre</th>
+          <th>Departamento</th>
+          <th>Descripción</th>
+          <th>Días</th>
+          <th>Cargado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in gen_manual %}
+        <tr>
+          <td>{{ g.legajo }}</td>
+          <td>{{ g.nombre }}</td>
+          <td style="color:#64748b;font-size:.82rem">{{ g.departamento }}</td>
+          <td style="font-size:.82rem">{{ g.descripcion }}</td>
+          <td><span class="badge-gen">+{{ g.dias }}</span></td>
+          <td style="font-size:.78rem;color:#94a3b8">{{ g.cargado_en[:10] if g.cargado_en else '—' }}</td>
+          <td>
+            <form method="post" action="/francos/generados/eliminar/{{ g.id }}"
+                  onsubmit="return confirm('¿Eliminar este registro?')">
+              <button type="submit" class="btn-del">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
 <!-- Francos manuales por semana -->
 {% if deptos_manuales %}
 <div class="card no-print">
@@ -402,7 +484,60 @@
 const EMPS = {};
 {% for grupo in empleados_grupos %}{% for e in grupo.empleados %}
 EMPS["{{ e.legajo }}"] = "{{ e.nombre }}";
-{% endfor %}{% endfor %}
+{%- endfor %}{% endfor %}
+
+const empleadosPorDepto = {
+  {% for grupo in empleados_grupos %}
+  "{{ grupo.departamento }}": [{% for e in grupo.empleados %}{ legajo: "{{ e.legajo }}", nombre: "{{ e.nombre }}" },{% endfor %}],
+  {% endfor %}
+};
+
+function filtrarLegajosGen() {
+  const dep = document.getElementById('sel-depto-gen').value;
+  const selLeg = document.getElementById('sel-legajo-gen');
+  const campoDepto = document.getElementById('campo-depto-gen');
+  selLeg.innerHTML = '';
+  campoDepto.value = dep === '__otro__' ? '' : dep;
+  if (!dep) {
+    selLeg.disabled = true;
+    selLeg.innerHTML = '<option value="">— Primero seleccioná depto —</option>';
+    return;
+  }
+  if (dep === '__otro__') {
+    selLeg.disabled = false;
+    selLeg.innerHTML = '<option value="">— Seleccionar —</option>';
+    for (const [d, emps] of Object.entries(empleadosPorDepto)) {
+      const og = document.createElement('optgroup');
+      og.label = d.toUpperCase();
+      for (const e of emps) {
+        const o = document.createElement('option');
+        o.value = e.legajo; o.dataset.nombre = e.nombre; o.dataset.depto = d;
+        o.textContent = e.legajo + ' — ' + e.nombre;
+        og.appendChild(o);
+      }
+      selLeg.appendChild(og);
+    }
+    return;
+  }
+  const emps = empleadosPorDepto[dep] || [];
+  selLeg.disabled = emps.length === 0;
+  selLeg.innerHTML = '<option value="">— Seleccionar —</option>';
+  campoDepto.value = dep;
+  for (const e of emps) {
+    const o = document.createElement('option');
+    o.value = e.legajo; o.dataset.nombre = e.nombre; o.dataset.depto = dep;
+    o.textContent = e.legajo + ' — ' + e.nombre;
+    selLeg.appendChild(o);
+  }
+}
+
+function completarNombreGen() {
+  const sel = document.getElementById('sel-legajo-gen');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+  document.getElementById('campo-nombre-gen').value = opt.dataset.nombre || '';
+  if (opt.dataset.depto) document.getElementById('campo-depto-gen').value = opt.dataset.depto;
+}
 
 function buscarLegajo() {
   const leg = document.getElementById('input-legajo').value.trim();

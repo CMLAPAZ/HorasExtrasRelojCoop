@@ -2807,9 +2807,13 @@ def francos():
         "tomados":   sum(g["total_tomados"]   for g in saldos_por_depto_f),
         "actual":    sum(g["total_actual"]    for g in saldos_por_depto_f),
     }
+    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"]})
     # Deptos manuales con valores guardados por semana/mes
     mes_actual = datetime.now().strftime("%Y-%m")
     with _get_db() as conn:
+        gen_manual = [dict(r) for r in conn.execute(
+            "SELECT * FROM francos_generados ORDER BY cargado_en DESC, id DESC"
+        )]
         emps_extra = conn.execute(
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1 ORDER BY departamento, CAST(legajo AS INTEGER)"
         ).fetchall()
@@ -2836,6 +2840,8 @@ def francos():
                            saldos_por_depto=saldos_por_depto_f,
                            total_general=total_general_f,
                            empleados_grupos=empleados_grupos,
+                           departamentos=departamentos,
+                           gen_manual=gen_manual,
                            deptos_manuales=deptos_manuales_list,
                            mes_actual=mes_actual)
 
