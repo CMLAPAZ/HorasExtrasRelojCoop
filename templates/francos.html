@@ -211,6 +211,7 @@
 <!-- Saldos -->
 {% if saldos_por_depto %}
 <div class="card card-saldos-f">
+  <div id="titulo-depto-filtro" style="display:none;font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:12px;letter-spacing:.01em"></div>
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -616,6 +617,7 @@ function filtrarDeptoFrancos() {
   const msg = document.getElementById('msg-sin-depto-francos');
   const btn = document.getElementById('btn-dl-francos');
   const totalGen = document.getElementById('fila-totgen-f');
+  const titulo = document.getElementById('titulo-depto-filtro');
   const filasSaldo = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
   const filasReg   = document.querySelectorAll('.fila-reg-depto-f,.fila-reg-f');
   if (!dep) {
@@ -624,6 +626,7 @@ function filtrarDeptoFrancos() {
     if (msg) msg.style.display = '';
     if (totalGen) totalGen.style.display = 'none';
     if (btn) btn.style.display = 'none';
+    if (titulo) titulo.style.display = 'none';
     return;
   }
   if (msg) msg.style.display = 'none';
@@ -632,12 +635,14 @@ function filtrarDeptoFrancos() {
     filasReg.forEach(tr => tr.style.display = '');
     if (totalGen) totalGen.style.display = '';
     if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
+    if (titulo) titulo.style.display = 'none';
     return;
   }
   if (totalGen) totalGen.style.display = 'none';
   filasSaldo.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+  if (titulo) { titulo.textContent = dep.toUpperCase(); titulo.style.display = 'block'; }
 }
 
 function actualizarInputsSemana() {
