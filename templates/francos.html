@@ -70,6 +70,7 @@
       .fila-totgen-f td{background:#dbeafe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body.print-detalle .card-registros-f{display:block!important}
       body.print-detalle .card-saldos-f{display:none!important}
+      body.print-detalle #print-titulo-depto{display:block!important}
       body.print-detalle .card-registros-f table{table-layout:fixed;width:100%;font-size:.72rem}
       body.print-detalle .card-registros-f td,
       body.print-detalle .card-registros-f th{padding:4px 5px;overflow:hidden;word-break:break-word}
@@ -435,6 +436,7 @@
 
 <!-- Listado -->
 <div class="card card-registros-f">
+  <div id="print-titulo-depto" style="display:none;font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:10px"></div>
   <div class="card-header">
     <div class="card-title-inline">Francos Registrados ({{ registros|length }})</div>
     <button type="button" class="btn-print-f no-print" onclick="imprimirDetalleFrancos()">🖨 Imprimir detalle</button>
@@ -643,6 +645,8 @@ function filtrarDeptoFrancos() {
   filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
   if (titulo) { titulo.textContent = dep.toUpperCase(); titulo.style.display = 'block'; }
+  const pt = document.getElementById('print-titulo-depto');
+  if (pt) pt.textContent = dep.toUpperCase();
 }
 
 function actualizarInputsSemana() {
