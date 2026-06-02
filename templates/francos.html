@@ -349,14 +349,14 @@
       </thead>
       <tbody>
         {% for grupo in registros_por_depto %}
-        <tr>
+        <tr class="fila-reg-depto-f" data-depto="{{ grupo.departamento }}">
           <td colspan="12" class="depto-header-f">
             {{ grupo.departamento | upper }}
             <span class="badge-count-f">{{ grupo.registros | length }}</span>
           </td>
         </tr>
         {% for r in grupo.registros %}
-        <tr>
+        <tr class="fila-reg-f" data-depto="{{ grupo.departamento }}">
           <td style="color:#94a3b8;font-size:.78rem">{{ r.id }}</td>
           <td>{{ r.legajo }}</td>
           <td>{{ r.nombre }}</td>
@@ -448,9 +448,11 @@ function filtrarDeptoFrancos() {
   const msg = document.getElementById('msg-sin-depto-francos');
   const btn = document.getElementById('btn-dl-francos');
   const totalGen = document.getElementById('fila-totgen-f');
-  const filas = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
+  const filasSaldo = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
+  const filasReg   = document.querySelectorAll('.fila-reg-depto-f,.fila-reg-f');
   if (!dep) {
-    filas.forEach(tr => tr.style.display = 'none');
+    filasSaldo.forEach(tr => tr.style.display = 'none');
+    filasReg.forEach(tr => tr.style.display = 'none');
     if (msg) msg.style.display = '';
     if (totalGen) totalGen.style.display = 'none';
     if (btn) btn.style.display = 'none';
@@ -458,13 +460,15 @@ function filtrarDeptoFrancos() {
   }
   if (msg) msg.style.display = 'none';
   if (dep === '__todos__') {
-    filas.forEach(tr => tr.style.display = '');
+    filasSaldo.forEach(tr => tr.style.display = '');
+    filasReg.forEach(tr => tr.style.display = '');
     if (totalGen) totalGen.style.display = '';
     if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
     return;
   }
   if (totalGen) totalGen.style.display = 'none';
-  filas.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  filasSaldo.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
 }
 
