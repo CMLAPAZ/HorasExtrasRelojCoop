@@ -58,10 +58,11 @@
     .btn-print-f:hover{background:#166534}
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
     .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
+    @page{margin:8mm}
     @media print{
       .topbar,.nav,.card-form-f,.no-print{display:none!important}
       .card-registros-f{display:none!important}
-      body{background:#fff;padding:8px;max-width:100%}
+      body{background:#fff;padding:0;max-width:100%}
       .card{box-shadow:none;border:none;padding:4px}
       #msg-sin-depto-francos{display:none!important}
       .depto-header-f{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -69,6 +70,33 @@
       .fila-totgen-f td{background:#dbeafe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body.print-detalle .card-registros-f{display:block!important}
       body.print-detalle .card-saldos-f{display:none!important}
+      body.print-detalle .card-registros-f table{table-layout:fixed;width:100%;font-size:.72rem}
+      body.print-detalle .card-registros-f td,
+      body.print-detalle .card-registros-f th{padding:4px 5px;overflow:hidden;word-break:break-word}
+      body.print-detalle .card-registros-f th:nth-child(12),
+      body.print-detalle .card-registros-f td:nth-child(12){display:none}
+      body.print-detalle .card-registros-f th:nth-child(1),
+      body.print-detalle .card-registros-f td:nth-child(1){width:3%}
+      body.print-detalle .card-registros-f th:nth-child(2),
+      body.print-detalle .card-registros-f td:nth-child(2){width:5%}
+      body.print-detalle .card-registros-f th:nth-child(3),
+      body.print-detalle .card-registros-f td:nth-child(3){width:13%}
+      body.print-detalle .card-registros-f th:nth-child(4),
+      body.print-detalle .card-registros-f td:nth-child(4){width:5%}
+      body.print-detalle .card-registros-f th:nth-child(5),
+      body.print-detalle .card-registros-f td:nth-child(5){width:22%}
+      body.print-detalle .card-registros-f th:nth-child(6),
+      body.print-detalle .card-registros-f td:nth-child(6){width:4%}
+      body.print-detalle .card-registros-f th:nth-child(7),
+      body.print-detalle .card-registros-f td:nth-child(7){width:6%}
+      body.print-detalle .card-registros-f th:nth-child(8),
+      body.print-detalle .card-registros-f td:nth-child(8){width:8%}
+      body.print-detalle .card-registros-f th:nth-child(9),
+      body.print-detalle .card-registros-f td:nth-child(9){width:8%}
+      body.print-detalle .card-registros-f th:nth-child(10),
+      body.print-detalle .card-registros-f td:nth-child(10){width:13%}
+      body.print-detalle .card-registros-f th:nth-child(11),
+      body.print-detalle .card-registros-f td:nth-child(11){width:6%}
     }
   </style>
 </head>
