@@ -2770,6 +2770,17 @@ def francos():
         else:
             r["fechas_lista"] = []
     empleados_raw = _empleados_conocidos()
+    emp_depto = {e["legajo"]: e["departamento"] for e in empleados_raw}
+    for r in registros:
+        r["departamento"] = emp_depto.get(r["legajo"], "")
+    _reg_dict = {}
+    for r in registros:
+        dep = r["departamento"] or "Sin departamento"
+        _reg_dict.setdefault(dep, []).append(r)
+    registros_por_depto = sorted(
+        [{"departamento": k, "registros": v} for k, v in _reg_dict.items()],
+        key=lambda x: x["departamento"].lower()
+    )
     empleados_por_depto = {}
     for e in empleados_raw:
         dep = e["departamento"] or "Sin departamento"
@@ -2821,6 +2832,7 @@ def francos():
     deptos_manuales_list = [{"departamento": k, "empleados": v} for k, v in sorted(deptos_manuales.items())]
     return render_template("francos.html",
                            registros=registros,
+                           registros_por_depto=registros_por_depto,
                            saldos_por_depto=saldos_por_depto_f,
                            total_general=total_general_f,
                            empleados_grupos=empleados_grupos,
