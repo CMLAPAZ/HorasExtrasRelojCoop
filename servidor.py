@@ -3038,6 +3038,14 @@ def francos_eliminar(fid):
         conn.commit()
     return redirect(url_for("francos"))
 
+@app.route("/francos/aprobar/<int:fid>", methods=["POST"])
+def francos_aprobar(fid):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        conn.execute("UPDATE francos_tomados SET estado='Aprobado' WHERE id=?", (fid,))
+        conn.commit()
+    return redirect(url_for("francos"))
+
 
 @app.route("/francos/guardar-manual-semana", methods=["POST"])
 def francos_guardar_manual_semana():

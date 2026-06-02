@@ -58,7 +58,7 @@
     .btn-print-f:hover{background:#166534}
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
     .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
-    @page{margin:8mm}
+    @page{margin:5mm}
     @media print{
       .topbar,.nav,.card-form-f,.no-print{display:none!important}
       .card-registros-f{display:none!important}
@@ -76,7 +76,7 @@
       body.print-detalle .card-registros-f th:nth-child(12),
       body.print-detalle .card-registros-f td:nth-child(12){display:none}
       body.print-detalle .card-registros-f th:nth-child(1),
-      body.print-detalle .card-registros-f td:nth-child(1){width:3%}
+      body.print-detalle .card-registros-f td:nth-child(1){display:none}
       body.print-detalle .card-registros-f th:nth-child(2),
       body.print-detalle .card-registros-f td:nth-child(2){width:5%}
       body.print-detalle .card-registros-f th:nth-child(3),
@@ -84,7 +84,7 @@
       body.print-detalle .card-registros-f th:nth-child(4),
       body.print-detalle .card-registros-f td:nth-child(4){width:5%}
       body.print-detalle .card-registros-f th:nth-child(5),
-      body.print-detalle .card-registros-f td:nth-child(5){width:22%}
+      body.print-detalle .card-registros-f td:nth-child(5){width:25%}
       body.print-detalle .card-registros-f th:nth-child(6),
       body.print-detalle .card-registros-f td:nth-child(6){width:4%}
       body.print-detalle .card-registros-f th:nth-child(7),
@@ -492,8 +492,13 @@
           <td style="font-size:.82rem;color:#64748b">{{ r.autorizado_por or '—' }}</td>
           <td style="font-size:.82rem;color:#64748b">{{ r.observaciones }}</td>
           <td style="font-size:.78rem;color:#94a3b8">{{ r.cargado_en[:10] if r.cargado_en else '' }}</td>
-          <td>
-            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return confirm('¿Eliminar este franco?')">
+          <td style="white-space:nowrap">
+            {% if r.estado != 'Aprobado' %}
+            <form method="post" action="/francos/aprobar/{{ r.id }}" style="display:inline">
+              <button type="submit" class="btn-del" style="background:#fff;border-color:#bbf7d0;color:#166534">✓ Aprobar</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return confirm('¿Eliminar este franco?')" style="display:inline">
               <button type="submit" class="btn-del">Eliminar</button>
             </form>
           </td>
