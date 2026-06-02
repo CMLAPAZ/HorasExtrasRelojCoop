@@ -622,6 +622,7 @@ function filtrarDeptoFrancos() {
   const titulo = document.getElementById('titulo-depto-filtro');
   const filasSaldo = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
   const filasReg   = document.querySelectorAll('.fila-reg-depto-f,.fila-reg-f');
+  const pt = document.getElementById('print-titulo-depto');
   if (!dep) {
     filasSaldo.forEach(tr => tr.style.display = 'none');
     filasReg.forEach(tr => tr.style.display = 'none');
@@ -629,6 +630,7 @@ function filtrarDeptoFrancos() {
     if (totalGen) totalGen.style.display = 'none';
     if (btn) btn.style.display = 'none';
     if (titulo) titulo.style.display = 'none';
+    if (pt) pt.textContent = 'TODOS LOS DEPARTAMENTOS';
     return;
   }
   if (msg) msg.style.display = 'none';
@@ -638,6 +640,7 @@ function filtrarDeptoFrancos() {
     if (totalGen) totalGen.style.display = '';
     if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
     if (titulo) titulo.style.display = 'none';
+    if (pt) pt.textContent = 'TODOS LOS DEPARTAMENTOS';
     return;
   }
   if (totalGen) totalGen.style.display = 'none';
@@ -645,7 +648,6 @@ function filtrarDeptoFrancos() {
   filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
   if (titulo) { titulo.textContent = dep.toUpperCase(); titulo.style.display = 'block'; }
-  const pt = document.getElementById('print-titulo-depto');
   if (pt) pt.textContent = dep.toUpperCase();
 }
 
@@ -678,6 +680,9 @@ async function guardarManualSemana() {
 }
 
 function imprimirDetalleFrancos() {
+  const dep = document.getElementById('filtro-depto-francos').value;
+  const pt = document.getElementById('print-titulo-depto');
+  if (pt && !pt.textContent) pt.textContent = dep && dep !== '__todos__' ? dep.toUpperCase() : 'TODOS LOS DEPARTAMENTOS';
   document.body.classList.add('print-detalle');
   window.print();
   document.body.classList.remove('print-detalle');
