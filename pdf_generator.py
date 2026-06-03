@@ -354,7 +354,7 @@ def _legajo_sort_key(x):
     except ValueError:
         return 0
 
-def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None, grosor_lunes=0.6):
+def generar_pdf_general(data, mes, salida=None, feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Informe de Fichadas - {mes}"
     pdf.feriados = set(feriados or [])
@@ -382,13 +382,16 @@ def generar_pdf_general(data, mes, salida="reporte_fichadas.pdf", feriados=None,
         pdf.tabla_registros(empleado.get("registros",[]),
                             excluido_ot=empleado.get("excluido_ot", False))
 
-    pdf.output(salida)
-    return os.path.abspath(salida)
+    if salida:
+        pdf.output(salida)
+        return os.path.abspath(salida)
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
 
 # --------------------------------------------  
 # GENERAR PDF RESUMEN  
 # --------------------------------------------
-def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, grosor_lunes=0.6):
+def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Resumen de Totales - {mes}"
     pdf.feriados = set(feriados or [])
@@ -477,6 +480,9 @@ def generar_pdf_resumen(data, mes, salida="reporte_resumen.pdf", feriados=None, 
     pdf.cell(anchos[7],6,str(tot_tar),1)
     pdf.ln()
 
-    pdf.output(salida)
-    return os.path.abspath(salida)
+    if salida:
+        pdf.output(salida)
+        return os.path.abspath(salida)
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
 

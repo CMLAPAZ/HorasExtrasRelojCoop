@@ -32,6 +32,8 @@
     .btn-del:hover{background:#fef2f2}
     .btn-francos{height:30px;padding:0 10px;background:#fff;border:1px solid #bbf7d0;border-radius:7px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;color:#166534}
     .btn-francos:hover{background:#dcfce7}
+    .btn-imprimir{height:30px;padding:0 10px;background:#fff;border:1px solid #c7d2fe;border-radius:7px;font-size:.78rem;font-weight:700;white-space:nowrap;color:#3730a3;text-decoration:none;display:inline-flex;align-items:center}
+    .btn-imprimir:hover{background:#eef2ff;border-color:#a5b4fc}
     .btn-reset{padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px}
     .warn-dup,.aviso-local{color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;font-size:.84rem;margin-top:10px}
     .aviso-local{margin-bottom:10px}
@@ -482,6 +484,8 @@ async function cargarSemanas() {
             <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
             <button type="button" class="btn-del"     onclick="eliminarSemana(${s.numero})">Eliminar</button>
             <button type="button" class="btn-francos" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}')">Guardar francos</button>
+            <a class="btn-imprimir" href="/semanas/${s.numero}/pdf" target="_blank" title="Informe detallado de esta semana (día a día por empleado)">🖨 Informe semana</a>
+            <a class="btn-imprimir" href="/semanas/acumulado/pdf?desde=1&hasta=${s.numero}&depto=${encodeURIComponent(s.departamento||'')}" target="_blank" title="Informe acumulado desde la primera semana del mes hasta esta">🖨 Acumulado</a>
           </div>
         </td>
       </tr>`;

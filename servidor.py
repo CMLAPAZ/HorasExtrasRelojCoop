@@ -1737,6 +1737,122 @@ def regenerar_semana(n):
                     "ya_confirmados": len(ya_confirmados)})
 
 
+@app.route("/semanas/<int:n>/pdf")
+def semana_pdf(n):
+    """Genera PDF detallado (día a día) de una semana ya procesada."""
+    if not _autenticado(): return _requiere_auth()
+    df = _cargar_semana_csv(n)
+    if df is None:
+        return "No hay datos para esta semana.", 404
+
+    meta       = _cargar_metadata()
+    sem_meta   = next((s for s in meta.get("semanas", []) if s["numero"] == n), None)
+    num_depto  = sem_meta.get("num_depto", n) if sem_meta else n
+    depto_label = sem_meta.get("departamento", "") if sem_meta else ""
+    fecha_desde = sem_meta.get("fecha_desde", "") if sem_meta else ""
+    fecha_hasta = sem_meta.get("fecha_hasta", "") if sem_meta else ""
+    legajos_semana = set(str(l) for l in (sem_meta.get("legajos") or [])) if sem_meta else set()
+
+    try:
+        empleados, _, _ = _procesar_empleados(_normalizar_columnas(df))
+    except Exception as e:
+        return f"Error al procesar datos: {e}", 500
+
+    if legajos_semana:
+        empleados = [e for e in empleados if str(e["legajo"]) in legajos_semana]
+    if depto_label:
+        for emp in empleados:
+            emp["departamento"] = depto_label
+    if not empleados:
+        return "No se encontraron empleados para esta semana.", 404
+
+    depto_visible = _nombre_departamento_visible(depto_label)
+    mes_label = f"Semana {num_depto} — {depto_visible} — {fecha_desde} al {fecha_hasta}"
+    feriados  = list(_cargar_feriados_config())
+
+    from pdf_generator import generar_pdf_general
+    try:
+        pdf_data = generar_pdf_general(empleados, mes_label, feriados=feriados)
+    except Exception as e:
+        return f"Error generando PDF: {e}", 500
+
+    nombre = f"semana_{num_depto}_{depto_label}_{fecha_desde}_{fecha_hasta}.pdf"
+    return send_file(BytesIO(pdf_data), mimetype="application/pdf",
+                     as_attachment=True, download_name=nombre)
+
+
+@app.route("/semanas/acumulado/pdf")
+def semanas_acumulado_pdf():
+    """Genera PDF detallado acumulado de varias semanas (para informar al supervisor al viernes)."""
+    if not _autenticado(): return _requiere_auth()
+    try:
+        desde = int(request.args.get("desde", 1))
+        hasta = int(request.args.get("hasta", 1))
+    except (TypeError, ValueError):
+        return "Parámetros desde/hasta inválidos.", 400
+
+    depto_param   = _normalizar_departamento_web(request.args.get("depto", "").strip())
+    meta          = _cargar_metadata()
+    semanas_rango = [s for s in meta.get("semanas", [])
+                     if desde <= s["numero"] <= hasta
+                     and (not depto_param or _normalizar_departamento_web(s.get("departamento","")) == depto_param)]
+    if not semanas_rango:
+        return "No hay semanas en ese rango.", 404
+
+    feriados        = list(_cargar_feriados_config())
+    todos_empleados = {}
+
+    for sem in semanas_rango:
+        n_sem       = sem["numero"]
+        depto_label  = sem.get("departamento", "")
+        legajos_sem  = set(str(l) for l in (sem.get("legajos") or []))
+        df = _cargar_semana_csv(n_sem)
+        if df is None:
+            continue
+        try:
+            empleados, _, _ = _procesar_empleados(_normalizar_columnas(df))
+        except Exception:
+            continue
+        if legajos_sem:
+            empleados = [e for e in empleados if str(e["legajo"]) in legajos_sem]
+        if depto_label:
+            for emp in empleados:
+                emp["departamento"] = depto_label
+        for emp in empleados:
+            key = str(emp["legajo"])
+            if key not in todos_empleados:
+                todos_empleados[key] = {
+                    "legajo":       emp["legajo"],
+                    "nombre":       emp["nombre"],
+                    "departamento": emp.get("departamento", ""),
+                    "registros":    [],
+                    "excluido_ot":  emp.get("excluido_ot", False),
+                }
+            todos_empleados[key]["registros"].extend(emp.get("registros", []))
+
+    if not todos_empleados:
+        return "No se pudieron obtener datos de las semanas seleccionadas.", 500
+
+    data    = list(todos_empleados.values())
+    sem_pri = min(semanas_rango, key=lambda s: s["numero"])
+    sem_ult = max(semanas_rango, key=lambda s: s["numero"])
+    fd      = sem_pri.get("fecha_desde", "")
+    fh      = sem_ult.get("fecha_hasta", "")
+    depto_label_0 = semanas_rango[0].get("departamento", "")
+    depto_visible = _nombre_departamento_visible(depto_label_0)
+    mes_label     = f"Acumulado — {depto_visible} — {fd} al {fh}"
+
+    from pdf_generator import generar_pdf_general
+    try:
+        pdf_data = generar_pdf_general(data, mes_label, feriados=feriados)
+    except Exception as e:
+        return f"Error generando PDF: {e}", 500
+
+    nombre = f"acumulado_{depto_label_0}_{fd}_{fh}.pdf"
+    return send_file(BytesIO(pdf_data), mimetype="application/pdf",
+                     as_attachment=True, download_name=nombre)
+
+
 @app.route("/estado")
 def estado():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
