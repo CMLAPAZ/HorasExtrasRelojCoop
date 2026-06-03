@@ -2716,6 +2716,300 @@ def periodos_ver(pid):
                            firma=FIRMA_SUPERVISOR)
 
 
+def _generar_pdf_cierre_completo(pid):
+    """PDF completo del cierre: horas día a día (si existen) + resumen totales
+    + saldo de francos + detalle de francos tomados. Un depto por cierre."""
+    from pdf_generator import PDFGeneral, _td_from_any, formato_horas, _round_to_hour
+
+    # ── Cargar datos ──────────────────────────────────────────────────────
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return None
+        p = dict(p)
+        emps_db = [dict(r) for r in conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY CAST(legajo AS INTEGER)",
+            (pid,)
+        ).fetchall()]
+        ft_db = [dict(r) for r in conn.execute(
+            "SELECT * FROM francos_cierre_detalle WHERE periodo_id=? "
+            "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (pid,)
+        ).fetchall()]
+        saldo_fin_map = {r["legajo"]: r["saldo"] for r in conn.execute(
+            "SELECT legajo, saldo FROM francos_saldo_inicial"
+        )}
+
+    saldo_ant = {}
+    try:
+        saldo_ant = json.loads(p.get("saldo_anterior") or "{}")
+    except Exception:
+        pass
+
+    departamento_norm = _normalizar_departamento_web(
+        emps_db[0].get("departamento", "") if emps_db else ""
+    )
+    depto_visible = _nombre_departamento_visible(departamento_norm) or "Sin departamento"
+    fd = p.get("fecha_desde", "")
+    fh = p.get("fecha_hasta", "")
+    legajos_cierre = {str(e["legajo"]) for e in emps_db}
+
+    # ── Horas: recargar CSVs de semanas ───────────────────────────────────
+    periodo_json_path = PERIODOS_DIR / (p.get("archivo") or "NADA")
+    semanas_numeros = []
+    if periodo_json_path.exists():
+        try:
+            pdata = json.loads(periodo_json_path.read_text(encoding="utf-8"))
+            semanas_numeros = pdata.get("semanas", [])
+        except Exception:
+            pass
+    if not semanas_numeros:
+        semanas_numeros = list(range(p.get("semana_desde", 1), p.get("semana_hasta", 1) + 1))
+
+    feriados = list(_cargar_feriados_config())
+    todos_horas = {}
+    for n_sem in semanas_numeros:
+        df_sem = _cargar_semana_csv(n_sem)
+        if df_sem is None:
+            continue
+        try:
+            emps_proc, _, _ = _procesar_empleados(_normalizar_columnas(df_sem))
+        except Exception:
+            continue
+        for emp in emps_proc:
+            if str(emp["legajo"]) not in legajos_cierre:
+                continue
+            key = str(emp["legajo"])
+            if key not in todos_horas:
+                todos_horas[key] = {
+                    "legajo":      emp["legajo"],
+                    "nombre":      emp["nombre"],
+                    "departamento": depto_visible,
+                    "registros":   [],
+                    "excluido_ot": emp.get("excluido_ot", False),
+                }
+            todos_horas[key]["registros"].extend(emp.get("registros", []))
+
+    tiene_horas = bool(todos_horas)
+
+    # ── Construir PDF ─────────────────────────────────────────────────────
+    pdf = PDFGeneral()
+    pdf.titulo   = f"Informe de Cierre #{pid} — {depto_visible}"
+    pdf.feriados = set(feriados)
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+
+    def titulo_seccion(texto):
+        pdf.set_fill_color(23, 32, 51)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(fam, "B", 10)
+        pdf.cell(0, 8, f"  {texto}", ln=1, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+    def cabecera_tabla(cols, anchos):
+        pdf.set_fill_color(200, 215, 240)
+        pdf.set_font(fam, "B", 7)
+        for col, ancho in zip(cols, anchos):
+            pdf.cell(ancho, 6, col, 1, 0, "C", fill=True)
+        pdf.ln()
+        pdf.set_font(fam, "", 7)
+
+    def check_pag(alto=6):
+        if pdf.get_y() + alto > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            return True
+        return False
+
+    # Portada
+    pdf.portada_abreviaciones(f"{depto_visible} — {fd} al {fh}")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 1: Detalle de horas día a día
+    # ══════════════════════════════════════════════════════════════════════
+    if tiene_horas:
+        pdf.add_page()
+        titulo_seccion(f"DETALLE DE HORAS POR EMPLEADO — {depto_visible}")
+        pdf.set_font(fam, "I", 8)
+        pdf.cell(0, 5, f"Período: {fd} al {fh}", ln=1)
+        pdf.ln(3)
+
+        emps_sorted = sorted(
+            todos_horas.values(),
+            key=lambda e: int(str(e["legajo"])) if str(e["legajo"]).isdigit() else 0
+        )
+        for i, emp in enumerate(emps_sorted):
+            if i > 0:
+                if pdf.h - pdf.get_y() - pdf.b_margin < 50:
+                    pdf.add_page()
+                else:
+                    pdf.ln(2)
+                    pdf.set_draw_color(180, 180, 180)
+                    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+                    pdf.set_draw_color(0, 0, 0)
+                    pdf.ln(2)
+            pdf.encabezado_empleado(emp["legajo"], emp["nombre"], emp.get("departamento", ""))
+            pdf.tabla_registros(emp.get("registros", []), excluido_ot=emp.get("excluido_ot", False))
+
+        # ══════════════════════════════════════════════════════════════════
+        # SECCIÓN 2: Resumen de totales
+        # ══════════════════════════════════════════════════════════════════
+        pdf.add_page()
+        titulo_seccion(f"RESUMEN DE TOTALES DEL PERÍODO — {depto_visible}")
+        pdf.set_font(fam, "I", 8)
+        pdf.cell(0, 5, f"Período: {fd} al {fh}", ln=1)
+        pdf.ln(3)
+
+        COLS_R = ["Leg.", "Nombre", "OT 50%", "OT 100%", "Comidas", "Francos", "Tard.", "Confirmado"]
+        ANCH_R = [12,     52,       22,        22,         16,        16,         16,     20]
+
+        cabecera_tabla(COLS_R, ANCH_R)
+
+        tot_ot50 = tot_ot100 = tot_com = tot_fr = tot_tard = tot_conf = 0
+        for e in sorted(emps_db, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
+            check_pag()
+            ot50  = _parse_hm(e.get("ot50")  or "0h")
+            ot100 = _parse_hm(e.get("ot100") or "0h")
+            com   = e.get("comidas", 0) or 0
+            fr    = e.get("francos", 0) or 0
+            tard  = e.get("tardanzas", 0) or 0
+            conf  = bool(e.get("confirmado"))
+            tot_ot50  += ot50; tot_ot100 += ot100
+            tot_com   += com;  tot_fr    += fr; tot_tard += tard
+            if conf: tot_conf += 1
+            pdf.cell(ANCH_R[0], 6, str(e["legajo"]), 1, 0, "C")
+            pdf.cell(ANCH_R[1], 6, e.get("nombre", ""), 1, 0, "L")
+            pdf.cell(ANCH_R[2], 6, formato_horas(_round_to_hour(ot50)),  1, 0, "C")
+            pdf.cell(ANCH_R[3], 6, formato_horas(_round_to_hour(ot100)), 1, 0, "C")
+            pdf.cell(ANCH_R[4], 6, str(com),  1, 0, "C")
+            pdf.cell(ANCH_R[5], 6, str(fr),   1, 0, "C")
+            pdf.cell(ANCH_R[6], 6, str(tard), 1, 0, "C")
+            pdf.cell(ANCH_R[7], 6, "✓ Sí" if conf else "Pendiente", 1, 1, "C")
+
+        # Fila de totales
+        pdf.set_fill_color(23, 32, 51); pdf.set_text_color(255, 255, 255)
+        pdf.set_font(fam, "B", 7)
+        pdf.cell(ANCH_R[0] + ANCH_R[1], 6, "TOTALES", 1, 0, "R", fill=True)
+        pdf.cell(ANCH_R[2], 6, formato_horas(_round_to_hour(tot_ot50)),  1, 0, "C", fill=True)
+        pdf.cell(ANCH_R[3], 6, formato_horas(_round_to_hour(tot_ot100)), 1, 0, "C", fill=True)
+        pdf.cell(ANCH_R[4], 6, str(tot_com),  1, 0, "C", fill=True)
+        pdf.cell(ANCH_R[5], 6, str(tot_fr),   1, 0, "C", fill=True)
+        pdf.cell(ANCH_R[6], 6, str(tot_tard), 1, 0, "C", fill=True)
+        pdf.cell(ANCH_R[7], 6, f"{tot_conf}/{len(emps_db)}", 1, 1, "C", fill=True)
+        pdf.set_text_color(0, 0, 0)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 3: Saldo de francos al cierre
+    # ══════════════════════════════════════════════════════════════════════
+    pdf.add_page()
+    titulo_seccion(f"SALDO DE FRANCOS AL CIERRE — {depto_visible}")
+    pdf.set_font(fam, "I", 8)
+    pdf.cell(0, 5, f"Período: {fd} al {fh}", ln=1)
+    pdf.ln(3)
+
+    COLS_S = ["Leg.", "Nombre", "Saldo anterior", "Generados período", "Tomados", "Saldo final"]
+    ANCH_S = [12,     52,       28,                28,                  20,         24]
+
+    cabecera_tabla(COLS_S, ANCH_S)
+
+    tomados_por_leg = {}
+    for ft in ft_db:
+        leg = str(ft["legajo"])
+        tomados_por_leg[leg] = tomados_por_leg.get(leg, 0) + (ft.get("dias") or 0)
+
+    tot_sal_ant = tot_gen = tot_tom = tot_sal_fin = 0
+    for e in sorted(emps_db, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
+        check_pag()
+        leg = str(e["legajo"])
+        ant_data = saldo_ant.get(leg, {})
+        si_ant  = ant_data.get("saldo", 0) if isinstance(ant_data, dict) else 0
+        gen_per = e.get("francos", 0) or 0
+        tom     = tomados_por_leg.get(leg, 0)
+        sf      = saldo_fin_map.get(leg, si_ant + gen_per - tom)
+        tot_sal_ant += si_ant; tot_gen += gen_per
+        tot_tom     += tom;    tot_sal_fin += sf
+
+        if sf > 0:   pdf.set_fill_color(220, 252, 231)
+        elif sf < 0: pdf.set_fill_color(254, 202, 202)
+        else:        pdf.set_fill_color(241, 245, 249)
+        fill = True
+
+        pdf.cell(ANCH_S[0], 6, leg,               1, 0, "C", fill)
+        pdf.cell(ANCH_S[1], 6, e.get("nombre",""),1, 0, "L", fill)
+        pdf.cell(ANCH_S[2], 6, str(si_ant),        1, 0, "C", fill)
+        pdf.cell(ANCH_S[3], 6, str(gen_per),       1, 0, "C", fill)
+        pdf.cell(ANCH_S[4], 6, str(tom),           1, 0, "C", fill)
+        pdf.cell(ANCH_S[5], 6, str(sf),            1, 1, "C", fill)
+        pdf.set_fill_color(255, 255, 255)
+
+    pdf.set_fill_color(23, 32, 51); pdf.set_text_color(255, 255, 255)
+    pdf.set_font(fam, "B", 7)
+    pdf.cell(ANCH_S[0] + ANCH_S[1], 6, "TOTALES", 1, 0, "R", fill=True)
+    pdf.cell(ANCH_S[2], 6, str(tot_sal_ant), 1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[3], 6, str(tot_gen),     1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[4], 6, str(tot_tom),     1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[5], 6, str(tot_sal_fin), 1, 1, "C", fill=True)
+    pdf.set_text_color(0, 0, 0)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 4: Detalle de francos tomados
+    # ══════════════════════════════════════════════════════════════════════
+    if ft_db:
+        pdf.add_page()
+        titulo_seccion(f"DETALLE DE FRANCOS TOMADOS — {depto_visible}")
+        pdf.set_font(fam, "I", 8)
+        pdf.cell(0, 5, f"Período: {fd} al {fh}", ln=1)
+        pdf.ln(3)
+
+        COLS_F = ["Leg.", "Nombre", "Tipo", "Fechas", "Días", "Estado", "Observaciones"]
+        ANCH_F = [12,     52,       14,      60,        10,     20,       22]
+
+        cabecera_tabla(COLS_F, ANCH_F)
+
+        for ft in ft_db:
+            tipo = ft.get("tipo", "")
+            if tipo == "UNICO":
+                fechas = ft.get("fecha_desde", "")
+            elif tipo == "RANGO":
+                fechas = f"{ft.get('fecha_desde','')} → {ft.get('fecha_hasta','')}"
+            else:
+                try:
+                    fl = json.loads(ft.get("fechas_sueltas") or "[]")
+                    fechas = ", ".join(fl[:3]) + (f" +{len(fl)-3}" if len(fl) > 3 else "")
+                except Exception:
+                    fechas = ft.get("fecha_desde", "")
+
+            check_pag()
+            pdf.cell(ANCH_F[0], 6, str(ft.get("legajo","")),       1, 0, "C")
+            pdf.cell(ANCH_F[1], 6, ft.get("nombre",""),             1, 0, "L")
+            pdf.cell(ANCH_F[2], 6, tipo,                            1, 0, "C")
+            pdf.cell(ANCH_F[3], 6, fechas,                          1, 0, "L")
+            pdf.cell(ANCH_F[4], 6, str(ft.get("dias", 0)),          1, 0, "C")
+            pdf.cell(ANCH_F[5], 6, ft.get("estado",""),             1, 0, "C")
+            pdf.cell(ANCH_F[6], 6, ft.get("observaciones","") or "", 1, 1, "L")
+
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+
+
+@app.route("/periodos/<int:pid>/informe_completo")
+def periodos_informe_completo(pid):
+    """PDF completo del cierre: horas + saldo francos + detalle tomados."""
+    if not _autenticado(): return _requiere_auth()
+    try:
+        pdf_data = _generar_pdf_cierre_completo(pid)
+    except Exception as e:
+        return f"Error generando informe: {e}", 500
+    if pdf_data is None:
+        return "Cierre no encontrado.", 404
+    with _get_db() as conn:
+        p = conn.execute("SELECT fecha_desde, fecha_hasta FROM periodos WHERE id=?", (pid,)).fetchone()
+    fd = (p["fecha_desde"] if p else "").replace("-","")
+    fh = (p["fecha_hasta"] if p else "").replace("-","")
+    nombre = f"informe_cierre_{pid}_{fd}_{fh}.pdf"
+    return send_file(BytesIO(pdf_data), mimetype="application/pdf",
+                     as_attachment=True, download_name=nombre)
+
+
 @app.route("/periodos/francos_pdf/<int:pid>")
 def periodos_francos_pdf(pid):
     if not _autenticado(): return _requiere_auth()

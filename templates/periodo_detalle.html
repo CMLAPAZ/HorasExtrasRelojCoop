@@ -47,6 +47,8 @@
     .depto-header-ft td{background:#1e3a5f;color:#e0eaf8;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:9px 10px}
     .btn-impr{height:34px;padding:0 14px;background:#0f5132;color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer}
     .btn-impr:hover{background:#166534}
+    .btn-informe{background:#172033;color:#fff;border-color:#172033}
+    .btn-informe:hover{background:#25314a;color:#fff;border-color:#25314a}
 
     /* ── PRINT ─────────────────────────────── */
     .print-block{display:none}
@@ -103,6 +105,7 @@
       <a href="/periodos/historial">← Historial</a>
       <a href="/">Panel</a>
       <a href="/logout">Salir</a>
+      <a href="/periodos/{{ pid }}/informe_completo" target="_blank" class="btn btn-informe">📄 Informe completo</a>
       <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir / PDF</button>
     </div>
   </div>
