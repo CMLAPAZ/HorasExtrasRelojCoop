@@ -165,6 +165,21 @@ def _init_db():
                 cargado_en TEXT DEFAULT ''
             )
         """)
+        # Columnas para el cierre mensual (no alteran datos existentes)
+        for col in (
+            "tomados_al_corte INTEGER DEFAULT 0",
+            "gen_extra_al_corte INTEGER DEFAULT 0",
+            "fecha_corte TEXT DEFAULT '2026-05-21'",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE francos_saldo_inicial ADD COLUMN {col}")
+            except Exception:
+                pass
+        # Columna para guardar snapshot de saldo anterior (reversión al anular)
+        try:
+            conn.execute("ALTER TABLE periodos ADD COLUMN saldo_anterior TEXT DEFAULT '{}'")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_generados (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2465,6 +2480,81 @@ def periodo_cerrar():
     meta["semana_actual"] = max((s.get("numero", 0) for s in meta["semanas"]), default=0)
     _guardar_metadata(meta)
 
+    # ── Actualización automática de saldo_inicial ──────────────────────────
+    # Se ejecuta DESPUÉS de limpiar sesión y parciales para que _calcular_saldos()
+    # devuelva el saldo neto real sin doble conteo.
+    try:
+        saldos_nuevos = _calcular_saldos()
+        legajos_cierre_set = {str(e.get("legajo", "")) for e in resumen}
+        ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with _get_db() as conn:
+            # Guardar snapshot de saldos anteriores para poder revertir al anular
+            saldo_ant = {}
+            for leg in legajos_cierre_set:
+                row = conn.execute(
+                    "SELECT saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte "
+                    "FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+                ).fetchone()
+                if row:
+                    saldo_ant[leg] = {
+                        "saldo":              row["saldo"],
+                        "tomados_al_corte":   row["tomados_al_corte"]   or 0,
+                        "gen_extra_al_corte": row["gen_extra_al_corte"] or 0,
+                        "fecha_corte":        row["fecha_corte"]         or "2026-05-21",
+                    }
+                else:
+                    saldo_ant[leg] = {"saldo": 0, "tomados_al_corte": 0,
+                                      "gen_extra_al_corte": 0, "fecha_corte": "2026-05-21"}
+
+            conn.execute(
+                "UPDATE periodos SET saldo_anterior=? WHERE id=?",
+                (json.dumps(saldo_ant, ensure_ascii=False), pid)
+            )
+
+            # Leer totales actuales de tomados y gen_extra para cada legajo del cierre
+            tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+                "SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo"
+            )}
+            gen_extra_totales = {}
+            for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo"):
+                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+            for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo"):
+                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+
+            # Actualizar saldo_inicial con el saldo actual calculado
+            for s in saldos_nuevos:
+                leg = str(s["legajo"])
+                if leg not in legajos_cierre_set:
+                    continue
+                emp_resumen = next((e for e in resumen if str(e.get("legajo","")) == leg), None)
+                nombre = emp_resumen.get("nombre", s["nombre"]) if emp_resumen else s["nombre"]
+                conn.execute("""
+                    INSERT INTO francos_saldo_inicial
+                        (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
+                    VALUES (?,?,?,?,?,?,?,?)
+                    ON CONFLICT(legajo) DO UPDATE SET
+                        saldo              = excluded.saldo,
+                        nota               = excluded.nota,
+                        cargado_en         = excluded.cargado_en,
+                        tomados_al_corte   = excluded.tomados_al_corte,
+                        gen_extra_al_corte = excluded.gen_extra_al_corte,
+                        fecha_corte        = excluded.fecha_corte
+                """, (
+                    leg, nombre,
+                    s["saldo_actual"],
+                    f"Actualizado automáticamente al cerrar período #{pid} ({fecha_hasta_p})",
+                    ahora_str,
+                    tomados_totales.get(leg, 0),
+                    gen_extra_totales.get(leg, 0),
+                    fecha_hasta_p,
+                ))
+            conn.commit()
+    except Exception as exc_saldo:
+        # No fallar el cierre por un error en la actualización del saldo
+        import traceback
+        print(f"[ADVERTENCIA] Error al actualizar saldo_inicial: {exc_saldo}\n{traceback.format_exc()}")
+
     return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json"})
 
 
@@ -2544,6 +2634,33 @@ def periodo_anular(pid):
                 json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             except Exception:
                 pass
+
+    # ── Restaurar saldo_inicial si el cierre tenía snapshot ─────────────────
+    try:
+        saldo_ant_raw = p["saldo_anterior"] if "saldo_anterior" in p.keys() else None
+        if saldo_ant_raw:
+            saldo_ant = json.loads(saldo_ant_raw)
+            if saldo_ant:
+                ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                with _get_db() as conn:
+                    for leg, vals in saldo_ant.items():
+                        conn.execute("""
+                            UPDATE francos_saldo_inicial
+                            SET saldo=?, tomados_al_corte=?, gen_extra_al_corte=?,
+                                fecha_corte=?, nota=?, cargado_en=?
+                            WHERE legajo=?
+                        """, (
+                            vals.get("saldo", 0),
+                            vals.get("tomados_al_corte", 0),
+                            vals.get("gen_extra_al_corte", 0),
+                            vals.get("fecha_corte", "2026-05-21"),
+                            f"Restaurado al anular período #{pid}",
+                            ahora_str,
+                            leg,
+                        ))
+                    conn.commit()
+    except Exception as exc_rest:
+        print(f"[ADVERTENCIA] Error al restaurar saldo_inicial al anular #{pid}: {exc_rest}")
 
     return jsonify({"ok": True})
 
@@ -2687,25 +2804,57 @@ def admin_reset():
 # FRANCOS TOMADOS
 # ═══════════════════════════════════════════════
 def _calcular_saldos():
-    """Saldo por empleado = saldo_inicial + generados_periodos + generados_manual - tomados."""
+    """Saldo por empleado = saldo_inicial + generados_nuevos - tomados_nuevos.
+    Las columnas tomados_al_corte, gen_extra_al_corte y fecha_corte permiten que
+    el cierre mensual actualice saldo_inicial sin perder ni duplicar datos."""
     with _get_db() as conn:
-        iniciales    = {r["legajo"]: r["saldo"] for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial")}
-        # Solo períodos cerrados DESPUÉS del saldo inicial (04/05/2026); los anteriores ya están en saldo_inicial
-        gen_periodos = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
-            "SELECT pe.legajo, SUM(pe.francos) as total FROM periodo_empleados pe "
+        iniciales = {}
+        for r in conn.execute(
+            "SELECT legajo, saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte "
+            "FROM francos_saldo_inicial"
+        ):
+            iniciales[r["legajo"]] = {
+                "saldo":              r["saldo"],
+                "tomados_al_corte":   r["tomados_al_corte"]   or 0,
+                "gen_extra_al_corte": r["gen_extra_al_corte"] or 0,
+                "fecha_corte":        r["fecha_corte"]         or "2026-05-21",
+            }
+
+        # Todos los generados por períodos cerrados (se filtra por fecha_corte per-empleado abajo)
+        all_pe = conn.execute(
+            "SELECT pe.legajo, pe.francos, p.fecha_hasta "
+            "FROM periodo_empleados pe "
             "JOIN periodos p ON pe.periodo_id = p.id "
-            "WHERE p.fecha_hasta > '2026-05-21' GROUP BY pe.legajo"
-        )}
-        gen_manual   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
-        gen_parcial  = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
-        gen_manual_sem = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
-        tomados      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
+            "WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'"
+        ).fetchall()
+
+        gen_manual_raw   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
+        gen_parcial      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
+        gen_manual_sem   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
+        tomados_raw      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
+
+    # gen_periodos filtrado por fecha_corte de cada empleado
+    gen_periodos_por_emp = {}
+    for row in all_pe:
+        leg = row["legajo"]
+        corte = iniciales.get(leg, {}).get("fecha_corte", "2026-05-21")
+        if (row["fecha_hasta"] or "") > corte:
+            gen_periodos_por_emp[leg] = gen_periodos_por_emp.get(leg, 0) + (row["francos"] or 0)
+
     resultado = []
     for emp in _empleados_conocidos():
-        leg = emp["legajo"]
-        si  = iniciales.get(leg, 0)
-        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_parcial.get(leg, 0) + gen_manual_sem.get(leg, 0)
-        tom = tomados.get(leg, 0)
+        leg  = emp["legajo"]
+        ini  = iniciales.get(leg, {"saldo": 0, "tomados_al_corte": 0, "gen_extra_al_corte": 0, "fecha_corte": "2026-05-21"})
+        si   = ini["saldo"]
+        t_corte   = ini["tomados_al_corte"]
+        ge_corte  = ini["gen_extra_al_corte"]
+
+        gen_extra_total = gen_manual_raw.get(leg, 0) + gen_manual_sem.get(leg, 0)
+        gen = (gen_periodos_por_emp.get(leg, 0)
+               + max(0, gen_extra_total - ge_corte)
+               + gen_parcial.get(leg, 0))
+        tom = max(0, tomados_raw.get(leg, 0) - t_corte)
+
         resultado.append({
             "legajo":       leg,
             "nombre":       emp["nombre"],
