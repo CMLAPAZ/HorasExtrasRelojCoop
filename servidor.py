@@ -517,28 +517,43 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
     msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
-def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta):
-    """Copia francos_tomados del período a francos_cierre_detalle y genera PDF."""
+def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, departamento=""):
+    """Copia francos_tomados del período a francos_cierre_detalle y genera PDF.
+    Filtra por legajos del departamento que se está cerrando para no mezclar deptos."""
     if not fecha_desde or not fecha_hasta:
         return
-    rows = conn.execute("""
-        SELECT legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
-               fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
-        FROM francos_tomados
-        WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
-        ORDER BY departamento, CAST(legajo AS INTEGER), fecha_desde
-    """, (fecha_hasta, fecha_desde)).fetchall()
+    legajos_norm = [str(l) for l in (legajos or [])]
+    if legajos_norm:
+        placeholders = ",".join("?" * len(legajos_norm))
+        rows = conn.execute(f"""
+            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+            FROM francos_tomados
+            WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
+              AND legajo IN ({placeholders})
+            ORDER BY CAST(legajo AS INTEGER), fecha_desde
+        """, (fecha_hasta, fecha_desde, *legajos_norm)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+            FROM francos_tomados
+            WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
+            ORDER BY CAST(legajo AS INTEGER), fecha_desde
+        """, (fecha_hasta, fecha_desde)).fetchall()
+    depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
     for r in rows:
         conn.execute("""
             INSERT INTO francos_cierre_detalle
               (periodo_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
                fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (pid, r["legajo"], r["nombre"], r["departamento"] or "", r["tipo"],
+        """, (pid, r["legajo"], r["nombre"], depto_visible, r["tipo"],
               r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
               r["dias"], r["estado"] or "", r["fecha_emision"] or "",
               r["autorizado_por"] or "", r["observaciones"] or ""))
-    _generar_pdf_francos_cierre(pid, [dict(r) for r in rows], fecha_desde, fecha_hasta)
+    francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
+    _generar_pdf_francos_cierre(pid, francos_list, fecha_desde, fecha_hasta)
 
 
 def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
@@ -2406,8 +2421,10 @@ def periodo_cerrar():
                  json.dumps([semanas_visibles_mapa.get(int(s), s) for s in e.get("semanas",[])]),
                  1 if e.get("confirmado") else 0)
             )
-        # Snapshot de francos tomados para historial del cierre
-        _snapshot_francos_cierre(conn, pid, fecha_desde_p, fecha_hasta_p)
+        # Snapshot de francos tomados — solo legajos del departamento cerrado
+        legajos_cierre = [str(e.get("legajo", "")) for e in resumen]
+        _snapshot_francos_cierre(conn, pid, fecha_desde_p, fecha_hasta_p,
+                                 legajos=legajos_cierre, departamento=departamento)
         # Borrar parciales de francos de las semanas cerradas
         conn.execute(
             "DELETE FROM francos_semana_parcial WHERE semana_num BETWEEN ? AND ?",
