@@ -252,8 +252,9 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | POST | `/semanas/<n>/guardar-francos` | `guardar_francos_semana(n)` | Guarda saldo parcial de francos de una semana en DB |
 | POST | `/semanas/guardar-francos-todos` | `guardar_francos_todos()` | Guarda francos de todas las semanas activas |
 | POST | `/semanas/<n>/regenerar` | `regenerar_semana(n)` | Regenera links para empleados pendientes |
-| GET | `/semanas/<n>/pdf` | `semana_pdf(n)` | **PDF detallado día a día** de la semana N (para el supervisor) |
+| GET | `/semanas/<n>/pdf` | `semana_pdf(n)` | **PDF detallado día a día** de la semana N (para el supervisor el viernes) |
 | GET | `/semanas/acumulado/pdf` | `semanas_acumulado_pdf()` | **PDF acumulado** de varias semanas; params: `desde`, `hasta`, `depto` |
+| GET | `/periodos/<pid>/informe_completo` | `periodos_informe_completo(pid)` | **PDF completo del cierre**: horas + resumen + saldo francos + detalle tomados |
 | GET | `/estado` | `estado()` | Estado de confirmaciones por empleado (JSON) |
 | GET | `/historial` | `historial()` | Historial de confirmaciones, filtrable por depto y semana |
 | GET | `/historial/acumulado` | `historial_acumulado()` | Acumulado de OT por empleado y semana |
@@ -486,17 +487,75 @@ No commiteado (está en `.gitignore`). En PythonAnywhere debe existir copia loca
 
 ---
 
-## Features pendientes
+## Implementado en sesión 03/06/2026
 
-### Asignación de horario especial por empleado (Redes)
+### Informes semanales imprimibles (supervisor.html)
+Botones nuevos en cada fila de semana del panel supervisor:
+- **🖨 Informe semana** → `GET /semanas/<n>/pdf` — PDF día a día de esa semana (para mostrar al supervisor el viernes)
+- **🖨 Acumulado** → `GET /semanas/acumulado/pdf?desde=1&hasta=N&depto=X` — PDF acumulado de todas las semanas del depto
+
+Ambos recargan el CSV guardado y reprocesan con `procesar_fichadas()`. Sin tocar cálculos.
+
+### Separación por departamento en cierre (fix crítico)
+`_snapshot_francos_cierre` ahora filtra por legajos del departamento que se cierra.
+Antes capturaba francos de todos los deptos que coincidieran en fechas.
+Cada cierre graba el nombre del depto en `francos_cierre_detalle.departamento`.
+
+### Actualización automática de saldo_inicial al cerrar período
+Al ejecutar `periodo_cerrar`, al final del proceso (después de limpiar sesión y parciales)
+se actualiza automáticamente `francos_saldo_inicial` con el saldo neto real del cierre.
+
+**Schema nuevo** (solo ADD COLUMN, no toca datos):
+- `francos_saldo_inicial`: `+tomados_al_corte`, `+gen_extra_al_corte`, `+fecha_corte`
+- `periodos`: `+saldo_anterior` (JSON para revertir al anular)
+
+**`_calcular_saldos()` actualizado** para usar `fecha_corte` por empleado (en vez de fecha hardcodeada) y netear tomados/gen_extra con sus valores `al_corte`. Para datos existentes (columnas en 0/'2026-05-21') el resultado es idéntico al anterior.
+
+**Reversión**: al anular un cierre (`periodo_anular`), se restauran los saldos anteriores desde `periodos.saldo_anterior`.
+
+### PDF completo de cierre (`_generar_pdf_cierre_completo`)
+Botón "📄 Informe completo" en `/periodos/ver/<pid>`.
+Ruta: `GET /periodos/<pid>/informe_completo`
+
+Secciones según si el depto tiene fichadas o no:
+
+| Sección | Redes / Admin | Guardias / Internet / Telefonía |
+|---|---|---|
+| Detalle de horas día a día | ✓ | — |
+| Resumen de totales | ✓ | — |
+| Saldo de francos al cierre | ✓ | ✓ |
+| Detalle de francos tomados | ✓ | ✓ |
+
+Saldo final en verde (>0), rojo (<0), gris (=0). Un departamento por PDF, sin mezcla.
+
+### `pdf_generator.py` — generación en memoria
+`generar_pdf_general` y `generar_pdf_resumen` ahora soportan `salida=None` (retornan bytes).
+La llamada desde `main.py` (Tkinter) sigue igual — pasa la ruta explícita.
+
+---
+
+## Pendiente para próxima sesión
+
+### 1. Botón "Informe mensual completo" (baja prioridad)
+Un PDF que combine los cierres de todos los deptos de un mes en un solo archivo,
+con salto de página entre departamentos. Se genera desde una pantalla separada
+o desde el historial de cierres filtrando por mes.
+
+### 2. Reestructuración de UI/layout (alta prioridad)
+Objetivo: que la nueva persona que reemplaza a Carola pueda usar la app sola.
+Plan acordado:
+- Navegación simplificada: 5 secciones con nombres en lenguaje común
+- Dashboard de inicio: estado actual por departamento (semáforo verde/amarillo/gris)
+- Flujo de carga semanal paso a paso (wizard)
+- Textos de ayuda en cada sección
+- Fusionar "Historial acumulado" dentro de "Cierre mensual" (misma tabla)
+- Mover acciones destructivas a una zona de administración separada
+
+### 3. Asignación de horario especial por empleado (Redes)
 Extender el formulario web para que el supervisor asigne horario especial a cualquier
 empleado de Redes por rango de fechas. La lógica en `obtener_inicio_asignado()` ya
 soporta esto — falta UI y persistencia en DB (hoy solo existe para Karen Soto en
 `config.json → asignaciones_especiales`).
-
-### Reestructuración de UI/layout
-Pendiente: revisar flujo de pantallas, hacer la interfaz más intuitiva y bien explicada.
-Ver discusión en issue / historial de conversación con Carola Martin.
 
 ---
 
