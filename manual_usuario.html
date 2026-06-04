@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual de Usuario — CM Horas Extras</title>
+<style>
+:root{--sw:270px;--pri:#172033;--pri2:#1e3a5f;--acc:#3b82f6;--acc-l:#dbeafe;--warn:#f59e0b;--warn-bg:#fffbeb;--warn-br:#fde68a;--dan:#dc2626;--dan-bg:#fef2f2;--dan-br:#fecaca;--ok:#16a34a;--ok-bg:#f0fdf4;--ok-br:#bbf7d0;--pur:#7c3aed;--pur-bg:#f5f3ff;--pur-br:#c4b5fd;--txt:#111827;--mut:#6b7280;--brd:#e5e7eb;--bg:#f4f6f8;--card:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--txt);font-size:16px;line-height:1.65}
+/* ── Sidebar ── */
+#sb{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--pri);overflow-y:auto;z-index:100;display:flex;flex-direction:column}
+#sb-head{padding:18px 16px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sb-head h2{color:#fff;font-size:.88rem;font-weight:800;line-height:1.3}
+#sb-head p{color:rgba(255,255,255,.45);font-size:.7rem;margin-top:2px}
+#sb-search{width:100%;padding:7px 10px;border:1px solid rgba(255,255,255,.18);border-radius:6px;background:rgba(255,255,255,.1);color:#fff;font-size:.8rem;font-family:inherit;margin-top:10px}
+#sb-search::placeholder{color:rgba(255,255,255,.35)}
+#sb-search:focus{outline:none;border-color:rgba(255,255,255,.4)}
+#nav{list-style:none;padding:8px 0;flex:1}
+#nav .grp{padding:10px 16px 3px;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.3)}
+#nav .div{height:1px;background:rgba(255,255,255,.07);margin:6px 14px}
+#nav li a{display:flex;align-items:center;gap:8px;padding:7px 16px;color:rgba(255,255,255,.68);text-decoration:none;font-size:.8rem;font-weight:500;border-left:3px solid transparent;transition:all .13s}
+#nav li a:hover{color:#fff;background:rgba(255,255,255,.07)}
+#nav li a.active{color:#fff;background:rgba(255,255,255,.11);border-left-color:#60a5fa}
+#nav li a .ico{width:17px;text-align:center;flex-shrink:0}
+/* ── Main ── */
+#main{margin-left:var(--sw);padding:40px 52px;max-width:calc(var(--sw) + 840px)}
+.sec{margin-bottom:64px;scroll-margin-top:28px}
+/* Section header */
+.sec-hd{display:flex;align-items:center;gap:14px;margin-bottom:24px;padding-bottom:14px;border-bottom:2px solid var(--brd)}
+.sec-ico{width:50px;height:50px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+.ico-w{background:var(--acc-l)}
+.ico-m{background:var(--pur-bg)}
+.ico-d{background:var(--dan-bg)}
+.ico-g{background:#f8fafc}
+.ico-i{background:#f0f9ff}
+.sec-tag{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+.tag-w{color:var(--acc)}.tag-m{color:var(--pur)}.tag-d{color:var(--dan)}.tag-g{color:var(--mut)}.tag-i{color:#0369a1}
+.sec-ttl{font-size:1.55rem;font-weight:800;color:var(--pri);line-height:1.2}
+.sec-sub{font-size:.87rem;color:var(--mut);margin-top:3px}
+/* Card */
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card-ttl{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin-bottom:14px}
+/* Alerts */
+.alert{display:flex;gap:12px;padding:13px 17px;border-radius:10px;margin-bottom:14px;font-size:.9rem;line-height:1.5}
+.a-ico{font-size:1.15rem;flex-shrink:0;margin-top:1px}
+.a-dan{background:var(--dan-bg);border:1px solid var(--dan-br);color:#7f1d1d}
+.a-warn{background:var(--warn-bg);border:1px solid var(--warn-br);color:#78350f}
+.a-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a}
+.a-ok{background:var(--ok-bg);border:1px solid var(--ok-br);color:#14532d}
+.a-carola{background:#fdf4ff;border:1px solid #e9d5ff;color:#4a044e}
+.a-body strong{display:block;font-weight:800;margin-bottom:2px}
+/* Steps */
+.steps{display:flex;flex-direction:column;gap:12px}
+.step{display:flex;gap:14px}
+.snum{width:30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;font-size:.82rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:3px}
+.sbody .st{font-weight:700;font-size:.93rem;margin-bottom:3px}
+.sbody .sd{font-size:.87rem;color:#374151}
+/* Checklist */
+.cl{list-style:none}
+.cl li{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--brd);font-size:.9rem}
+.cl li:last-child{border-bottom:none}
+.cl input[type=checkbox]{width:18px;height:18px;margin-top:3px;cursor:pointer;accent-color:var(--ok);flex-shrink:0}
+.cl label{cursor:pointer;line-height:1.5}
+.cl input:checked+label{text-decoration:line-through;color:var(--mut)}
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:.7rem;font-weight:800;white-space:nowrap}
+.b-r{background:#dbeafe;color:#1e40af}
+.b-a{background:#dcfce7;color:#166534}
+.b-g{background:#fef3c7;color:#92400e}
+.b-in{background:#ecfdf5;color:#065f46}
+.b-t{background:#fdf4ff;color:#7e22ce}
+.b-w{background:#dbeafe;color:#1d4ed8}
+.b-m{background:#ede9fe;color:#6d28d9}
+/* Timeline */
+.tl{position:relative;padding-left:26px}
+.tl::before{content:'';position:absolute;left:9px;top:8px;bottom:8px;width:2px;background:var(--brd)}
+.tl-item{position:relative;margin-bottom:22px}
+.tl-dot{position:absolute;left:-22px;top:5px;width:13px;height:13px;border-radius:50%;border:2px solid #fff}
+.d-b{background:var(--acc)}.d-o{background:var(--warn)}.d-p{background:var(--pur)}.d-g{background:var(--ok)}.d-r{background:var(--dan)}
+.tl-lbl{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px}
+.l-b{color:var(--acc)}.l-o{color:#d97706}.l-p{color:var(--pur)}.l-g{color:var(--ok)}.l-r{color:var(--dan)}
+.tl-cnt{font-size:.9rem}.tl-note{font-size:.78rem;color:var(--mut);margin-top:2px}
+/* Table */
+.tbl{width:100%;border-collapse:collapse;font-size:.87rem}
+.tbl th{background:#f8fafc;text-align:left;padding:8px 12px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);border-bottom:2px solid var(--brd)}
+.tbl td{padding:9px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+/* Misc */
+p{margin-bottom:12px}p:last-child{margin-bottom:0}
+strong{font-weight:700}
+h3{font-size:1.05rem;font-weight:700;color:var(--pri);margin:20px 0 10px}
+h4{font-size:.92rem;font-weight:700;color:#374151;margin:16px 0 8px}
+ul,ol{padding-left:22px;margin-bottom:12px}
+li{margin-bottom:5px;font-size:.9rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.txt-dan{color:var(--dan);font-weight:700}
+.txt-ok{color:var(--ok);font-weight:700}
+.txt-mut{color:var(--mut)}
+.print-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;background:var(--pri);color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer;margin-bottom:14px}
+.print-btn:hover{background:#25314a}
+/* Glosario */
+.gl-item{border-bottom:1px solid var(--brd);padding:12px 0}
+.gl-item:last-child{border-bottom:none}
+.gl-item dt{font-weight:700;font-size:.93rem;color:var(--pri);margin-bottom:3px}
+.gl-item dd{font-size:.87rem;color:#374151;margin:0}
+/* Big warning banner */
+.big-warn{background:#fef2f2;border:2px solid var(--dan-br);border-radius:12px;padding:18px 22px;margin-bottom:20px}
+.big-warn h3{color:var(--dan);font-size:1.1rem;margin:0 0 8px}
+.big-warn p{font-size:.9rem;color:#7f1d1d;margin-bottom:6px}
+.big-warn p:last-child{margin-bottom:0}
+/* Welcome card */
+.welcome{background:var(--pri);border-radius:12px;padding:28px 32px;margin-bottom:32px;color:#fff}
+.welcome h1{font-size:1.8rem;font-weight:800;margin-bottom:6px}
+.welcome p{color:rgba(255,255,255,.75);font-size:.95rem}
+.info-pill{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 14px;font-size:.85rem;margin:6px 6px 0 0}
+.info-pill strong{color:#fff}
+.info-pill span{color:rgba(255,255,255,.65)}
+/* Fichadas review */
+.fichada-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;margin-bottom:6px;font-size:.88rem}
+.fr-ok{background:#f0fdf4;border:1px solid var(--ok-br)}
+.fr-warn{background:var(--warn-bg);border:1px solid var(--warn-br)}
+.fr-err{background:var(--dan-bg);border:1px solid var(--dan-br)}
+.fr-ico{font-size:1rem;flex-shrink:0}
+/* ── Mockups de pantalla ── */
+.mock-wrap{margin:20px 0 8px;border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.13);border:1px solid #d1d5db;font-family:Inter,system-ui,sans-serif}
+.mock-bar{background:#e8eaed;padding:7px 12px;display:flex;align-items:center;gap:5px}
+.mock-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.md-r{background:#ff5f57}.md-y{background:#ffbd2e}.md-g{background:#28c840}
+.mock-url{flex:1;background:#fff;border-radius:5px;padding:3px 10px;font-size:.72rem;color:#5f6368;margin:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-lbl{font-size:.7rem;color:#9ca3af;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.mock-body{background:#f4f6f8;padding:14px 16px;font-size:.8rem;color:#111827}
+/* Mini nav */
+.mn{background:var(--pri);padding:8px 14px;display:flex;align-items:center;justify-content:space-between}
+.mn-brand{color:#fff;font-size:.82rem;font-weight:800}
+.mn-links{display:flex;gap:6px}
+.mn-link{color:rgba(255,255,255,.65);font-size:.7rem;padding:3px 8px;border-radius:5px;border:1px solid transparent}
+.mn-link.act{color:#fff;border-color:rgba(255,255,255,.25)}
+/* Mini card */
+.mc{background:#fff;border:1px solid #e5e7eb;border-radius:7px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.mc-ttl{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px}
+/* Mini table */
+.mt{width:100%;border-collapse:collapse;font-size:.72rem}
+.mt th{background:#f8fafc;padding:5px 8px;text-align:left;color:#64748b;font-size:.62rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb}
+.mt td{padding:6px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.mt tr:last-child td{border-bottom:none}
+/* Mini progress */
+.mpb{height:5px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-bottom:2px}
+.mpb-in{height:100%;border-radius:999px}
+.mpb-ok{background:#22c55e}.mpb-mid{background:#f59e0b}.mpb-low{background:#d1d5db}
+/* Mini badge */
+.mb{display:inline-flex;padding:1px 7px;border-radius:999px;font-size:.62rem;font-weight:800}
+.mb-r{background:#dbeafe;color:#1e40af}.mb-a{background:#dcfce7;color:#166534}
+.mb-g{background:#fef3c7;color:#92400e}.mb-ok{background:#dcfce7;color:#166534}
+.mb-p{background:#fef2f2;color:#b91c1c}
+/* Mini button */
+.mbtn{display:inline-flex;align-items:center;padding:3px 9px;border-radius:5px;font-size:.65rem;font-weight:700;white-space:nowrap;border:1px solid}
+.mbtn-pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+.mbtn-out{background:#fff;color:#334155;border-color:#d7dde5}
+.mbtn-wa{background:#16a34a;color:#fff;border-color:#16a34a}
+.mbtn-blu{background:#fff;color:#3730a3;border-color:#c7d2fe}
+/* Mini input */
+.mi{width:100%;padding:5px 8px;border:1px solid #d7dde5;border-radius:5px;font-size:.8rem;color:#374151;background:#fff;margin-bottom:6px}
+/* Mini upload zone */
+.muz{border:1px dashed #94a3b8;border-radius:7px;padding:14px;text-align:center;background:#f8fafc;color:#64748b;font-size:.75rem}
+/* Mini login */
+.m-login-wrap{max-width:280px;margin:0 auto}
+/* Annotation */
+.ann{display:flex;align-items:flex-start;gap:8px;background:rgba(251,191,36,.15);border:1px solid #fbbf24;border-radius:6px;padding:6px 10px;margin-top:6px;font-size:.73rem;color:#92400e}
+.ann-num{background:#f59e0b;color:#fff;border-radius:50%;width:17px;height:17px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.65rem;flex-shrink:0}
+/* Color legend */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:.75rem}
+.leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+/* Platform badges */
+.plat{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:4px 12px;font-size:.73rem;font-weight:800}
+.plat-web{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd}
+.plat-local{background:#fdf4ff;color:#6b21a8;border:1px solid #c4b5fd}
+.plat-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+/* Platform comparison card */
+.plat-split{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.plat-box{border-radius:10px;padding:16px 18px}
+.plat-box-web{background:#eff6ff;border:2px solid #93c5fd}
+.plat-box-local{background:#fdf4ff;border:2px solid #c4b5fd}
+.plat-box h4{font-size:.88rem;font-weight:800;margin:0 0 8px}
+.plat-box-web h4{color:#1e3a8a}
+.plat-box-local h4{color:#6b21a8}
+.plat-box ul{margin:0;padding-left:16px}
+.plat-box li{font-size:.83rem;margin-bottom:4px;color:#374151}
+/* Responsive */
+@media(max-width:900px){:root{--sw:230px}#main{padding:24px 28px}.plat-split{grid-template-columns:1fr}}
+@media(max-width:640px){#sb{display:none}#main{margin-left:0;padding:16px 18px}.plat-split{grid-template-columns:1fr}}
+@media print{#sb,#sb *,.print-btn,.no-print{display:none!important}#main{margin-left:0;padding:16px}}
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══ -->
+<nav id="sb">
+  <div id="sb-head">
+    <h2>CM Horas Extras</h2>
+    <p>Manual de usuario</p>
+    <input id="sb-search" type="text" placeholder="Buscar en el manual…" aria-label="Buscar en el manual">
+  </div>
+  <ul id="nav">
+    <li class="grp">Inicio</li>
+    <li><a href="#bienvenida">🏠 Bienvenida</a></li>
+    <li><a href="#dos-herramientas">🔀 Web vs App local</a></li>
+    <li><a href="#calendario">📅 Calendario de tareas</a></li>
+
+    <li class="div"></li>
+    <li class="grp">🌐 Página web (PythonAnywhere)</li>
+    <li><a href="#entrar">🔑 Cómo entrar</a></li>
+    <li><a href="#pantalla">🖥️ Pantalla principal</a></li>
+    <li><a href="#fichadas">📂 Cargar fichadas</a></li>
+    <li><a href="#revision">🔍 Revisar entradas y salidas</a></li>
+    <li><a href="#links">📲 Links de confirmación</a></li>
+    <li><a href="#confirmaciones">✅ Revisar confirmaciones</a></li>
+    <li><a href="#informe-semanal">🖨️ Informe semanal</a></li>
+    <li><a href="#sin-fichadas">📋 Deptos sin fichadas</a></li>
+    <li><a href="#francos-nuevo">➕ Registrar franco tomado</a></li>
+    <li><a href="#francos-saldos">💰 Revisar saldos</a></li>
+    <li><a href="#cierre">🔒 Cierre de período</a></li>
+    <li><a href="#historial">📁 Historial de cierres</a></li>
+
+    <li class="div"></li>
+    <li class="grp">🖥️ App local (Windows)</li>
+    <li><a href="#app-local">💻 App de escritorio</a></li>
+
+    <li class="div"></li>
+    <li class="grp">Referencia</li>
+    <li><a href="#no-tocar">⛔ Qué NO tocar</a></li>
+    <li><a href="#emergencias">🆘 Si algo sale mal</a></li>
+    <li><a href="#checklists">☑️ Checklists</a></li>
+    <li><a href="#glosario">📖 Glosario</a></li>
+  </ul>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<main id="main">
+
+<!-- ── BIENVENIDA ── -->
+<section class="sec" id="bienvenida">
+  <div class="welcome">
+    <h1>Manual de uso — CM Horas Extras</h1>
+    <p>Todo lo que necesitás saber para usar el sistema, paso a paso y sin tecnicismos.</p>
+    <div style="margin-top:16px">
+      <div class="info-pill"><strong>Dirección web</strong><span>cmhoras.pythonanywhere.com</span></div>
+      <div class="info-pill"><strong>Ante dudas</strong><span>Consultar a Carola</span></div>
+      <div class="info-pill"><strong>Actualizado</strong><span>Junio 2026</span></div>
+    </div>
+  </div>
+
+  <div class="big-warn">
+    <h3>⚠️ Regla número uno: nunca mezclar departamentos</h3>
+    <p>Cada departamento se trabaja por separado. Antes de hacer cualquier cosa, fijate siempre en qué departamento estás trabajando.</p>
+    <p>Los departamentos son: <strong>Redes · Administración · Guardias · Internet · Telefonía</strong></p>
+    <p>Si mezclás departamentos, los saldos de francos y los reportes quedan mal. Si tenés dudas, <strong>no avances y consultá a Carola</strong>.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">¿Para qué sirve este sistema?</div>
+    <p>CM Horas Extras es el sistema que CELP usa para controlar las horas extra trabajadas por el personal y los francos compensatorios que les corresponden.</p>
+    <p>Básicamente hace tres cosas:</p>
+    <ul>
+      <li><strong>Registra</strong> cuántas horas extra hizo cada persona cada semana.</li>
+      <li><strong>Calcula</strong> cuántos francos le corresponden por esas horas.</li>
+      <li><strong>Lleva el saldo</strong> de francos disponibles vs. francos ya tomados.</li>
+    </ul>
+    <p>El sistema tiene <strong>dos herramientas distintas</strong> — ver la sección <a href="#dos-herramientas" style="color:var(--acc)">Web vs App local</a> para entender cuál usar en cada caso.</p>
+  </div>
+
+  <div class="two">
+    <div class="card" style="border-top:3px solid var(--acc)">
+      <div class="card-ttl">Deptos con fichadas (biométrico)</div>
+      <p style="font-size:.88rem">Cargás el archivo del reloj cada semana.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <span class="badge b-r">Redes</span>
+        <span class="badge b-a">Administración</span>
+      </div>
+    </div>
+    <div class="card" style="border-top:3px solid var(--warn)">
+      <div class="card-ttl">Deptos sin fichadas (carga manual)</div>
+      <p style="font-size:.88rem">Los francos se cargan a mano desde el formulario web.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <span class="badge b-g">Guardias</span>
+        <span class="badge b-in">Internet</span>
+        <span class="badge b-t">Telefonía</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DOS HERRAMIENTAS ── -->
+<section class="sec" id="dos-herramientas">
+  <div class="sec-hd">
+    <div class="sec-ico" style="background:#f0f9ff">🔀</div>
+    <div>
+      <div class="sec-tag" style="color:#0369a1">Importante — leer primero</div>
+      <div class="sec-ttl">Dos herramientas distintas</div>
+      <div class="sec-sub">Este sistema tiene una parte web y una app de escritorio. No son lo mismo.</div>
+    </div>
+  </div>
+
+  <div class="plat-split">
+    <div class="plat-box plat-box-web">
+      <h4>🌐 Página web — PythonAnywhere</h4>
+      <p style="font-size:.83rem;color:#374151;margin-bottom:8px"><strong>Dirección:</strong> cmhoras.pythonanywhere.com</p>
+      <p style="font-size:.83rem;color:#374151;margin-bottom:8px">Se usa desde el <strong>navegador</strong> (Chrome, Edge, Firefox). No requiere instalación. Funciona desde cualquier computadora con internet.</p>
+      <ul>
+        <li>Cargar y procesar fichadas</li>
+        <li>Enviar links de confirmación por WhatsApp</li>
+        <li>Registrar y consultar francos</li>
+        <li>Cerrar períodos mensuales</li>
+        <li>Ver historial de cierres</li>
+        <li>Imprimir informes semanales</li>
+        <li>Reporte automático de saldos (cada viernes, por email)</li>
+      </ul>
+      <div style="margin-top:10px;font-size:.8rem;color:#1e3a8a;font-weight:700">👤 La usa la supervisora en su navegador</div>
+    </div>
+    <div class="plat-box plat-box-local">
+      <h4>🖥️ App local — Windows</h4>
+      <p style="font-size:.83rem;color:#374151;margin-bottom:8px"><strong>Programa:</strong> CM Horas Extras (ícono en el escritorio)</p>
+      <p style="font-size:.83rem;color:#374151;margin-bottom:8px">Se instala en la PC con Windows. No requiere internet para funcionar. Es una aplicación de escritorio.</p>
+      <ul>
+        <li>Procesar fichadas localmente (sin subir al servidor)</li>
+        <li>Generar PDFs de liquidación en la computadora</li>
+        <li>Ver gráficos estadísticos de horas extras</li>
+        <li>Gestionar feriados en la configuración</li>
+        <li>Ver resumen consolidado local</li>
+      </ul>
+      <div style="margin-top:10px;font-size:.8rem;color:#6b21a8;font-weight:700">👤 La usa principalmente Carola en su PC</div>
+    </div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>¿Cuál usar?</strong>
+    Para el trabajo diario de la supervisora (cargar fichadas, enviar links, registrar francos, cerrar el mes) se usa la <strong>página web</strong>. La app local es una herramienta adicional de Carola para procesamiento y análisis en su computadora.</div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Las dos bases de datos son independientes</strong>
+    Los datos de la página web (PythonAnywhere) y los de la app local (Windows) <strong>no se sincronizan automáticamente</strong>. Los francos tomados reales están en PythonAnywhere. No confundir un sistema con el otro.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo identificar en qué herramienta estás</div>
+    <table class="tbl">
+      <thead><tr><th>Si ves…</th><th>Estás en…</th></tr></thead>
+      <tbody>
+        <tr><td>Una página en el navegador con la dirección <strong>cmhoras.pythonanywhere.com</strong></td><td><span class="plat plat-web">🌐 Página web</span></td></tr>
+        <tr><td>Un programa con ventanas de Windows (sin navegador)</td><td><span class="plat plat-local">🖥️ App local</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p style="font-size:.85rem;color:var(--mut)">En este manual, cada sección indica claramente con una etiqueta <span class="plat plat-web" style="font-size:.68rem">🌐 Página web</span> o <span class="plat plat-local" style="font-size:.68rem">🖥️ App local</span> en cuál herramienta se realiza cada tarea.</p>
+</section>
+
+<!-- ── CALENDARIO ── -->
+<section class="sec" id="calendario">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">📅</div>
+    <div>
+      <div class="sec-tag tag-g">Referencia rápida</div>
+      <div class="sec-ttl">Calendario de tareas</div>
+      <div class="sec-sub">Qué hacer y cuándo hacerlo</div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card" style="border-top:3px solid var(--acc)">
+      <div class="card-ttl">🔵 Tareas semanales</div>
+      <div class="tl">
+        <div class="tl-item">
+          <div class="tl-dot d-b"></div>
+          <div class="tl-lbl l-b">Lunes (o cuando llegue el archivo)</div>
+          <div class="tl-cnt">Cargar fichadas de Redes y/o Administración</div>
+          <div class="tl-note">Revisar entradas/salidas antes de procesar</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-b"></div>
+          <div class="tl-lbl l-b">Lunes al miércoles</div>
+          <div class="tl-cnt">Enviar links de confirmación a los empleados</div>
+          <div class="tl-note">Por WhatsApp. Darles tiempo para responder.</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-b"></div>
+          <div class="tl-lbl l-b">Miércoles / jueves</div>
+          <div class="tl-cnt">Revisar quién confirmó, reenviar a pendientes</div>
+          <div class="tl-note">Ver la barra de progreso en cada semana</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-g"></div>
+          <div class="tl-lbl l-g">Viernes</div>
+          <div class="tl-cnt">Imprimir informe semanal</div>
+          <div class="tl-note">PDF día a día para mostrar al supervisor</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-g"></div>
+          <div class="tl-lbl l-g">Viernes (automático)</div>
+          <div class="tl-cnt">Reporte de saldos de francos</div>
+          <div class="tl-note">El sistema lo envía solo por email. No hace falta hacer nada.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="border-top:3px solid var(--pur)">
+      <div class="card-ttl">🟣 Tareas de fin de mes</div>
+      <div class="tl">
+        <div class="tl-item">
+          <div class="tl-dot d-p"></div>
+          <div class="tl-lbl l-p">Antes del cierre</div>
+          <div class="tl-cnt">Verificar que todas las semanas estén cargadas y confirmadas</div>
+          <div class="tl-note">Usar la checklist de cierre mensual</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-p"></div>
+          <div class="tl-lbl l-p">Antes del cierre</div>
+          <div class="tl-cnt">Verificar francos tomados del mes</div>
+          <div class="tl-note">Que estén todos cargados y sin errores</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-o"></div>
+          <div class="tl-lbl l-o">Fin de mes</div>
+          <div class="tl-cnt">Cerrar período — depto por depto</div>
+          <div class="tl-note">Primero Redes, luego Admin, luego los demás</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot d-g"></div>
+          <div class="tl-lbl l-g">Después del cierre</div>
+          <div class="tl-cnt">Descargar informe completo del cierre</div>
+          <div class="tl-note">Guardar para registros</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⏰</span>
+    <div class="a-body"><strong>No acumular semanas sin cerrar</strong>
+    Lo ideal es cerrar el período dentro de los primeros días del mes siguiente. Si se acumulan muchas semanas sin cerrar, es más difícil detectar errores.</div>
+  </div>
+</section>
+
+<!-- ── CÓMO ENTRAR ── -->
+<section class="sec" id="entrar">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">🔑</div>
+    <div>
+      <div class="sec-tag tag-g">Siempre</div>
+      <div class="sec-ttl">Cómo entrar al sistema</div>
+      <div class="sec-sub">Login de supervisor</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <!-- MOCKUP Login -->
+  <div class="mock-wrap">
+    <div class="mock-bar"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div class="mock-url">cmhoras.pythonanywhere.com/login</div></div>
+    <div class="mock-body">
+      <div class="mock-lbl">Pantalla de ingreso</div>
+      <div style="max-width:280px;margin:0 auto">
+        <div style="text-align:center;margin-bottom:12px"><div style="font-size:.95rem;font-weight:800;color:var(--pri)">CM Horas Extras</div><div style="font-size:.7rem;color:#64748b;margin-top:1px">Ingresar como supervisor</div></div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px">
+          <div style="font-size:.7rem;font-weight:700;color:#334155;margin-bottom:4px">Contraseña</div>
+          <div style="display:flex;align-items:center;border:2px solid #6366f1;border-radius:6px;overflow:hidden;background:#fff">
+            <div style="flex:1;padding:5px 8px;font-size:.8rem;color:#374151">••••••••</div>
+            <span style="padding:0 8px;color:#94a3b8;font-size:.85rem">👁</span>
+          </div>
+          <div style="margin-top:10px"><div class="mbtn mbtn-pri" style="width:100%;justify-content:center;padding:6px 0;font-size:.78rem">Ingresar</div></div>
+        </div>
+        <div class="ann" style="margin-top:8px"><div class="ann-num">1</div><span>Escribir la contraseña acá</span></div>
+        <div class="ann" style="margin-top:4px"><div class="ann-num">2</div><span>Presionar <strong>Ingresar</strong></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Pasos para ingresar</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Abrir el navegador</div><div class="sd">Usar Chrome, Edge o Firefox. No usar Internet Explorer.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Ir a la dirección del sistema</div><div class="sd">Escribir <strong>cmhoras.pythonanywhere.com</strong> en la barra de direcciones y presionar Enter.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Ingresar la contraseña</div><div class="sd">Escribir la contraseña de supervisor. Si no la sabés, pedísela a Carola.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Presionar "Ingresar"</div><div class="sd">Si la contraseña es correcta, vas a ver el panel principal.</div></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Si no podés entrar</div>
+    <ul>
+      <li>Verificar que la contraseña no tenga mayúsculas/minúsculas cambiadas.</li>
+      <li>Probar con el ícono del ojo para ver la contraseña mientras la escribís.</li>
+      <li>Probar actualizar la página (F5).</li>
+      <li>Probar cerrar y abrir el navegador.</li>
+      <li>Si sigue sin funcionar: <strong>avisar a Carola</strong>.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ── PANTALLA PRINCIPAL ── -->
+<section class="sec" id="pantalla">
+  <div class="sec-hd">
+    <div class="sec-ico ico-i">🖥️</div>
+    <div>
+      <div class="sec-tag tag-i">Referencia</div>
+      <div class="sec-ttl">La pantalla principal</div>
+      <div class="sec-sub">Dónde está cada cosa</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <!-- MOCKUP Panel principal -->
+  <div class="mock-wrap">
+    <div class="mock-bar"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div class="mock-url">cmhoras.pythonanywhere.com/supervisor</div></div>
+    <div class="mn"><div class="mn-brand">CM Horas Extras</div><div class="mn-links"><span class="mn-link act">Supervisor</span><span class="mn-link">Períodos</span><span class="mn-link">Francos</span><span class="mn-link">Historial</span><span class="mn-link">Cierres</span><span class="mn-link">Salir</span></div></div>
+    <div class="mock-body">
+      <div class="mock-lbl">Pantalla principal — panel del supervisor</div>
+      <!-- Carga -->
+      <div class="mc">
+        <div class="mc-ttl">Cargar fichadas</div>
+        <div class="muz">📂 Hacer clic aquí o arrastrar el archivo Excel/CSV del reloj</div>
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <div class="mbtn mbtn-out" style="font-size:.65rem">📎 archivo_mayo.xlsx</div>
+          <div class="mbtn mbtn-pri">Procesar</div>
+        </div>
+        <div class="ann" style="margin-top:6px"><div class="ann-num">1</div><span>Subir el archivo del reloj acá, luego presionar <strong>Procesar</strong></span></div>
+      </div>
+      <!-- Semanas -->
+      <div class="mc">
+        <div class="mc-ttl">Semanas activas</div>
+        <table class="mt">
+          <thead><tr><th>Semana</th><th>Depto</th><th>Empl.</th><th>Confirmados</th><th>Acciones</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div style="font-weight:700">Sem. 8</div><div style="font-size:.63rem;color:#888">26/05 — 01/06</div></td>
+              <td><span class="mb mb-r">Redes</span></td>
+              <td>12</td>
+              <td><div class="mpb"><div class="mpb-in mpb-ok" style="width:83%"></div></div><div style="font-size:.62rem;color:#555">10 / 12</div></td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap"><div class="mbtn mbtn-out" style="font-size:.62rem">Links</div><div class="mbtn mbtn-blu" style="font-size:.62rem">🖨 Informe</div><div class="mbtn mbtn-blu" style="font-size:.62rem">🖨 Acumulado</div></td>
+            </tr>
+            <tr>
+              <td><div style="font-weight:700">Sem. 7</div><div style="font-size:.63rem;color:#888">19/05 — 25/05</div></td>
+              <td><span class="mb mb-a">Admin</span></td>
+              <td>8</td>
+              <td><div class="mpb"><div class="mpb-in mpb-mid" style="width:50%"></div></div><div style="font-size:.62rem;color:#555">4 / 8</div></td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap"><div class="mbtn mbtn-out" style="font-size:.62rem">Links</div><div class="mbtn mbtn-blu" style="font-size:.62rem">🖨 Informe</div></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="ann" style="margin-top:6px"><div class="ann-num">2</div><span>Tabla de semanas. Fijarse siempre en la columna <strong>Depto</strong> antes de hacer cualquier acción</span></div>
+        <div class="ann" style="margin-top:4px"><div class="ann-num">3</div><span>La barra verde muestra cuántos empleados confirmaron sus horas</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Menú de navegación (arriba a la derecha)</div>
+    <table class="tbl">
+      <thead><tr><th>Botón</th><th>Para qué sirve</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Supervisor</strong></td><td>Pantalla principal. Desde acá cargás fichadas y ves las semanas.</td></tr>
+        <tr><td><strong>Períodos</strong></td><td>Para cerrar el mes y ver los cierres anteriores.</td></tr>
+        <tr><td><strong>Francos</strong></td><td>Para registrar cuando alguien toma un franco y ver los saldos.</td></tr>
+        <tr><td><strong>Historial</strong></td><td>Lista de confirmaciones recibidas de los empleados.</td></tr>
+        <tr><td><strong>Acumulado</strong></td><td>Resumen de horas extra por empleado a lo largo del tiempo.</td></tr>
+        <tr><td><strong>Cierres</strong></td><td>Historial de todos los cierres mensuales realizados.</td></tr>
+        <tr><td><strong>Salir</strong></td><td>Cerrar sesión.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Sección "Semanas activas"</div>
+    <p>En la parte principal de la pantalla vas a ver una tabla con las semanas que se procesaron. Cada fila es una semana de un departamento.</p>
+    <table class="tbl">
+      <thead><tr><th>Columna</th><th>Qué muestra</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Semana</strong></td><td>Número de semana y rango de fechas (ej: 12/05 al 18/05)</td></tr>
+        <tr><td><strong>Depto</strong></td><td>El departamento de esa semana</td></tr>
+        <tr><td><strong>Empleados</strong></td><td>Cuántos empleados hay en esa semana</td></tr>
+        <tr><td><strong>Confirmados</strong></td><td>Barra de progreso: cuántos confirmaron sobre el total</td></tr>
+        <tr><td><strong>Acciones</strong></td><td>Botones para ver links, imprimir, eliminar, etc.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Fijate siempre en el departamento</strong>
+    La tabla puede tener semanas de distintos departamentos mezcladas. Antes de hacer cualquier acción, confirmá en la columna "Depto" que estás trabajando sobre el departamento correcto.</div>
+  </div>
+</section>
+
+<!-- ── CARGAR FICHADAS ── -->
+<section class="sec" id="fichadas">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">📂</div>
+    <div>
+      <div class="sec-tag tag-w">Tarea semanal — Lunes</div>
+      <div class="sec-ttl">Cargar fichadas</div>
+      <div class="sec-sub">Solo para Redes y Administración · Dura 5–10 minutos</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>¿Qué son las fichadas?</strong>
+    Son las marcas que hace el reloj biométrico cada vez que una persona entra o sale. El reloj guarda esas marcas y se exportan a un archivo Excel o CSV que después cargás acá.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Paso 1 — Obtener el archivo del reloj</div>
+    <p>Primero necesitás el archivo de fichadas. Este archivo viene del software del reloj biométrico.</p>
+    <ul>
+      <li>El archivo puede ser Excel (.xlsx) o CSV (.csv).</li>
+      <li>Tiene que corresponder a la semana que vas a procesar.</li>
+      <li>Si no sabés cómo exportarlo del reloj, consultá a Carola.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Paso 2 — Cargar en el sistema</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir al panel principal (Supervisor)</div><div class="sd">Hacer clic en "Supervisor" en el menú.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Usar el área de carga de archivos</div><div class="sd">Hacer clic en el área punteada o en "Seleccionar archivo". Buscar el archivo en la computadora.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Verificar los departamentos detectados</div><div class="sd">El sistema detecta automáticamente los departamentos en el archivo. Confirmar que aparezcan los correctos (Redes y/o Administración).</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Presionar "Procesar"</div><div class="sd">Esperar. Puede tardar unos segundos.</div></div></div>
+      <div class="step"><div class="snum">5</div><div class="sbody"><div class="st">Verificar que aparece la semana nueva</div><div class="sd">En la tabla de semanas tiene que aparecer una fila nueva con las fechas correctas y el departamento correcto.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>No cargar el mismo archivo dos veces</strong>
+    Si cargás el mismo archivo dos veces, el sistema puede crear una semana duplicada. Si pasó eso, avisá a Carola antes de hacer cualquier otra cosa.</div>
+  </div>
+</section>
+
+<!-- ── REVISIÓN DE FICHADAS ── -->
+<section class="sec" id="revision">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">🔍</div>
+    <div>
+      <div class="sec-tag tag-w">Tarea semanal — Lunes (inmediatamente después de cargar)</div>
+      <div class="sec-ttl">Revisar entradas y salidas</div>
+      <div class="sec-sub">Paso MUY importante · No saltearlo</div>
+    </div>
+  </div>
+  <div class="plat-row">
+    <span class="plat plat-web">🌐 Verificación básica en la página web</span>
+    <span class="plat plat-local">🖥️ Revisión detallada en la app local</span>
+  </div>
+
+  <div class="alert a-dan">
+    <span class="a-ico">🚨</span>
+    <div class="a-body"><strong>¿Por qué es tan importante esta revisión?</strong>
+    Si una persona fichó la entrada pero no fichó la salida (o al revés), el sistema va a calcular mal sus horas. Eso afecta los francos y el sueldo. Detectarlo ahora es mucho más fácil que corregirlo después de cerrar el período.</div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>La tabla detallada de E/S por empleado está en la app local, no en la web</strong>
+    La página web muestra cuántos empleados se procesaron y el progreso de confirmaciones. Para ver el detalle día a día (entrada, salida, horas por empleado), hay que usar la <strong>app local de Windows</strong> o descargar el <strong>informe semanal en PDF</strong> desde la web.</div>
+  </div>
+
+  <!-- MOCKUP: Lo que muestra la web después de procesar -->
+  <div class="mock-wrap">
+    <div class="mock-bar"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div class="mock-url">cmhoras.pythonanywhere.com/supervisor</div></div>
+    <div class="mn"><div class="mn-brand">CM Horas Extras</div><div class="mn-links"><span class="mn-link act">Supervisor</span><span class="mn-link">Francos</span><span class="mn-link">Salir</span></div></div>
+    <div class="mock-body">
+      <div class="mock-lbl">Página web — después de procesar el archivo</div>
+      <div class="mc">
+        <div class="mc-ttl">Semanas activas</div>
+        <table class="mt">
+          <thead><tr><th>Semana</th><th>Depto</th><th>Empl.</th><th>Confirmados</th><th>Acciones</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div style="font-weight:700">Sem. 8</div><div style="font-size:.63rem;color:#888">26/05 — 01/06</div></td>
+              <td><span class="mb mb-r">Redes</span></td>
+              <td>12</td>
+              <td><div class="mpb"><div class="mpb-in mpb-low" style="width:0%"></div></div><div style="font-size:.62rem;color:#555">0 / 12 — recién procesada</div></td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap">
+                <div class="mbtn mbtn-out" style="font-size:.62rem">Links</div>
+                <div class="mbtn mbtn-blu" style="font-size:.62rem">🖨 Informe</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="ann" style="margin-top:6px"><div class="ann-num">1</div><span>La web muestra cuántos empleados se procesaron (12) pero NO el detalle de E/S de cada uno</span></div>
+        <div class="ann" style="margin-top:4px"><div class="ann-num">2</div><span>Para ver las horas día a día: presionar <strong>🖨 Informe</strong> para descargar el PDF, o usar la app local</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">¿Qué es una fichada incompleta?</div>
+    <p>Una fichada incompleta ocurre cuando:</p>
+    <div class="fichada-row fr-err"><span class="fr-ico">❌</span><span><strong>Entrada sin salida:</strong> La persona fichó que entró pero no fichó que salió. El sistema no sabe a qué hora terminó de trabajar.</span></div>
+    <div class="fichada-row fr-err"><span class="fr-ico">❌</span><span><strong>Salida sin entrada:</strong> Aparece una salida pero no hay entrada previa. Puede ser un error del reloj o que la entrada quedó en la semana anterior.</span></div>
+    <div class="fichada-row fr-warn"><span class="fr-ico">⚠️</span><span><strong>Horas muy altas:</strong> Más de 16 horas en un día casi siempre indica que falta una salida (se pasó al día siguiente).</span></div>
+    <div class="fichada-row fr-warn"><span class="fr-ico">⚠️</span><span><strong>Horas en cero:</strong> Si alguien aparece con 0 horas un día laboral, puede que su fichada esté incompleta o que el archivo tenga un error.</span></div>
+    <div class="fichada-row fr-ok"><span class="fr-ico">✅</span><span><strong>Normal:</strong> La persona tiene entrada Y salida en cada día. Las horas son razonables (entre 6 y 14 horas).</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo revisar después de cargar</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Descargar el informe semanal (web)</div><div class="sd">En la tabla de semanas, presionar <strong>🖨 Informe</strong>. Abre un PDF con el detalle día a día de cada empleado: entrada, salida y horas.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">O revisar desde la app local (Windows)</div><div class="sd">Carola puede ver el detalle interactivo en la app de escritorio, que muestra la tabla con E/S por empleado por día y marcas de error.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Detectar horas sospechosas</div><div class="sd">¿Alguien tiene 0 horas un día que trabajó? ¿Alguien tiene 20+ horas en un solo día? Son señales de alerta. Anotarlos.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Revisar que estén todos los empleados esperados</div><div class="sd">Si sabés que una persona trabajó esa semana pero no aparece, puede que su legajo esté mal en el reloj o que no haya fichado ningún día.</div></div></div>
+      <div class="step"><div class="snum">5</div><div class="sbody"><div class="st">Anotar todos los problemas encontrados</div><div class="sd">Escribir: nombre del empleado, fecha del problema, qué falta (entrada o salida). Llevar esa lista a Carola.</div></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Causas comunes de fichadas incompletas</div>
+    <table class="tbl">
+      <thead><tr><th>Situación</th><th>Qué pasó probablemente</th><th>Qué hacer</th></tr></thead>
+      <tbody>
+        <tr><td>Entrada a las 06:00, sin salida</td><td>La persona se olvidó de fichar la salida, o la salida fue después de medianoche y quedó en la semana siguiente</td><td>Preguntar a la persona o al jefe de área qué hora salió</td></tr>
+        <tr><td>Solo una fichada todo el día</td><td>El reloj tuvo un error o la persona tocó dos veces seguidas sin salir</td><td>Verificar con la persona</td></tr>
+        <tr><td>Persona no aparece en el archivo</td><td>No fichó ningún día de esa semana, o su legajo cambió en el reloj</td><td>Verificar asistencia y avisar a Carola</td></tr>
+        <tr><td>Horas muy altas (ej: 22 horas)</td><td>Falta la salida de un día y el sistema la "cerró" con la entrada del día siguiente</td><td>Identificar el día exacto y buscar la salida real</td></tr>
+        <tr><td>Horas negativas o cero en día normal</td><td>La salida está antes que la entrada (error de reloj), o el archivo tiene datos corruptos</td><td>Avisar a Carola directamente</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="alert a-carola">
+    <span class="a-ico">📞</span>
+    <div class="a-body"><strong>Cuándo llamar a Carola</strong>
+    Siempre que encontrés una fichada incompleta o algo que no entiendas. No intentes corregir los datos vos misma: contale el problema con el nombre del empleado y la fecha, y ella decide qué hacer. Es mucho más fácil corregir ahora que después del cierre.</div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>No cerrar el período si hay problemas sin resolver</strong>
+    Si encontraste fichadas incompletas y no se resolvieron todavía, no avances al cierre mensual. Anotá el problema y esperá confirmación de Carola.</div>
+  </div>
+</section>
+
+<!-- ── LINKS DE CONFIRMACIÓN ── -->
+<section class="sec" id="links">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">📲</div>
+    <div>
+      <div class="sec-tag tag-w">Tarea semanal — Lunes a miércoles</div>
+      <div class="sec-ttl">Enviar links de confirmación</div>
+      <div class="sec-sub">Para que cada empleado revise y confirme sus horas · 10–20 minutos</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">¿Qué son estos links?</div>
+    <p>Después de procesar las fichadas, el sistema genera un link personalizado para cada empleado. Ese link le muestra un resumen de sus horas de la semana y le pide que confirme si está de acuerdo.</p>
+    <p>Cada link es único para cada persona. <strong>No enviar el link de una persona a otra.</strong></p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Pasos para enviar</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a la semana correspondiente</div><div class="sd">En la tabla de semanas, buscar la que querés enviar. Fijarse que el departamento sea el correcto.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Hacer clic en "Links" o "WhatsApp"</div><div class="sd">Se abre la lista de empleados con su link y un botón verde de WhatsApp.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Presionar el botón verde de WhatsApp</div><div class="sd">Se abre WhatsApp con el mensaje ya escrito y el número del empleado. Solo hace falta presionar "Enviar".</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Repetir para cada empleado</div><div class="sd">Enviar a todos los que aparecen en la lista. Si alguien no tiene número de teléfono cargado, avisar a Carola.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">💡</span>
+    <div class="a-body"><strong>Si un empleado dice que el link no funciona</strong>
+    Podés regenerar su link desde la semana usando el botón "Regenerar". Si sigue sin funcionar, avisá a Carola.</div>
+  </div>
+</section>
+
+<!-- ── CONFIRMACIONES ── -->
+<section class="sec" id="confirmaciones">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">✅</div>
+    <div>
+      <div class="sec-tag tag-w">Tarea semanal — Miércoles a jueves</div>
+      <div class="sec-ttl">Revisar confirmaciones</div>
+      <div class="sec-sub">Ver quién confirmó sus horas y hacer seguimiento de pendientes</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo ver el estado</div>
+    <p>En la tabla de semanas, cada fila tiene una barra de progreso que muestra cuántos empleados confirmaron sobre el total.</p>
+    <p>Por ejemplo: si dice <strong>8/12</strong>, confirmaron 8 personas de 12.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Qué hacer con los pendientes</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir al historial de confirmaciones</div><div class="sd">Hacer clic en "Historial" en el menú. Filtrar por semana y departamento.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Ver quién falta</div><div class="sd">Los que aparecen en naranja o sin tilde todavía no confirmaron.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Reenviar el link</div><div class="sd">Volver a la semana, ir a Links, y reenviar solo a los que faltan.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>¿Qué pasa si alguien nunca confirma?</strong>
+    Si llegás al cierre de mes y alguien no confirmó, igual podés cerrar el período. El sistema anota que ese empleado quedó pendiente. Pero antes de cerrar, avisá a Carola para que ella decida.</div>
+  </div>
+</section>
+
+<!-- ── INFORME SEMANAL ── -->
+<section class="sec" id="informe-semanal">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">🖨️</div>
+    <div>
+      <div class="sec-tag tag-w">Tarea semanal — Viernes</div>
+      <div class="sec-ttl">Imprimir informe semanal</div>
+      <div class="sec-sub">PDF con el detalle de horas día a día · Para mostrar al supervisor</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">Informe de una semana</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a la semana en el panel principal</div><div class="sd">Buscar la fila de la semana que querés imprimir.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Presionar "🖨 Informe semana"</div><div class="sd">Se descarga un PDF con el detalle día a día de cada empleado.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Revisar el PDF antes de imprimir</div><div class="sd">Verificar que las horas parezcan correctas. Si algo llama la atención, avisá a Carola antes de imprimirlo.</div></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Informe acumulado (varias semanas)</div>
+    <p>Si querés ver el resumen de varias semanas juntas (por ejemplo, todo el mes):</p>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Presionar "🖨 Acumulado" en cualquier fila de la semana</div><div class="sd">El sistema genera un PDF con todas las semanas del departamento.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Verificar el departamento</div><div class="sd">El acumulado es siempre de un solo departamento. Confirmar que sea el correcto.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-ok">
+    <span class="a-ico">✅</span>
+    <div class="a-body"><strong>El reporte semanal de francos se envía solo</strong>
+    Todos los viernes, el sistema manda automáticamente por email un reporte de saldos de francos a los supervisores. No tenés que hacer nada para eso.</div>
+  </div>
+</section>
+
+<!-- ── DEPTOS SIN FICHADAS ── -->
+<section class="sec" id="sin-fichadas">
+  <div class="sec-hd">
+    <div class="sec-ico ico-i">📋</div>
+    <div>
+      <div class="sec-tag tag-i">Guardias · Internet · Telefonía</div>
+      <div class="sec-ttl">Departamentos sin fichadas</div>
+      <div class="sec-sub">Estos departamentos no usan reloj biométrico</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>No buscar archivos del reloj para estos departamentos</strong>
+    Guardias, Internet y Telefonía no tienen reloj biométrico. Sus francos se cargan manualmente desde el formulario web.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo se cargan sus francos</div>
+    <p>Para estos departamentos, los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
+    <p>Si te piden cargar datos de estos departamentos, seguí las instrucciones específicas que te dé Carola.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Empleados de estos departamentos</div>
+    <table class="tbl">
+      <thead><tr><th>Depto</th><th>Empleados</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge b-g">Guardias</span></td><td>Maydana, Garcilazo, Forastieri, Pliego, Espinoza, Uriondo</td></tr>
+        <tr><td><span class="badge b-in">Internet</span></td><td>Gomez Nestor, Segui, Frizzo, Grunevalt</td></tr>
+        <tr><td><span class="badge b-t">Telefonía</span></td><td>Barolin Franca, Lazaro Gomez, Calvet Silvia Patricia</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── FRANCOS NUEVO ── -->
+<section class="sec" id="francos-nuevo">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">➕</div>
+    <div>
+      <div class="sec-tag tag-g">Cuando ocurra</div>
+      <div class="sec-ttl">Registrar un franco tomado</div>
+      <div class="sec-sub">Cuando un empleado usa uno o más días de franco</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">¿Qué es un franco compensatorio?</div>
+    <p>Cuando alguien trabaja muchas horas extra, acumula francos. Un franco es básicamente un día libre que le corresponde por haber trabajado de más. Cuando usa ese día libre, hay que registrarlo en el sistema para descontarlo del saldo.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Tipos de franco</div>
+    <div class="two">
+      <div style="background:#f0fdf4;border:1px solid var(--ok-br);border-radius:8px;padding:14px">
+        <div style="font-weight:800;font-size:.85rem;color:#14532d;margin-bottom:6px">ÚNICO — Un solo día</div>
+        <p style="font-size:.87rem">La persona tomó exactamente un día de franco.<br>Ejemplo: el jueves 12 de junio.</p>
+      </div>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px">
+        <div style="font-weight:800;font-size:.85rem;color:#1e3a8a;margin-bottom:6px">RANGO — Días seguidos</div>
+        <p style="font-size:.87rem">Tomó varios días consecutivos.<br>Ejemplo: del 10 al 14 de junio (toda una semana).</p>
+      </div>
+    </div>
+    <div style="background:var(--pur-bg);border:1px solid var(--pur-br);border-radius:8px;padding:14px;margin-bottom:8px">
+      <div style="font-weight:800;font-size:.85rem;color:#4c1d95;margin-bottom:6px">SUELTAS — Días separados</div>
+      <p style="font-size:.87rem">Tomó varios días no consecutivos.<br>Ejemplo: el martes 10, el jueves 12 y el martes 17 de junio.</p>
+    </div>
+  </div>
+
+  <!-- MOCKUP: Formulario francos -->
+  <div class="mock-wrap">
+    <div class="mock-bar"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div class="mock-url">cmhoras.pythonanywhere.com/francos</div></div>
+    <div class="mn"><div class="mn-brand">CM Horas Extras</div><div class="mn-links"><span class="mn-link">Supervisor</span><span class="mn-link act">Francos</span><span class="mn-link">Salir</span></div></div>
+    <div class="mock-body">
+      <div class="mock-lbl">Registrar franco tomado</div>
+      <div class="mc">
+        <div class="mc-ttl">Nuevo franco tomado</div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:8px">
+          <div>
+            <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Legajo</div>
+            <input class="mi" value="45" readonly style="width:80px" aria-label="Legajo">
+          </div>
+          <div>
+            <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Nombre</div>
+            <div style="font-size:.82rem;font-weight:700;color:#111827;padding:5px 0">GARCIA ROBERTO</div>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:4px">Tipo de franco</div>
+          <div style="display:flex;gap:6px">
+            <div style="background:var(--pri);color:#fff;padding:4px 10px;border-radius:5px;font-size:.7rem;font-weight:700">ÚNICO</div>
+            <div style="background:#fff;color:#334155;border:1px solid #d7dde5;padding:4px 10px;border-radius:5px;font-size:.7rem">RANGO</div>
+            <div style="background:#fff;color:#334155;border:1px solid #d7dde5;padding:4px 10px;border-radius:5px;font-size:.7rem">SUELTAS</div>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Fecha</div>
+          <input class="mi" type="date" value="2026-06-10" readonly style="width:160px" aria-label="Fecha">
+        </div>
+        <div style="margin-bottom:10px">
+          <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Observación (opcional)</div>
+          <input class="mi" value="Autorizado por jefatura" readonly aria-label="Observación">
+        </div>
+        <div class="mbtn mbtn-pri">Guardar franco</div>
+        <div class="ann" style="margin-top:8px"><div class="ann-num">1</div><span>Escribir el legajo y esperar que aparezca el nombre — verificar que sea la persona correcta</span></div>
+        <div class="ann" style="margin-top:4px"><div class="ann-num">2</div><span>Elegir ÚNICO, RANGO o SUELTAS según el caso</span></div>
+        <div class="ann" style="margin-top:4px"><div class="ann-num">3</div><span>Cargar la fecha y presionar <strong>Guardar franco</strong></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Pasos para registrar</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a "Francos" en el menú</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Ingresar el número de legajo del empleado</div><div class="sd">Escribir el número y esperar a que aparezca el nombre. Verificar que sea la persona correcta.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Elegir el tipo de franco</div><div class="sd">ÚNICO, RANGO o SUELTAS, según el caso.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Cargar la fecha o fechas</div><div class="sd">Si es ÚNICO: cargar el día. Si es RANGO: fecha desde y hasta. Si es SUELTAS: cada fecha por separado.</div></div></div>
+      <div class="step"><div class="snum">5</div><div class="sbody"><div class="st">Escribir una observación (opcional)</div><div class="sd">Si hay algo importante que aclarar (ej: "autorizado por gerencia"), escribirlo acá.</div></div></div>
+      <div class="step"><div class="snum">6</div><div class="sbody"><div class="st">Guardar</div><div class="sd">Presionar el botón de guardar y verificar que el saldo se haya actualizado.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Reglas importantes para los francos</strong>
+    <ul style="margin:6px 0 0 18px">
+      <li>Solo se pueden cargar en días hábiles (lunes a viernes). Guardias es la excepción: pueden tomar cualquier día.</li>
+      <li>No pueden superponerse: si la persona ya tiene un franco cargado en esa fecha, el sistema lo va a rechazar. No forzar.</li>
+      <li>Si el sistema muestra un error de superposición, revisar los francos existentes antes de continuar.</li>
+    </ul></div>
+  </div>
+
+  <div class="alert a-carola">
+    <span class="a-ico">📞</span>
+    <div class="a-body"><strong>Ante dudas sobre fechas o superposiciones, consultá a Carola primero.</strong></div>
+  </div>
+</section>
+
+<!-- ── SALDOS DE FRANCOS ── -->
+<section class="sec" id="francos-saldos">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">💰</div>
+    <div>
+      <div class="sec-tag tag-g">Cuando necesite</div>
+      <div class="sec-ttl">Revisar saldos de francos</div>
+      <div class="sec-sub">Cuántos francos disponibles tiene cada persona</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo se calcula el saldo</div>
+    <p>El saldo de cada persona se calcula así:</p>
+    <div style="background:#f8fafc;border:1px solid var(--brd);border-radius:8px;padding:14px;font-family:monospace;font-size:.9rem;text-align:center;margin:10px 0">
+      Saldo = Saldo inicial + Francos generados − Francos tomados
+    </div>
+    <p>Los francos <em>generados</em> se acumulan automáticamente a medida que se cierran períodos con horas extra.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo ver los saldos</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a "Francos" en el menú</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Desplazarse hasta la tabla de saldos</div><div class="sd">La tabla está organizada por departamento.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Leer los colores del saldo</div><div class="sd">Verde = tiene francos disponibles. Rojo = debe más de los que tiene. Gris = en cero.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Saldo negativo</strong>
+    Si una persona tiene saldo negativo, significa que tomó más francos de los que le corresponden. No corregirlo vos misma: avisá a Carola con el nombre y el número.</div>
+  </div>
+</section>
+
+<!-- ── CIERRE DE PERÍODO ── -->
+<section class="sec" id="cierre">
+  <div class="sec-hd">
+    <div class="sec-ico ico-m">🔒</div>
+    <div>
+      <div class="sec-tag tag-m">Tarea mensual — Fin de mes</div>
+      <div class="sec-ttl">Cierre de período</div>
+      <div class="sec-sub">La acción más importante del mes · Tomarse el tiempo necesario · Una sola vez por mes por depto</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="big-warn">
+    <h3>⚠️ Leer esto antes de cerrar</h3>
+    <p>El cierre de período es <strong>permanente</strong>. Una vez cerrado no se puede modificar (solo Carola puede anularlo en casos especiales).</p>
+    <p>Antes de cerrar, verificar que TODO esté bien: departamento correcto, semanas correctas, fechas correctas, francos cargados.</p>
+    <p><strong>Si tenés cualquier duda, no cerrés. Consultá a Carola.</strong></p>
+  </div>
+
+  <!-- MOCKUP: Cierre de período -->
+  <div class="mock-wrap">
+    <div class="mock-bar"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div class="mock-url">cmhoras.pythonanywhere.com/periodo</div></div>
+    <div class="mn"><div class="mn-brand">CM Horas Extras</div><div class="mn-links"><span class="mn-link">Supervisor</span><span class="mn-link act">Períodos</span><span class="mn-link">Francos</span><span class="mn-link">Salir</span></div></div>
+    <div class="mock-body">
+      <div class="mock-lbl">Pantalla de cierre de período</div>
+      <div class="mc">
+        <div class="mc-ttl">Seleccionar período a cerrar</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Departamento</div>
+            <select class="mi" style="font-size:.78rem" disabled aria-label="Departamento"><option>REDES</option></select>
+            <div class="ann" style="margin-top:4px"><div class="ann-num">1</div><span>Elegir el departamento — verificar que sea el correcto</span></div>
+          </div>
+          <div>
+            <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:3px">Semanas a incluir</div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:5px;font-size:.73rem"><input type="checkbox" checked aria-label="Semana 7 — 19/05 al 25/05"> Sem 7 — 19/05 al 25/05</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:.73rem"><input type="checkbox" checked aria-label="Semana 8 — 26/05 al 01/06"> Sem 8 — 26/05 al 01/06</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:.73rem"><input type="checkbox" checked aria-label="Semana 9 — 02/06 al 08/06"> Sem 9 — 02/06 al 08/06</div>
+            </div>
+            <div class="ann" style="margin-top:4px"><div class="ann-num">2</div><span>Marcar todas las semanas del mes</span></div>
+          </div>
+        </div>
+        <!-- Resumen tabla -->
+        <div style="font-size:.68rem;font-weight:700;color:#334155;margin-bottom:4px">Resumen del período</div>
+        <table class="mt" style="margin-bottom:8px">
+          <thead><tr><th>Empleado</th><th>OT 50%</th><th>OT 100%</th><th>Comidas</th><th>Francos gen.</th><th>Confirmado</th></tr></thead>
+          <tbody>
+            <tr><td>GARCIA R.</td><td>12h</td><td>3h</td><td>2</td><td>1</td><td><span style="color:#16a34a;font-weight:800;font-size:.7rem">✓</span></td></tr>
+            <tr><td>LOPEZ M.</td><td>8h</td><td>0h</td><td>1</td><td>0</td><td><span style="color:#16a34a;font-weight:800;font-size:.7rem">✓</span></td></tr>
+            <tr><td>TORRES K.</td><td>15h</td><td>7h</td><td>3</td><td>1</td><td><span style="color:#d97706;font-weight:800;font-size:.7rem">—</span></td></tr>
+          </tbody>
+        </table>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="mbtn mbtn-out" style="font-size:.65rem">📄 Ver PDF</div>
+          <div class="mbtn mbtn-out" style="font-size:.65rem">📥 Exportar CSV</div>
+          <div style="flex:1"></div>
+          <div style="background:#dc2626;color:#fff;padding:5px 14px;border-radius:6px;font-size:.72rem;font-weight:800;cursor:pointer">🔒 Cerrar período</div>
+        </div>
+        <div class="ann" style="margin-top:6px"><div class="ann-num">3</div><span>Revisar el resumen. ¿Los números parecen correctos? Solo entonces presionar <strong style="color:#dc2626">Cerrar período</strong></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Checklist ANTES de cerrar (hacela siempre)</div>
+    <ul class="cl" id="cl-cierre-pre">
+      <li><input type="checkbox" id="cp1"><label for="cp1">Sé exactamente qué departamento voy a cerrar</label></li>
+      <li><input type="checkbox" id="cp2"><label for="cp2">Todas las semanas del período están cargadas en el sistema</label></li>
+      <li><input type="checkbox" id="cp3"><label for="cp3">No hay fichadas incompletas sin resolver</label></li>
+      <li><input type="checkbox" id="cp4"><label for="cp4">Revisé las fechas de inicio y fin del período</label></li>
+      <li><input type="checkbox" id="cp5"><label for="cp5">Revisé el estado de confirmaciones (la mayoría confirmó)</label></li>
+      <li><input type="checkbox" id="cp6"><label for="cp6">Los francos tomados del mes están todos cargados</label></li>
+      <li><input type="checkbox" id="cp7"><label for="cp7">Revisé los saldos y no hay nada raro</label></li>
+      <li><input type="checkbox" id="cp8"><label for="cp8">No tengo dudas pendientes sobre los datos</label></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Pasos para cerrar</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a "Períodos" en el menú</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Seleccionar el departamento</div><div class="sd">Elegir el departamento que vas a cerrar. Verificar que sea el correcto.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Seleccionar las semanas</div><div class="sd">Marcar las semanas que pertenecen al período. Verificar que las fechas sean las correctas.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Revisar el resumen</div><div class="sd">El sistema muestra un resumen con los totales. Revisarlo con calma. ¿Los números parecen correctos?</div></div></div>
+      <div class="step"><div class="snum">5</div><div class="sbody"><div class="st">Presionar "Cerrar período"</div><div class="sd">Se muestra una confirmación. Leer el mensaje y confirmar solo si todo está bien.</div></div></div>
+      <div class="step"><div class="snum">6</div><div class="sbody"><div class="st">Verificar que el cierre se completó</div><div class="sd">El sistema debe mostrar una confirmación de éxito. Si hay un error, avisá a Carola inmediatamente (sin tocar nada más).</div></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">¿Qué genera el sistema al cerrar?</div>
+    <ul>
+      <li>Guarda todos los datos del período en la base de datos (permanente).</li>
+      <li>Genera un PDF de francos tomados del cierre.</li>
+      <li>Archiva las confirmaciones de los empleados.</li>
+      <li>Actualiza automáticamente los saldos de francos.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Después del cierre</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Descargar el informe completo del cierre</div><div class="sd">Ir a Historial de cierres, abrir el cierre que acabás de hacer, y descargar "Informe completo". Guardarlo.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Repetir para el siguiente departamento</div><div class="sd">Si cerraste Redes, hacer lo mismo para Administración, y así sucesivamente.</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HISTORIAL DE CIERRES ── -->
+<section class="sec" id="historial">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">📁</div>
+    <div>
+      <div class="sec-tag tag-g">Referencia</div>
+      <div class="sec-ttl">Historial de cierres</div>
+      <div class="sec-sub">Ver y descargar cierres anteriores</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo acceder</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Hacer clic en "Cierres" en el menú</div><div class="sd">Aparece la lista de todos los cierres realizados.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Buscar el cierre que necesitás</div><div class="sd">Se puede filtrar por fecha o departamento.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Abrir el detalle</div><div class="sd">Hacer clic en el cierre para ver el detalle completo.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">Descargar el informe que necesitás</div><div class="sd">Desde el detalle podés descargar: Informe completo, PDF de francos, PDF de confirmaciones.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>Los cierres no se pueden modificar</strong>
+    Un cierre en estado "ACTIVO" es permanente. Si hay un error grave, Carola puede anularlo, pero es un proceso especial que no debe hacerse sin revisión.</div>
+  </div>
+</section>
+
+<!-- ── APP LOCAL ── -->
+<section class="sec" id="app-local">
+  <div class="sec-hd">
+    <div class="sec-ico" style="background:#fdf4ff">💻</div>
+    <div>
+      <div class="sec-tag" style="color:#7c3aed">App de escritorio Windows</div>
+      <div class="sec-ttl">App local — Windows</div>
+      <div class="sec-sub">Herramienta de Carola para procesamiento local y PDF</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-local">🖥️ App local — PC con Windows</span></div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>Esta herramienta la usa Carola, no la supervisora</strong>
+    Si sos la persona que reemplaza a Carola en el uso diario del sistema (cargar fichadas, registrar francos, cerrar el mes), todo eso se hace en la <strong>página web</strong>. La app local es complementaria.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo se ve la app local</div>
+    <p>Es un programa de Windows con ventanas propias (no se abre en el navegador). Al abrirlo aparece una pantalla con botones para cargar fichadas, ver semanas procesadas y generar PDFs.</p>
+    <div style="background:#f8fafc;border:1px solid var(--brd);border-radius:8px;padding:14px;margin-top:10px">
+      <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--mut);margin-bottom:8px">Ventanas disponibles en la app local</div>
+      <table class="tbl">
+        <thead><tr><th>Ventana</th><th>Para qué sirve</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Principal</strong></td><td>Cargar el archivo Excel del reloj, procesar fichadas, ver semanas</td></tr>
+          <tr><td><strong>Resumen</strong></td><td>Tabla resumen de totales por empleado</td></tr>
+          <tr><td><strong>Gráficos</strong></td><td>Estadísticas y gráficos de horas extra por empleado o período</td></tr>
+          <tr><td><strong>Feriados</strong></td><td>Agregar o quitar feriados en la configuración del sistema</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Qué hace la app local que NO hace la web</div>
+    <ul>
+      <li><strong>Procesar fichadas sin internet:</strong> puede trabajar offline con los archivos locales.</li>
+      <li><strong>Generar PDFs de liquidación en la PC:</strong> guarda los PDFs directamente en una carpeta local.</li>
+      <li><strong>Gráficos estadísticos:</strong> visualización de tendencias de horas extra.</li>
+      <li><strong>Gestión de feriados:</strong> editar los feriados que usa el sistema de cálculo.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Qué hace la web que NO hace la app local</div>
+    <ul>
+      <li>Enviar links de confirmación a los empleados por WhatsApp.</li>
+      <li>Recibir y registrar confirmaciones de los empleados.</li>
+      <li>Gestión de francos tomados y saldos.</li>
+      <li>Cierre de período y generación del informe completo.</li>
+      <li>Envío automático de reportes por email.</li>
+      <li>Acceso desde cualquier computadora con internet.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Vista de revisión de fichadas — tabla E/S por empleado</div>
+    <p style="font-size:.87rem;margin-bottom:10px">Esta es la pantalla principal de la app local después de procesar un archivo de fichadas. Muestra el detalle día a día con marcas de error para fichadas incompletas.</p>
+
+    <!-- Mockup app local: tabla de revisión -->
+    <div class="mock-wrap">
+      <div class="mock-bar" style="background:#2d2d2d"><div class="mock-dot md-r"></div><div class="mock-dot md-y"></div><div class="mock-dot md-g"></div><div style="color:#aaa;font-size:.7rem;margin-left:8px">CM Horas Extras — App local</div></div>
+      <div class="mock-body">
+        <div class="mock-lbl">App local Windows — tabla de revisión de fichadas</div>
+        <div style="background:#fff7ed;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.73rem;color:#92400e">
+          ⚠️ <strong>2 fichadas incompletas detectadas</strong> — revisar antes de continuar
+        </div>
+        <div class="mc">
+          <table class="mt">
+            <thead><tr><th>Legajo</th><th>Nombre</th><th>Lun 26/5</th><th>Mar 27/5</th><th>Mié 28/5</th><th>Jue 29/5</th><th>Vie 30/5</th><th>Total</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr style="background:#f0fdf4">
+                <td>45</td><td style="font-weight:700">GARCIA R.</td>
+                <td style="font-size:.65rem">E 06:02<br>S 14:18</td>
+                <td style="font-size:.65rem">E 06:00<br>S 14:22</td>
+                <td style="font-size:.65rem">E 06:01<br>S 17:45</td>
+                <td style="font-size:.65rem">E 06:03<br>S 14:15</td>
+                <td style="font-size:.65rem">E 06:00<br>S 14:10</td>
+                <td><span class="mb mb-ok">41h</span></td>
+                <td><span style="color:#16a34a;font-size:.7rem;font-weight:800">✓ OK</span></td>
+              </tr>
+              <tr style="background:#fff7ed">
+                <td>52</td><td style="font-weight:700">LOPEZ M.</td>
+                <td style="font-size:.65rem">E 06:05<br>S 14:20</td>
+                <td style="font-size:.65rem">E 06:01<br><span style="color:#dc2626;font-weight:800">⚠ sin S</span></td>
+                <td style="font-size:.65rem">E 06:00<br>S 14:30</td>
+                <td style="font-size:.65rem">E 06:02<br>S 14:18</td>
+                <td style="font-size:.65rem">E 06:00<br>S 14:12</td>
+                <td><span class="mb mb-p">22h?</span></td>
+                <td><span style="color:#d97706;font-size:.7rem;font-weight:800">⚠ INCOMPLETA</span></td>
+              </tr>
+              <tr style="background:#fef2f2">
+                <td>67</td><td style="font-weight:700">Torres K.</td>
+                <td style="font-size:.65rem"><span style="color:#dc2626;font-weight:800">sin E/S</span></td>
+                <td style="font-size:.65rem">E 06:03<br>S 14:25</td>
+                <td style="font-size:.65rem">E 06:01<br>S 14:28</td>
+                <td style="font-size:.65rem">E 06:04<br>S 14:20</td>
+                <td style="font-size:.65rem">E 06:02<br>S 14:15</td>
+                <td><span class="mb mb-p">0h lun</span></td>
+                <td><span style="color:#dc2626;font-size:.7rem;font-weight:800">⚠ REVISAR</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="ann" style="margin-top:8px"><div class="ann-num">1</div><span>GARCIA: todo bien ✓ — tiene entrada Y salida cada día, horas normales</span></div>
+          <div class="ann" style="margin-top:4px"><div class="ann-num">2</div><span>LOPEZ: falta la <strong>salida del martes</strong> — el total dice 22h (sospechoso). Avisar a Carola</span></div>
+          <div class="ann" style="margin-top:4px"><div class="ann-num">3</div><span>TORRES: el lunes no tiene ninguna fichada — verificar si trabajó ese día</span></div>
+        </div>
+        <div class="legend">
+          <div class="leg-item"><div class="leg-dot" style="background:#dcfce7;border:1px solid #bbf7d0"></div><span>Fichadas correctas</span></div>
+          <div class="leg-item"><div class="leg-dot" style="background:#fff7ed;border:1px solid #fde68a"></div><span>Posible problema</span></div>
+          <div class="leg-item"><div class="leg-dot" style="background:#fef2f2;border:1px solid #fecaca"></div><span>Error o dato faltante</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Los datos no se sincronizan automáticamente</strong>
+    Si procesás fichadas en la app local, esos datos no aparecen en la página web por sí solos. Son dos entornos separados. Para que los datos estén en la web hay que cargar el archivo también desde el navegador.</div>
+  </div>
+</section>
+
+<!-- ── QUÉ NO TOCAR ── -->
+<section class="sec" id="no-tocar">
+  <div class="sec-hd">
+    <div class="sec-ico ico-d">⛔</div>
+    <div>
+      <div class="sec-tag tag-d">Siempre</div>
+      <div class="sec-ttl">Qué NO tocar</div>
+      <div class="sec-sub">Acciones que pueden causar pérdida de datos o errores graves</div>
+    </div>
+  </div>
+
+  <div class="big-warn">
+    <h3>⛔ Si no estás segura, no toques</h3>
+    <p>Las siguientes acciones son peligrosas. Si ves alguna de estas opciones en pantalla, detente y consultá a Carola antes de hacer cualquier cosa.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Opciones prohibidas sin autorización de Carola</div>
+    <table class="tbl">
+      <thead><tr><th>Opción</th><th>Por qué es peligrosa</th></tr></thead>
+      <tbody>
+        <tr><td><strong class="txt-dan">Reset del sistema</strong></td><td>Borra TODOS los datos: semanas, confirmaciones, base de datos. Es irreversible.</td></tr>
+        <tr><td><strong class="txt-dan">Restaurar confirmaciones</strong></td><td>Modifica el estado interno del sistema. Solo para emergencias.</td></tr>
+        <tr><td><strong class="txt-dan">Recortar semana</strong></td><td>Elimina datos de una semana. No se puede deshacer fácilmente.</td></tr>
+        <tr><td><strong class="txt-dan">Anular cierre</strong></td><td>Revierte un cierre mensual. Afecta todos los saldos calculados.</td></tr>
+        <tr><td><strong class="txt-dan">Configuración de email</strong></td><td>Si se configura mal, los reportes automáticos dejan de llegar.</td></tr>
+        <tr><td><strong class="txt-dan">PythonAnywhere</strong></td><td>Es el servidor donde vive el sistema. Cualquier cambio puede tirar la app.</td></tr>
+        <tr><td><strong class="txt-dan">Eliminar semana</strong></td><td>Borra todos los datos de esa semana: tokens, confirmaciones, fichadas.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="alert a-carola">
+    <span class="a-ico">📞</span>
+    <div class="a-body"><strong>Si por accidente tocaste algo que no debías</strong>
+    No intentes "arreglarlo" haciendo más cambios. Cerrá el navegador, anotá exactamente qué hiciste y cuándo, y avisale a Carola lo antes posible. Cuanto antes se sepa, más fácil es recuperar.</div>
+  </div>
+</section>
+
+<!-- ── EMERGENCIAS ── -->
+<section class="sec" id="emergencias">
+  <div class="sec-hd">
+    <div class="sec-ico ico-d">🆘</div>
+    <div>
+      <div class="sec-tag tag-d">Referencia</div>
+      <div class="sec-ttl">Si algo sale mal</div>
+      <div class="sec-sub">Guía rápida por situación</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">El sistema no abre / la página no carga</div>
+    <ol>
+      <li>Revisar que tengas internet (abrí otra página para probarlo).</li>
+      <li>Intentar actualizar la página (F5).</li>
+      <li>Cerrar el navegador y volver a abrirlo.</li>
+      <li>Probar con otro navegador.</li>
+      <li>Si sigue igual después de 15 minutos, avisar a Carola.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">El archivo de fichadas no carga o da error</div>
+    <ol>
+      <li>Verificar que el archivo sea Excel (.xlsx) o CSV (.csv).</li>
+      <li>Verificar que el archivo no esté abierto en otro programa al mismo tiempo.</li>
+      <li>No intentar cargar el mismo archivo varias veces.</li>
+      <li>Anotar el mensaje de error exacto que muestra el sistema.</li>
+      <li>Avisar a Carola con ese mensaje.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Un empleado no aparece en el sistema</div>
+    <ol>
+      <li>Verificar que estés mirando el departamento correcto.</li>
+      <li>Verificar si el empleado pertenece a otro departamento.</li>
+      <li>Si el empleado debería aparecer y no está, avisá a Carola. No lo agregar manualmente sin consultar.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Un saldo de franco parece incorrecto</div>
+    <ol>
+      <li>No corregirlo manualmente.</li>
+      <li>Anotar: nombre del empleado, saldo que muestra el sistema, saldo que creés que debería tener.</li>
+      <li>Avisar a Carola con esa información.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cargué algo mal y no sé cómo revertirlo</div>
+    <div class="alert a-dan" style="margin-bottom:10px">
+      <span class="a-ico">🛑</span>
+      <div class="a-body"><strong>Detente. No hagas más cambios.</strong></div>
+    </div>
+    <ol>
+      <li>Cerrar el navegador.</li>
+      <li>Anotar: qué hiciste, en qué pantalla, qué botón presionaste, a qué hora.</li>
+      <li>Llamar a Carola cuanto antes. Cuanto más tiempo pase, más difícil es corregir.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ── CHECKLISTS ── -->
+<section class="sec" id="checklists">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">☑️</div>
+    <div>
+      <div class="sec-tag tag-g">Referencia</div>
+      <div class="sec-ttl">Checklists</div>
+      <div class="sec-sub">Para no olvidarte nada · Los tildeos se guardan en este navegador</div>
+    </div>
+  </div>
+
+  <button class="print-btn no-print" onclick="window.print()">🖨️ Imprimir checklists</button>
+
+  <div class="card">
+    <div class="card-ttl">✅ Checklist semanal — al cargar fichadas</div>
+    <ul class="cl" id="cl-semanal">
+      <li><input type="checkbox" id="s1"><label for="s1">Tengo el archivo correcto del reloj biométrico</label></li>
+      <li><input type="checkbox" id="s2"><label for="s2">Sé a qué departamento pertenece el archivo (Redes o Administración)</label></li>
+      <li><input type="checkbox" id="s3"><label for="s3">Las fechas del archivo corresponden a la semana que quiero procesar</label></li>
+      <li><input type="checkbox" id="s4"><label for="s4">Procesé el archivo y apareció la semana nueva en la tabla</label></li>
+      <li><input type="checkbox" id="s5"><label for="s5">Revisé las entradas y salidas de cada empleado (fichadas completas)</label></li>
+      <li><input type="checkbox" id="s6"><label for="s6">No hay empleados con horas sospechosas (0 horas o más de 16 en un día)</label></li>
+      <li><input type="checkbox" id="s7"><label for="s7">Si encontré problemas de fichadas, los anoté y avisé a Carola</label></li>
+      <li><input type="checkbox" id="s8"><label for="s8">Envié los links de WhatsApp a los empleados</label></li>
+      <li><input type="checkbox" id="s9"><label for="s9">Al final de la semana revisé las confirmaciones</label></li>
+      <li><input type="checkbox" id="s10"><label for="s10">El viernes descargué el informe semanal</label></li>
+    </ul>
+    <button class="print-btn no-print" style="margin-top:12px;background:#64748b" onclick="resetCL('cl-semanal')">↺ Reiniciar</button>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">🔒 Checklist de cierre mensual</div>
+    <ul class="cl" id="cl-mensual">
+      <li><input type="checkbox" id="m1"><label for="m1">Sé exactamente qué departamento voy a cerrar</label></li>
+      <li><input type="checkbox" id="m2"><label for="m2">Todas las semanas del período están cargadas</label></li>
+      <li><input type="checkbox" id="m3"><label for="m3">No hay fichadas incompletas sin resolver</label></li>
+      <li><input type="checkbox" id="m4"><label for="m4">Las fechas de inicio y fin del período son correctas</label></li>
+      <li><input type="checkbox" id="m5"><label for="m5">Revisé las confirmaciones de los empleados</label></li>
+      <li><input type="checkbox" id="m6"><label for="m6">Los francos tomados del mes están todos cargados</label></li>
+      <li><input type="checkbox" id="m7"><label for="m7">Revisé los saldos de francos y todo parece correcto</label></li>
+      <li><input type="checkbox" id="m8"><label for="m8">No tengo dudas pendientes — si las tengo, consulté a Carola</label></li>
+      <li><input type="checkbox" id="m9"><label for="m9">Cerré el período y el sistema mostró confirmación de éxito</label></li>
+      <li><input type="checkbox" id="m10"><label for="m10">Descargué y guardé el informe completo del cierre</label></li>
+    </ul>
+    <button class="print-btn no-print" style="margin-top:12px;background:#64748b" onclick="resetCL('cl-mensual')">↺ Reiniciar</button>
+  </div>
+</section>
+
+<!-- ── GLOSARIO ── -->
+<section class="sec" id="glosario">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">📖</div>
+    <div>
+      <div class="sec-tag tag-g">Referencia</div>
+      <div class="sec-ttl">Glosario</div>
+      <div class="sec-sub">Términos técnicos explicados simple</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <dl>
+      <div class="gl-item"><dt>Biométrico / Reloj biométrico</dt><dd>El aparato en la entrada del trabajo donde la gente ficha pasando el dedo o la tarjeta. Registra a qué hora entran y salen.</dd></div>
+      <div class="gl-item"><dt>Fichada</dt><dd>Cada vez que alguien marca en el reloj biométrico. Una entrada es una fichada, una salida es otra fichada.</dd></div>
+      <div class="gl-item"><dt>Fichada incompleta</dt><dd>Cuando hay una entrada sin salida (o viceversa). El sistema no puede calcular bien las horas si falta la mitad del par.</dd></div>
+      <div class="gl-item"><dt>Franco compensatorio</dt><dd>Un día libre que le corresponde a un empleado por haber trabajado horas extra. Es como una "devolución" del tiempo trabajado de más.</dd></div>
+      <div class="gl-item"><dt>Saldo de francos</dt><dd>La diferencia entre los francos que le corresponden y los que ya tomó. Si es positivo, tiene días disponibles. Si es negativo, tomó más de los que le corresponden.</dd></div>
+      <div class="gl-item"><dt>OT50 / OT100</dt><dd>Tipos de horas extra. OT50 son horas con 50% de recargo (días hábiles, hasta las 21:00). OT100 son horas con 100% de recargo (después de las 21:00, fines de semana y feriados).</dd></div>
+      <div class="gl-item"><dt>Período</dt><dd>El conjunto de semanas que se cierra junto a fin de mes. Normalmente es un mes completo por departamento.</dd></div>
+      <div class="gl-item"><dt>Cierre de período</dt><dd>La acción de "congelar" los datos de un mes para que queden guardados de forma definitiva en la base de datos.</dd></div>
+      <div class="gl-item"><dt>Confirmación</dt><dd>Cuando un empleado revisa el resumen de sus horas por el link de WhatsApp y dice "sí, está correcto". El sistema lo registra como confirmado.</dd></div>
+      <div class="gl-item"><dt>Token / Link de confirmación</dt><dd>El link único que se le manda a cada empleado. Funciona como una llave personal: solo ese empleado puede ver sus propias horas con ese link.</dd></div>
+      <div class="gl-item"><dt>Legajo</dt><dd>El número de empleado. Es único para cada persona en la empresa. Se usa para identificarlos en el sistema.</dd></div>
+      <div class="gl-item"><dt>PythonAnywhere</dt><dd>El servidor donde vive el sistema web. Es como el "lugar" en internet donde está guardado el programa. No tocar sin autorización.</dd></div>
+      <div class="gl-item"><dt>Base de datos</dt><dd>El archivo donde se guarda toda la información del sistema: empleados, horas, francos, cierres. Se llama cierres.db.</dd></div>
+      <div class="gl-item"><dt>Depto / Departamento</dt><dd>El sector de trabajo del empleado: Redes, Administración, Guardias, Internet o Telefonía. Cada uno se maneja por separado.</dd></div>
+    </dl>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ── Active nav on scroll ──
+const secs = document.querySelectorAll('.sec');
+const links = document.querySelectorAll('#nav li a');
+
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'));
+      const match = document.querySelector('#nav li a[href="#' + e.target.id + '"]');
+      if (match) match.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+secs.forEach(s => obs.observe(s));
+
+// ── Smooth scroll ──
+links.forEach(l => {
+  l.addEventListener('click', e => {
+    e.preventDefault();
+    const id = l.getAttribute('href').slice(1);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// ── Sidebar search ──
+document.getElementById('sb-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  links.forEach(l => {
+    const txt = l.textContent.toLowerCase();
+    l.parentElement.style.display = (!q || txt.includes(q)) ? '' : 'none';
+  });
+  document.querySelectorAll('#nav .grp, #nav .div').forEach(el => {
+    el.style.display = q ? 'none' : '';
+  });
+});
+
+// ── Checklists: persist with localStorage ──
+function initCL(id) {
+  const saved = JSON.parse(localStorage.getItem('cl_' + id) || '{}');
+  document.querySelectorAll('#' + id + ' input[type=checkbox]').forEach(cb => {
+    if (saved[cb.id]) cb.checked = true;
+    cb.addEventListener('change', () => {
+      const st = JSON.parse(localStorage.getItem('cl_' + id) || '{}');
+      st[cb.id] = cb.checked;
+      localStorage.setItem('cl_' + id, JSON.stringify(st));
+    });
+  });
+}
+
+function resetCL(id) {
+  document.querySelectorAll('#' + id + ' input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  localStorage.removeItem('cl_' + id);
+}
+
+['cl-semanal', 'cl-mensual', 'cl-cierre-pre'].forEach(initCL);
+</script>
+</body>
+</html>

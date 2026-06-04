@@ -298,7 +298,6 @@ def _hacer_pdf(emps, departamento, output_path, fecha_str):
         pdf.cell(ANCHOS[5], 6, str(saldo), 1, 0, "C", relleno)
         pdf.set_text_color(0, 0, 0)
         pdf.ln()
-
         # Sub-filas de detalle francos tomados
         for det in emp.get("detalle_tomados", []):
             if pdf.get_y() + 5 > pdf.h - pdf.b_margin:

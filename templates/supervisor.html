@@ -6,20 +6,76 @@
   <title>CM Horas Extras — Supervisor</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;padding:22px;color:#111827;max-width:1240px;margin:0 auto}
-    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
-    h1{font-size:1.55rem;font-weight:750;color:#0f172a}
-    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-    .nav a{height:34px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid #d7dde5;border-radius:7px;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650}
-    .nav a:hover{border-color:#94a3b8;background:#f8fafc}
-    .nav button{height:34px;padding:0 12px;border-radius:7px!important;margin-left:0!important}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;max-width:1240px;margin:0 auto}
+
+    /* ── Topbar / Nav ── */
+    .topbar{background:#172033;padding:0 24px;display:flex;align-items:stretch;justify-content:space-between;gap:0;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+    .topbar-brand{display:flex;flex-direction:column;justify-content:center;padding:12px 0;text-decoration:none}
+    .topbar-title{font-size:1.05rem;font-weight:800;color:#fff;line-height:1.1}
+    .topbar-sub{font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:2px}
+    .nav{display:flex;align-items:stretch;gap:0}
+    .nav a{display:inline-flex;align-items:center;padding:0 14px;color:#cbd5e1;text-decoration:none;font-size:.83rem;font-weight:600;border-bottom:3px solid transparent;transition:color .15s,border-color .15s}
+    .nav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav a.active{color:#fff;border-bottom-color:#3b82f6}
+    .nav-logout{display:inline-flex;align-items:center;padding:0 12px;color:#f87171;text-decoration:none;font-size:.83rem;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit;transition:color .15s}
+    .nav-logout:hover{color:#fca5a5;background:rgba(239,68,68,.08)}
+    .nav-admin-wrap{position:relative;display:flex;align-items:stretch}
+    .nav-admin-btn{display:inline-flex;align-items:center;gap:5px;padding:0 14px;color:#94a3b8;font-size:.83rem;font-weight:600;cursor:pointer;border:none;background:none;font-family:inherit;transition:color .15s;border-bottom:3px solid transparent}
+    .nav-admin-btn:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav-admin-btn .arrow{font-size:.6rem;transition:transform .15s}
+    .nav-admin-btn.open{color:#fff}
+    .nav-admin-btn.open .arrow{transform:rotate(180deg)}
+    .nav-admin-dropdown{position:absolute;top:100%;right:0;background:#1e293b;border:1px solid #334155;border-top:none;border-radius:0 0 8px 8px;min-width:185px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:200;display:none}
+    .nav-admin-dropdown.open{display:block}
+    .nav-admin-dropdown a{display:flex;align-items:center;padding:10px 16px;color:#cbd5e1;text-decoration:none;font-size:.82rem;font-weight:600;gap:8px;transition:background .12s;white-space:nowrap}
+    .nav-admin-dropdown a:hover{background:#334155;color:#fff}
+    .nav-admin-dropdown .sep{height:1px;background:#334155;margin:3px 0}
+    .nav-admin-dropdown .danger-link{color:#f87171}
+    .nav-admin-dropdown .danger-link:hover{background:rgba(239,68,68,.12);color:#fca5a5}
+
+    /* ── Page content ── */
+    .page-content{padding:22px}
+
+    /* ── Dashboard ── */
+    .dashboard{margin-bottom:20px}
+    .section-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;margin-bottom:12px}
+    .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:10px}
+    .dept-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:5px}
+    .dept-card-name{font-size:.83rem;font-weight:700;color:#374151}
+    .dept-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:.74rem;font-weight:700;margin-top:2px;width:fit-content}
+    .dept-badge-verde{background:#dcfce7;color:#166534}
+    .dept-badge-amarillo{background:#fef3c7;color:#92400e}
+    .dept-badge-naranja{background:#fff7ed;color:#ea580c}
+    .dept-badge-gris{background:#f1f5f9;color:#64748b}
+    .dept-badge .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+    .dot-verde{background:#22c55e}
+    .dot-amarillo{background:#f59e0b}
+    .dot-naranja{background:#f97316}
+    .dot-gris{background:#94a3b8}
+    .dept-card-detail{font-size:.74rem;color:#6b7280;margin-top:1px}
+
+    /* ── Pasos de flujo ── */
+    .pasos-flujo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+    .paso{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:.75rem;font-weight:600;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+    .paso.actual{background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe}
+    .paso-num{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:800;background:#e2e8f0;color:#475569;flex-shrink:0}
+    .paso.actual .paso-num{background:#3b82f6;color:#fff}
+
+    /* ── Help text ── */
+    .help-text{font-size:.81rem;color:#64748b;margin-bottom:14px;line-height:1.55;background:#f8fafc;border:1px solid #e5e7eb;border-radius:7px;padding:9px 13px}
+
+    /* ── Cards ── */
     .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px}
     .card-title,.card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
     .card-title{margin-bottom:14px}
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+
+    /* ── Forms ── */
     label{display:block;font-weight:700;margin-bottom:8px;font-size:.86rem;color:#334155}
     input[type=file]{width:100%;padding:14px;border:1px dashed #94a3b8;border-radius:8px;cursor:pointer;font-size:.9rem;background:#f8fafc;color:#334155}
     input[type=file]:hover{background:#f1f5f9;border-color:#64748b}
+
+    /* ── Buttons ── */
     .btn{height:40px;padding:0 22px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.92rem;font-weight:750;cursor:pointer;margin-top:14px}
     .btn:hover,.btn-sm:hover,.btn-sm-mt:hover{background:#25314a}
     .btn-sm,.btn-sm-mt{height:32px;padding:0 12px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer}
@@ -34,7 +90,29 @@
     .btn-francos:hover{background:#dcfce7}
     .btn-imprimir{height:30px;padding:0 10px;background:#fff;border:1px solid #c7d2fe;border-radius:7px;font-size:.78rem;font-weight:700;white-space:nowrap;color:#3730a3;text-decoration:none;display:inline-flex;align-items:center}
     .btn-imprimir:hover{background:#eef2ff;border-color:#a5b4fc}
-    .btn-reset{padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;margin-left:8px}
+
+    /* ── Dropdown de acciones por semana ── */
+    .actions-cell{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .dropdown-wrap{position:relative;display:inline-block}
+    .btn-more{height:30px;padding:0 10px;background:#f8fafc;border:1px solid #d7dde5;border-radius:7px;font-size:.78rem;font-weight:700;cursor:pointer;color:#475569;white-space:nowrap}
+    .btn-more:hover{background:#f1f5f9;border-color:#94a3b8}
+    .actions-dropdown{position:absolute;top:calc(100% + 4px);right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:175px;z-index:50;display:none;overflow:hidden}
+    .actions-dropdown.open{display:block}
+    .actions-dropdown button,.actions-dropdown a{display:flex;align-items:center;width:100%;padding:9px 14px;font-size:.81rem;font-weight:700;cursor:pointer;border:none;background:none;text-align:left;text-decoration:none;font-family:inherit;gap:7px;color:#334155;transition:background .1s;white-space:nowrap}
+    .actions-dropdown button:hover,.actions-dropdown a:hover{background:#f8fafc}
+    .actions-dropdown .dd-danger{color:#b91c1c}
+    .actions-dropdown .dd-danger:hover{background:#fef2f2}
+    .actions-dropdown .dd-warn{color:#92400e}
+    .actions-dropdown .dd-warn:hover{background:#fffbeb}
+    .actions-dropdown .dd-green{color:#166534}
+    .actions-dropdown .dd-green:hover{background:#dcfce7}
+    .actions-dropdown .dd-sep{height:1px;background:#f1f5f9;margin:3px 0}
+
+    /* ── Semana row highlight por estado de confirmaciones ── */
+    .row-has-pending td:first-child{border-left:3px solid #f59e0b}
+    .row-none-confirmed td:first-child{border-left:3px solid #f97316}
+
+    /* ── Misc ── */
     .warn-dup,.aviso-local{color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;font-size:.84rem;margin-top:10px}
     .aviso-local{margin-bottom:10px}
     .deptos-label{font-size:.82rem;font-weight:700;color:#475569;margin:12px 0 8px}
@@ -49,7 +127,6 @@
     .depto-hint{font-weight:400;color:#888}
     .depto-input{width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;margin-top:4px;background:#fff}
     .tel-error{color:#dc2626;font-size:.85rem;margin-top:8px}
-    .btn-sm-mt{padding:6px 14px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:12px}
     #error{color:#dc2626;margin-top:10px;font-size:.85rem;display:none}
     #loading{color:#555;margin-top:10px;font-size:.85rem;display:none}
     .tabla-wrap{overflow-x:auto}
@@ -70,11 +147,30 @@
     .sem-n{font-weight:700}
     .sem-fecha{font-size:.75rem;color:#888;display:block;margin-top:2px}
     .vacio{color:#64748b;font-size:.88rem;padding:18px 0;text-align:center}
-    .actions-cell{display:flex;gap:6px;flex-wrap:wrap}
     .desc-dia{font-size:.78rem;color:#475569;margin-top:3px;padding:5px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #cbd5e1}
     .desc-fecha{font-weight:600;color:#1a1a2e}
     .info-ok{font-size:.82rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:8px 12px;border-radius:7px;margin-bottom:12px}
     .hidden{display:none!important}
+    .td-fechas{font-size:.82rem}
+    .td-cargando{color:#888}
+    .td-vacio{text-align:center;color:#888}
+
+    /* ── Zona Admin (acordeon al final) ── */
+    .admin-zone{margin-bottom:14px}
+    .admin-zone-toggle{display:flex;align-items:center;gap:10px;width:100%;padding:13px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:700;color:#b91c1c;text-align:left;transition:background .15s;font-family:inherit}
+    .admin-zone-toggle:hover{background:#fee2e2}
+    .admin-zone-toggle.open{border-radius:8px 8px 0 0}
+    .admin-zone-toggle .arrow{margin-left:auto;font-size:.65rem;transition:transform .15s}
+    .admin-zone-toggle.open .arrow{transform:rotate(180deg)}
+    .admin-zone-body{border:1px solid #fecaca;border-top:none;border-radius:0 0 8px 8px;background:#fff;padding:18px;display:none}
+    .admin-zone-body.open{display:block}
+    .admin-warn-box{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 15px;font-size:.83rem;color:#92400e;margin-bottom:16px;line-height:1.6}
+    .admin-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .btn-reset-admin{height:38px;padding:0 18px;background:#dc2626;color:#fff;border:none;border-radius:7px;font-size:.85rem;font-weight:700;cursor:pointer}
+    .btn-reset-admin:hover{background:#b91c1c}
+    .admin-link{height:36px;padding:0 14px;background:#fff;border:1px solid #d7dde5;border-radius:7px;font-size:.82rem;font-weight:600;color:#334155;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .admin-link:hover{background:#f8fafc;border-color:#94a3b8}
+
     /* ── Modal advertencia ── */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
     .modal-box{background:#fff;border-radius:14px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:modal-in .18s ease}
@@ -91,16 +187,18 @@
     .modal-cancelar:hover{background:#f8fafc}
     .modal-confirmar{height:38px;padding:0 20px;border-radius:7px;border:none;background:#dc2626;color:#fff;font-size:.88rem;font-weight:800;cursor:pointer}
     .modal-confirmar:hover{background:#b91c1c}
-    .td-fechas{font-size:.82rem}
-    .td-cargando{color:#888}
-    .td-vacio{text-align:center;color:#888}
+
     @media (max-width:760px){
-      body{padding:14px}
-      .topbar{display:block}
-      .nav{justify-content:flex-start;margin-top:12px}
+      .topbar{padding:0 12px}
+      .nav a{padding:0 8px;font-size:.78rem}
+      .nav-admin-btn{padding:0 8px;font-size:.78rem}
+      .page-content{padding:14px}
+      .dashboard-grid{grid-template-columns:repeat(2,1fr)}
       .card-header{display:block}
       .card-header .btn-sm{margin-top:10px}
       table{font-size:.8rem}
+      .pasos-flujo{gap:5px}
+      .paso{font-size:.7rem;padding:4px 9px}
     }
   </style>
 </head>
@@ -110,40 +208,81 @@
 <div id="modal-regenerar" class="modal-overlay hidden" onclick="if(event.target===this)cerrarModalRegen()">
   <div class="modal-box">
     <div class="modal-top">
-      <div class="modal-icono">⚠️</div>
-      <div class="modal-titulo">¡ATENCIÓN!</div>
+      <div class="modal-icono">&#9888;&#65039;</div>
+      <div class="modal-titulo">&#xA1;ATENCI&#xD3;N!</div>
       <div class="modal-subtitulo" id="modal-subtitulo"></div>
     </div>
     <div class="modal-body">
       <div class="modal-alerta hidden" id="modal-alerta-pend"></div>
       <div class="modal-detalle">
-        Los links <strong>pendientes quedarán inválidos</strong> y se generarán nuevos.<br>
+        Los links <strong>pendientes quedar&#xE1;n inv&#xE1;lidos</strong> y se generar&#xE1;n nuevos.<br>
         Los empleados que ya confirmaron <strong>no se tocan</strong>.
       </div>
     </div>
     <div class="modal-footer">
       <button type="button" class="modal-cancelar" onclick="cerrarModalRegen()">Cancelar</button>
-      <button type="button" class="modal-confirmar" id="modal-btn-confirmar">Sí, regenerar</button>
+      <button type="button" class="modal-confirmar" id="modal-btn-confirmar">S&#xED;, regenerar</button>
     </div>
   </div>
 </div>
 
 
+<!-- Topbar de navegacion -->
 <div class="topbar">
-  <h1>CM Horas Extras</h1>
+  <a href="/supervisor" class="topbar-brand">
+    <span class="topbar-title">CM Horas Extras</span>
+    <span class="topbar-sub">Panel del supervisor</span>
+  </a>
   <div class="nav">
-    <a href="/historial">Historial</a>
-    <a href="/periodo">Períodos</a>
-    <a href="/periodos/historial">Cierres</a>
+    <a href="/supervisor" class="active">Supervisor</a>
+    <a href="/periodo">Per&#xED;odos</a>
     <a href="/francos">Francos</a>
-    <a href="/empleados/importar">Empleados</a>
-    <a href="/configuracion/email">Config. Email</a>
-    <a href="/logout">Salir</a>
-    <button type="button" onclick="resetTotal()" class="btn-reset">⚠ Reset total</button>
+    <a href="/periodos/historial">Cierres</a>
+    <a href="/historial">Historial</a>
+    <div class="nav-admin-wrap">
+      <button type="button" class="nav-admin-btn" id="admin-nav-btn" onclick="toggleAdminDropdown()">
+        Admin <span class="arrow">&#9660;</span>
+      </button>
+      <div class="nav-admin-dropdown" id="admin-nav-dropdown">
+        <a href="/empleados/importar">&#128100; Empleados</a>
+        <a href="/configuracion/email">&#128231; Config. Email</a>
+        <div class="sep"></div>
+        <a href="#zona-admin" class="danger-link" onclick="abrirZonaAdmin();toggleAdminDropdown();return false;">&#9888;&#65039; Reset total</a>
+      </div>
+    </div>
+    <a href="/logout" class="nav-logout">Salir</a>
   </div>
 </div>
 
 <script>
+// ── Dropdown Admin en nav ────────────────────────
+function toggleAdminDropdown() {
+  document.getElementById('admin-nav-btn').classList.toggle('open');
+  document.getElementById('admin-nav-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.nav-admin-wrap')) {
+    document.getElementById('admin-nav-btn').classList.remove('open');
+    document.getElementById('admin-nav-dropdown').classList.remove('open');
+  }
+});
+
+// ── Abrir zona admin al fondo de la pagina ──────
+function abrirZonaAdmin() {
+  document.getElementById('admin-zone-toggle').classList.add('open');
+  document.getElementById('admin-zone-body').classList.add('open');
+  setTimeout(function() {
+    document.getElementById('zona-admin').scrollIntoView({ behavior: 'smooth' });
+  }, 80);
+}
+
+// ── Acordeon zona admin ──────────────────────────
+function toggleAdminZone() {
+  document.getElementById('admin-zone-toggle').classList.toggle('open');
+  document.getElementById('admin-zone-body').classList.toggle('open');
+}
+
+// ── Reset total ──────────────────────────────────
 async function resetTotal() {
   if (!confirm('¿Borrar TODO?\n\n• Sesión activa\n• Confirmaciones\n• Semanas\n• Cierres de la base de datos\n\nEsta acción no se puede deshacer.')) return;
   if (!confirm('Confirmar nuevamente: ¿borrar todos los datos?')) return;
@@ -154,97 +293,162 @@ async function resetTotal() {
 }
 </script>
 
-<!-- Nueva semana -->
-<div class="card">
-  <div class="card-title">Nueva semana</div>
-  <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
-  <input type="file" id="csv" accept=".xls,.xlsx,.csv">
-  <div class="depto-field">
-    <label for="depto-manual">Departamento</label>
-    <select id="depto-manual" class="depto-input" required disabled>
-      <option value="">Seleccionar departamento...</option>
-    </select>
-  </div>
-  <div id="deptos-wrap" class="hidden">
-    <div class="deptos-label">Seleccioná los departamentos a incluir:</div>
-    <div id="deptos-checks" class="deptos-checks"></div>
-  </div>
-  <div id="error" class="hidden"></div>
-  <div id="warn-dup" class="warn-dup hidden"></div>
-  <div id="loading" class="hidden">⏳ Procesando fichadas…</div>
-  <button type="button" class="btn" id="btn-procesar" onclick="procesar(false)" disabled>Procesar y generar links</button>
-</div>
+<div class="page-content">
 
-<!-- Links de la semana recién procesada -->
-<div class="card hidden" id="resultado">
-  <div class="card-header">
-    <span class="card-title-inline">Links para enviar</span>
-    <span id="semana-badge" class="badge-semana"></span>
+  <!-- Dashboard por departamento -->
+  <div class="dashboard">
+    <div class="section-label">Estado actual por departamento</div>
+    <div class="dashboard-grid" id="dashboard-grid">
+      <div class="dept-card"><div class="dept-card-name">Redes</div><div class="dept-badge dept-badge-gris"><span class="dot dot-gris"></span>Cargando&hellip;</div></div>
+      <div class="dept-card"><div class="dept-card-name">Administraci&#xF3;n</div><div class="dept-badge dept-badge-gris"><span class="dot dot-gris"></span>Cargando&hellip;</div></div>
+      <div class="dept-card"><div class="dept-card-name">Guardias</div><div class="dept-badge dept-badge-gris"><span class="dot dot-gris"></span>Cargando&hellip;</div></div>
+      <div class="dept-card"><div class="dept-card-name">Internet</div><div class="dept-badge dept-badge-gris"><span class="dot dot-gris"></span>Cargando&hellip;</div></div>
+      <div class="dept-card"><div class="dept-card-name">Telef&#xF3;n&#xED;a</div><div class="dept-badge dept-badge-gris"><span class="dot dot-gris"></span>Cargando&hellip;</div></div>
+    </div>
   </div>
-  {% if request.host.startswith('localhost') or request.host.startswith('127.') %}
-  <div class="aviso-local">⚠️ Servidor local — los links solo funcionan en esta PC. Para enviar WhatsApp a empleados usá <strong>PythonAnywhere</strong>.</div>
-  {% endif %}
-  <div class="tabla-wrap">
-    <table>
-      <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</div>
 
-<!-- Lista de teléfonos -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title-inline">Lista de teléfonos</span>
-    <span id="tel-estado" class="tel-ok hidden"></span>
-  </div>
-  <label for="tel-archivo">Subí el Excel con legajos y teléfonos (se puede subir de nuevo para actualizar)</label>
-  <input type="file" id="tel-archivo" accept=".xls,.xlsx,.csv">
-  <div id="tel-error" class="tel-error hidden"></div>
-  <button type="button" class="btn-sm-mt" onclick="subirTelefonos()">Cargar teléfonos</button>
-</div>
+  <!-- Nueva semana -->
+  <div class="card">
+    <div class="card-title">Nueva semana</div>
 
-<!-- Semanas registradas -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title-inline">Semanas registradas</span>
-    <button type="button" class="btn-sm" onclick="cargarSemanas()">Actualizar</button>
-    <button type="button" class="btn-francos" onclick="guardarFrancosTodasSemanas()">Guardar francos de todas</button>
-  </div>
-  <div id="semanas-body"><div class="vacio">Cargando…</div></div>
-</div>
+    <!-- Pasos del flujo semanal -->
+    <div class="pasos-flujo">
+      <span class="paso actual"><span class="paso-num">1</span> Cargar fichadas &larr; est&#xE1;s aqu&#xED;</span>
+      <span class="paso"><span class="paso-num">2</span> Enviar links de WhatsApp</span>
+      <span class="paso"><span class="paso-num">3</span> Revisar confirmaciones</span>
+      <span class="paso"><span class="paso-num">4</span> Imprimir informe (viernes)</span>
+    </div>
 
-<!-- Panel de links de una semana -->
-<div class="card hidden" id="links-panel">
-  <div class="card-header">
-    <span class="card-title-inline" id="links-panel-titulo"></span>
-    <button type="button" class="btn-sm" onclick="document.getElementById('links-panel').classList.add('hidden')">Cerrar ×</button>
-  </div>
-  <div id="links-panel-info" class="info-ok hidden"></div>
-  <div class="tabla-wrap">
-    <table>
-      <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
-      <tbody id="tbody-links"></tbody>
-    </table>
-  </div>
-</div>
+    <div class="help-text">
+      Carg&#xE1; el archivo del reloj biom&#xE9;trico para <strong>Redes</strong> o <strong>Administraci&#xF3;n</strong>.
+      Para los otros deptos (Guardias, Internet, Telef&#xF3;n&#xED;a) los francos se cargan desde el formulario de <a href="/francos" style="color:#3b82f6;font-weight:700">Francos</a>.
+    </div>
 
-<!-- Estado confirmaciones (sesión activa) -->
-<div class="card hidden" id="estado-wrap">
-  <div class="card-header">
-    <span class="card-title-inline">Estado de confirmaciones</span>
-    <button type="button" class="btn-sm" onclick="cargarEstado()">Actualizar</button>
+    <label for="csv">Archivo de fichadas (XLS / CSV del CrossCheck)</label>
+    <input type="file" id="csv" accept=".xls,.xlsx,.csv">
+    <div class="depto-field">
+      <label for="depto-manual">Departamento</label>
+      <select id="depto-manual" class="depto-input" required disabled>
+        <option value="">Seleccionar departamento...</option>
+      </select>
+    </div>
+    <div id="deptos-wrap" class="hidden">
+      <div class="deptos-label">Selecion&#xE1; los departamentos a incluir:</div>
+      <div id="deptos-checks" class="deptos-checks"></div>
+    </div>
+    <div id="error" class="hidden"></div>
+    <div id="warn-dup" class="warn-dup hidden"></div>
+    <div id="loading" class="hidden">&#x23F3; Procesando fichadas&hellip;</div>
+    <button type="button" class="btn" id="btn-procesar" onclick="procesar(false)" disabled>Procesar y generar links</button>
   </div>
-  <div class="tabla-wrap">
-    <table>
-      <thead><tr><th>Sem.</th><th>Depto.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
-      <tbody id="tbody-estado"></tbody>
-    </table>
+
+  <!-- Links de la semana recien procesada -->
+  <div class="card hidden" id="resultado">
+    <div class="card-header">
+      <span class="card-title-inline">Links para enviar</span>
+      <span id="semana-badge" class="badge-semana"></span>
+    </div>
+    {% if request.host.startswith('localhost') or request.host.startswith('127.') %}
+    <div class="aviso-local">&#x26A0;&#xFE0F; Servidor local &mdash; los links solo funcionan en esta PC. Para enviar WhatsApp a empleados us&#xE1; <strong>PythonAnywhere</strong>.</div>
+    {% endif %}
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Legajo</th><th>Nombre</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
-</div>
+
+  <!-- Semanas registradas -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title-inline">Semanas registradas</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn-sm" onclick="cargarSemanas()">Actualizar</button>
+        <button type="button" class="btn-francos" onclick="guardarFrancosTodasSemanas()">Guardar francos de todas</button>
+      </div>
+    </div>
+    <p class="help-text" style="margin-bottom:10px">Envi&#xE1; los links de WhatsApp a los empleados para que confirmen sus horas. Las filas con borde <span style="color:#92400e;font-weight:700">amarillo</span> tienen confirmaciones pendientes; con borde <span style="color:#ea580c;font-weight:700">naranja</span> no hubo ninguna confirmaci&#xF3;n a&#xFA;n.</p>
+    <div id="semanas-body"><div class="vacio">Cargando&hellip;</div></div>
+  </div>
+
+  <!-- Panel de links de una semana -->
+  <div class="card hidden" id="links-panel">
+    <div class="card-header">
+      <span class="card-title-inline" id="links-panel-titulo"></span>
+      <button type="button" class="btn-sm" onclick="document.getElementById('links-panel').classList.add('hidden')">Cerrar &times;</button>
+    </div>
+    <div id="links-panel-info" class="info-ok hidden"></div>
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Link</th><th></th><th>WhatsApp</th></tr></thead>
+        <tbody id="tbody-links"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Estado confirmaciones (sesion activa) -->
+  <div class="card hidden" id="estado-wrap">
+    <div class="card-header">
+      <span class="card-title-inline">Estado de confirmaciones</span>
+      <button type="button" class="btn-sm" onclick="cargarEstado()">Actualizar</button>
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Sem.</th><th>Depto.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
+        <tbody id="tbody-estado"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Lista de telefonos (al final, menos prioritario) -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title-inline">Lista de tel&#xE9;fonos</span>
+      <span id="tel-estado" class="tel-ok hidden"></span>
+    </div>
+    <label for="tel-archivo">Sub&#xED; el Excel con legajos y tel&#xE9;fonos (se puede subir de nuevo para actualizar)</label>
+    <input type="file" id="tel-archivo" accept=".xls,.xlsx,.csv">
+    <div id="tel-error" class="tel-error hidden"></div>
+    <button type="button" class="btn-sm-mt" onclick="subirTelefonos()">Cargar tel&#xE9;fonos</button>
+  </div>
+
+  <!-- Zona de administracion (acordeon al final) -->
+  <div class="admin-zone" id="zona-admin">
+    <button type="button" class="admin-zone-toggle" id="admin-zone-toggle" onclick="toggleAdminZone()">
+      &#9888;&#65039; Zona de administraci&#xF3;n
+      <span class="arrow">&#9660;</span>
+    </button>
+    <div class="admin-zone-body" id="admin-zone-body">
+      <div class="admin-warn-box">
+        <strong>&#x26A0; Advertencia:</strong> Las acciones en esta zona son <strong>irreversibles</strong> y afectan todos los datos del sistema. Usar solo ante una situaci&#xF3;n excepcional y con coordinaci&#xF3;n del equipo.
+      </div>
+      <div class="admin-actions">
+        <button type="button" class="btn-reset-admin" onclick="resetTotal()">&#9888; Reset total &mdash; borrar todos los datos</button>
+        <a href="/empleados/importar" class="admin-link">&#128100; Empleados extra</a>
+        <a href="/configuracion/email" class="admin-link">&#128231; Config. Email</a>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /page-content -->
 
 <script>
-// ─── Subir lista de teléfonos ────────────────────
+// ── Dropdown de acciones por semana ──────────────
+function toggleActionsDropdown(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var isOpen = el.classList.contains('open');
+  document.querySelectorAll('.actions-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  if (!isOpen) el.classList.add('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.dropdown-wrap')) {
+    document.querySelectorAll('.actions-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  }
+});
+
+// ── Subir lista de telefonos ─────────────────────
 async function subirTelefonos() {
   const file  = document.getElementById('tel-archivo').files[0];
   const errEl = document.getElementById('tel-error');
@@ -265,7 +469,7 @@ async function subirTelefonos() {
   }
 }
 
-// ─── Detectar departamentos al seleccionar archivo ──
+// ── Detectar departamentos al seleccionar archivo ─
 document.getElementById('csv').addEventListener('change', async function() {
   const file = this.files[0];
   if (!file) return;
@@ -305,7 +509,7 @@ document.getElementById('csv').addEventListener('change', async function() {
   }
 });
 
-// ─── Procesar nuevo XLS ──────────────────────────
+// ── Procesar nuevo XLS ───────────────────────────
 async function procesar(force) {
   const file   = document.getElementById('csv').files[0];
   const errEl  = document.getElementById('error');
@@ -395,7 +599,7 @@ async function procesar(force) {
   }
 }
 
-// ─── Reprocesar semana existente ─────────────────
+// ── Reprocesar semana existente ──────────────────
 async function reprocesarSemana(n) {
   const file      = document.getElementById('csv').files[0];
   const errEl     = document.getElementById('error');
@@ -450,7 +654,63 @@ async function reprocesarSemana(n) {
   }
 }
 
-// ─── Semanas ─────────────────────────────────────
+// ── Dashboard semaforo ───────────────────────────
+var DEPTOS_DASHBOARD = [
+  { nombre: 'Redes',           norm: 'redes' },
+  { nombre: 'Administraci\xF3n', norm: 'administracion' },
+  { nombre: 'Guardias',        norm: 'guardias' },
+  { nombre: 'Internet',        norm: 'internet' },
+  { nombre: 'Telef\xF3n\xEDa', norm: 'telefonia' }
+];
+
+function normDepto(s) {
+  return (s || '').toLowerCase()
+    .replace(/\xe1/g,'a').replace(/\xe9/g,'e').replace(/\xed/g,'i').replace(/\xf3/g,'o').replace(/\xfa/g,'u')
+    .replace(/\xf3n/g,'on');
+}
+
+function actualizarDashboard(semanas) {
+  var grid = document.getElementById('dashboard-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  DEPTOS_DASHBOARD.forEach(function(d) {
+    var semsDepto = semanas.filter(function(s) {
+      var nd = normDepto(s.departamento || '');
+      return nd === d.norm || nd.indexOf(d.norm) !== -1 || d.norm.indexOf(nd) !== -1;
+    });
+
+    var badgeClass, dotClass, badgeText, detailText = '';
+
+    if (!semsDepto.length) {
+      badgeClass = 'dept-badge-gris'; dotClass = 'dot-gris'; badgeText = 'Sin actividad';
+    } else {
+      var totalConf = semsDepto.reduce(function(a,s){ return a + (s.confirmados||0); }, 0);
+      var totalEmpl = semsDepto.reduce(function(a,s){ return a + (s.total||0); }, 0);
+      detailText = totalConf + ' / ' + totalEmpl + ' confirmaron';
+
+      if (totalEmpl === 0) {
+        badgeClass = 'dept-badge-gris'; dotClass = 'dot-gris'; badgeText = 'Sin datos';
+      } else if (totalConf === totalEmpl) {
+        badgeClass = 'dept-badge-verde'; dotClass = 'dot-verde'; badgeText = 'Todos confirmaron';
+      } else if (totalConf > 0) {
+        badgeClass = 'dept-badge-amarillo'; dotClass = 'dot-amarillo'; badgeText = 'Pendientes';
+      } else {
+        badgeClass = 'dept-badge-naranja'; dotClass = 'dot-naranja'; badgeText = 'Sin confirmaciones';
+      }
+    }
+
+    var card = document.createElement('div');
+    card.className = 'dept-card';
+    card.innerHTML =
+      '<div class="dept-card-name">' + d.nombre + '</div>' +
+      '<div class="dept-badge ' + badgeClass + '"><span class="dot ' + dotClass + '"></span>' + badgeText + '</div>' +
+      (detailText ? '<div class="dept-card-detail">' + detailText + '</div>' : '');
+    grid.appendChild(card);
+  });
+}
+
+// ── Semanas ──────────────────────────────────────
 let _semanas = [];
 async function cargarSemanas() {
   const body = document.getElementById('semanas-body');
@@ -458,14 +718,22 @@ async function cargarSemanas() {
     const res  = await fetch('/semanas');
     const data = await res.json();
     _semanas = data;
+    actualizarDashboard(data);
+
     if (!data.length) {
       body.innerHTML = '<div class="vacio">No hay semanas registradas todavía.</div>';
       return;
     }
-    let html = '<div class="tabla-wrap"><table><thead><tr><th>Semana</th><th>Fechas</th><th>Confirmaciones</th><th>Acciones</th></tr></thead><tbody>';
+
+    let html = '<div class="tabla-wrap"><table><thead><tr><th>Semana</th><th>Fechas</th><th>Confirmaciones</th><th>Acciones</th><th></th></tr></thead><tbody>';
     data.forEach(s => {
       const pct = s.total ? Math.round(s.confirmados / s.total * 100) : 0;
-      html += `<tr>
+      const pendientes = (s.total || 0) - (s.confirmados || 0);
+      const rowClass = (s.total > 0 && s.confirmados === 0) ? 'row-none-confirmed'
+                     : (pendientes > 0)                     ? 'row-has-pending'
+                     : '';
+      const ddId = 'dd-sem-' + s.numero;
+      html += `<tr class="${rowClass}">
         <td>
           <span class="sem-n">Sem. ${s.num_depto || s.numero}</span>
           ${s.departamento && s.departamento !== 'Todos' ? `<span class="badge-depto">${s.departamento}</span>` : ''}
@@ -481,11 +749,19 @@ async function cargarSemanas() {
         <td>
           <div class="actions-cell">
             <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
-            <button type="button" class="btn-warn"    onclick="regenerarLinks(${s.numero})">Regenerar</button>
-            <button type="button" class="btn-del"     onclick="eliminarSemana(${s.numero})">Eliminar</button>
-            <button type="button" class="btn-francos" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}')">Guardar francos</button>
-            <a class="btn-imprimir" href="/semanas/${s.numero}/pdf" target="_blank" title="Informe detallado de esta semana (día a día por empleado)">🖨 Informe semana</a>
-            <a class="btn-imprimir" href="/semanas/acumulado/pdf?desde=1&hasta=${s.numero}&depto=${encodeURIComponent(s.departamento||'')}" target="_blank" title="Informe acumulado desde la primera semana del mes hasta esta">🖨 Acumulado</a>
+            <a class="btn-imprimir" href="/semanas/${s.numero}/pdf" target="_blank" title="Informe detallado de esta semana (día a día por empleado)">&#x1F5A8; Informe sem.</a>
+            <a class="btn-imprimir" href="/semanas/acumulado/pdf?desde=1&hasta=${s.numero}&depto=${encodeURIComponent(s.departamento||'')}" target="_blank" title="Informe acumulado desde la primera semana del mes hasta esta">&#x1F5A8; Acumulado</a>
+          </div>
+        </td>
+        <td>
+          <div class="dropdown-wrap">
+            <button type="button" class="btn-more" onclick="toggleActionsDropdown('${ddId}')">M&#xE1;s &#x25BE;</button>
+            <div class="actions-dropdown" id="${ddId}">
+              <button type="button" class="dd-warn" onclick="regenerarLinks(${s.numero});toggleActionsDropdown('${ddId}')">&#x1F504; Regenerar links</button>
+              <button type="button" class="dd-green" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}');toggleActionsDropdown('${ddId}')">&#x1F4BE; Guardar francos</button>
+              <div class="dd-sep"></div>
+              <button type="button" class="dd-danger" onclick="eliminarSemana(${s.numero});toggleActionsDropdown('${ddId}')">&#x1F5D1; Eliminar semana</button>
+            </div>
           </div>
         </td>
       </tr>`;
@@ -497,7 +773,7 @@ async function cargarSemanas() {
   }
 }
 
-// ─── Guardar francos de una semana ───────────────
+// ── Guardar francos de una semana ────────────────
 async function guardarFrancosSemana(n, depto, numDepto) {
   const label = depto ? `Sem. ${numDepto} — ${depto}` : `Sem. ${numDepto}`;
   if (!confirm(`¿Guardar saldo parcial de francos de ${label}? Actualiza el saldo de esa semana.`)) return;
@@ -511,7 +787,7 @@ async function guardarFrancosSemana(n, depto, numDepto) {
   }
 }
 
-// ─── Guardar francos de todas las semanas ────────
+// ── Guardar francos de todas las semanas ─────────
 async function guardarFrancosTodasSemanas() {
   if (!confirm('¿Guardar francos de TODAS las semanas? Reemplaza los datos guardados anteriormente.')) return;
   try {
@@ -524,7 +800,7 @@ async function guardarFrancosTodasSemanas() {
   }
 }
 
-// ─── Ver links de una semana ──────────────────────
+// ── Ver links de una semana ───────────────────────
 async function verLinks(n) {
   const panel = document.getElementById('links-panel');
   const titulo= document.getElementById('links-panel-titulo');
@@ -562,7 +838,7 @@ async function verLinks(n) {
   });
 }
 
-// ─── Modal Regenerar ─────────────────────────────
+// ── Modal Regenerar ──────────────────────────────
 let _regenPendiente = null;
 function cerrarModalRegen() {
   document.getElementById('modal-regenerar').classList.add('hidden');
@@ -634,7 +910,7 @@ async function _ejecutarRegen(n) {
   cargarSemanas();
 }
 
-// ─── Eliminar semana ─────────────────────────────
+// ── Eliminar semana ──────────────────────────────
 async function eliminarSemana(n) {
   if (!confirm(`¿Eliminar la Semana ${n}?\n\nSe borran los links generados.\nLas confirmaciones ya guardadas no se tocan.`)) return;
   const res  = await fetch(`/semanas/${n}/eliminar`, { method:'POST' });
@@ -644,7 +920,7 @@ async function eliminarSemana(n) {
   document.getElementById('links-panel').classList.add('hidden');
 }
 
-// ─── Estado de confirmaciones ────────────────────
+// ── Estado de confirmaciones ─────────────────────
 async function cargarEstado() {
   try {
     const res  = await fetch('/estado');
@@ -672,7 +948,7 @@ async function cargarEstado() {
   } catch(ex) { /* silencioso */ }
 }
 
-// ─── Copiar ──────────────────────────────────────
+// ── Copiar ───────────────────────────────────────
 function copiar(btn, url) {
   navigator.clipboard.writeText(url).then(() => {
     const prev = btn.textContent;
@@ -681,7 +957,7 @@ function copiar(btn, url) {
   });
 }
 
-// ─── Init ────────────────────────────────────────
+// ── Init ─────────────────────────────────────────
 cargarSemanas();
 cargarEstado();
 </script>

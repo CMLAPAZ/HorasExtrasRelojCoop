@@ -1014,6 +1014,184 @@ def abrir_gestor_asignaciones_especiales():
 
     recargar_grilla()
 
+# =============================================================================
+# PASSWORD — helpers
+# =============================================================================
+_APP_PASSWORD_KEY = "app_password"
+_DEFAULT_PASSWORD = "cm2026"
+
+# Labels del panel de estado (se asignan en la sección UI)
+_lbl_archivo    = None
+_lbl_fecha_proc = None
+_lbl_empleados  = None
+
+def _cargar_password():
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f).get(_APP_PASSWORD_KEY, _DEFAULT_PASSWORD)
+    except Exception:
+        pass
+    return _DEFAULT_PASSWORD
+
+def _guardar_password(nueva):
+    try:
+        data = {}
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data[_APP_PASSWORD_KEY] = nueva
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo guardar la contraseña:\n{e}")
+        return False
+
+def mostrar_login(parent):
+    """Diálogo de login. Retorna True si acceso concedido."""
+    resultado = {"ok": False}
+
+    dlg = tk.Toplevel(parent)
+    dlg.title("CM Horas Extras — Ingresar")
+    dlg.geometry("340x260")
+    dlg.resizable(False, False)
+    dlg.configure(bg=BG_WIN)
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    parent.update_idletasks()
+    px, py = parent.winfo_x(), parent.winfo_y()
+    pw, ph = parent.winfo_width(), parent.winfo_height()
+    dlg.geometry(f"340x260+{px + (pw - 340)//2}+{py + (ph - 260)//2}")
+
+    try:
+        if os.path.exists(ICON_ICO):
+            dlg.iconbitmap(ICON_ICO)
+    except Exception:
+        pass
+
+    try:
+        if os.path.exists(LOGO_PATH):
+            img = Image.open(LOGO_PATH).resize((52, 52))
+            tk_img = ImageTk.PhotoImage(img)
+            lbl_logo = tk.Label(dlg, image=tk_img, bg=BG_WIN)
+            lbl_logo.image = tk_img
+            lbl_logo.pack(pady=(14, 2))
+    except Exception:
+        pass
+
+    tk.Label(dlg, text="CM La Paz Online", font=FONT_H2, bg=BG_WIN, fg=C_TITLE).pack()
+    tk.Label(dlg, text="Ingresá la contraseña de acceso",
+             font=FONT_SM, bg=BG_WIN, fg="#64748b").pack(pady=(2, 10))
+
+    frm_e = tk.Frame(dlg, bg=BG_FRAME, relief=tk.RIDGE, bd=1)
+    frm_e.pack(padx=36, fill="x")
+
+    inner = tk.Frame(frm_e, bg=BG_FRAME)
+    inner.pack(fill="x", padx=12, pady=10)
+
+    var_pass = tk.StringVar()
+    entry = tk.Entry(inner, textvariable=var_pass, show="•", font=FONT_BASE, width=20)
+    entry.pack(side="left")
+
+    _show_pass = {"visible": False}
+
+    def _toggle():
+        _show_pass["visible"] = not _show_pass["visible"]
+        entry.config(show="" if _show_pass["visible"] else "•")
+        btn_ojo.config(relief=tk.SUNKEN if _show_pass["visible"] else tk.FLAT)
+
+    btn_ojo = tk.Button(inner, text="👁", command=_toggle,
+                        bg=BG_FRAME, font=FONT_SM, bd=1, padx=4,
+                        relief=tk.FLAT, cursor="hand2")
+    btn_ojo.pack(side="left", padx=(4, 0))
+
+    lbl_err = tk.Label(dlg, text="", font=FONT_SM, bg=BG_WIN, fg="#dc2626")
+    lbl_err.pack(pady=(4, 0))
+
+    def _intentar():
+        if var_pass.get() == _cargar_password():
+            resultado["ok"] = True
+            dlg.destroy()
+        else:
+            lbl_err.config(text="Contraseña incorrecta")
+            var_pass.set("")
+            entry.focus_set()
+
+    def _cancelar():
+        dlg.destroy()
+
+    entry.bind("<Return>", lambda e: _intentar())
+
+    frm_btn = tk.Frame(dlg, bg=BG_WIN)
+    frm_btn.pack(pady=10)
+    tk.Button(frm_btn, text="Ingresar",  command=_intentar, bg=C_PRI, font=FONT_BOLD, width=11).pack(side="left", padx=5)
+    tk.Button(frm_btn, text="Cancelar", command=_cancelar, bg=C_DEL, font=FONT_BOLD, width=9 ).pack(side="left", padx=5)
+
+    entry.focus_set()
+    dlg.wait_window()
+    return resultado["ok"]
+
+def cambiar_password():
+    win = tk.Toplevel(ventana)
+    win.title("Cambiar contraseña")
+    win.geometry("360x270")
+    win.resizable(False, False)
+    win.configure(bg=BG_WIN)
+    win.transient(ventana)
+    win.grab_set()
+
+    tk.Label(win, text="Cambiar contraseña de acceso",
+             font=FONT_H2, bg=BG_WIN, fg=C_TITLE).pack(pady=(16, 10))
+
+    frm = tk.Frame(win, bg=BG_FRAME, relief=tk.RIDGE, bd=1)
+    frm.pack(padx=28, fill="x")
+    frm.columnconfigure(1, weight=1)
+
+    entries = {}
+    for i, label in enumerate(("Contraseña actual:", "Nueva contraseña:", "Confirmar nueva:")):
+        tk.Label(frm, text=label, bg=BG_FRAME, font=FONT_BASE, anchor="e").grid(
+            row=i, column=0, padx=(12, 6), pady=8, sticky="e")
+        e = tk.Entry(frm, show="•", font=FONT_BASE, width=20)
+        e.grid(row=i, column=1, padx=(0, 12), pady=8, sticky="w")
+        entries[i] = e
+
+    lbl_err = tk.Label(win, text="", font=FONT_SM, bg=BG_WIN, fg="#dc2626")
+    lbl_err.pack(pady=(6, 0))
+
+    def _guardar():
+        actual = entries[0].get()
+        nueva  = entries[1].get()
+        conf   = entries[2].get()
+        if actual != _cargar_password():
+            lbl_err.config(text="La contraseña actual es incorrecta.")
+            return
+        if len(nueva) < 4:
+            lbl_err.config(text="La nueva contraseña debe tener al menos 4 caracteres.")
+            return
+        if nueva != conf:
+            lbl_err.config(text="Las contraseñas nuevas no coinciden.")
+            return
+        if _guardar_password(nueva):
+            messagebox.showinfo("OK", "Contraseña actualizada correctamente.", parent=win)
+            win.destroy()
+
+    frm_btn = tk.Frame(win, bg=BG_WIN)
+    frm_btn.pack(pady=10)
+    tk.Button(frm_btn, text="Guardar",  command=_guardar,     bg=C_OK,  font=FONT_BOLD, width=12).pack(side="left", padx=5)
+    tk.Button(frm_btn, text="Cancelar", command=win.destroy,  bg=C_NEU, font=FONT_BOLD, width=10).pack(side="left", padx=5)
+    entries[0].focus_set()
+
+def _actualizar_estado(archivo="—", fecha="—", empleados="—"):
+    if _lbl_archivo:
+        _lbl_archivo.config(text=f"Archivo:    {archivo}")
+    if _lbl_fecha_proc:
+        _lbl_fecha_proc.config(text=f"Fecha:      {fecha}")
+    if _lbl_empleados:
+        _lbl_empleados.config(text=f"Empleados:  {empleados}")
+
+
 def _accion_ver_resumen():
     global ULTIMOS_RESULTADOS_APLANADOS, ULTIMO_PERIODO_TEXTO
 
@@ -1198,6 +1376,13 @@ def cargar_archivo():
             except Exception as e:
                 messagebox.showwarning("Aviso", f"No se pudo generar el resumen estadístico (opcional):\n{e}", parent=ventana)
 
+        n_emps = len({str(r.get("Legajo", r.get("legajo", ""))) for r in resultados_aplanados})
+        _actualizar_estado(
+            archivo=ULTIMO_ARCHIVO,
+            fecha=datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            empleados=str(n_emps)
+        )
+
         extra = "\n• Resumen estadístico: OK" if resumen_generado else ""
         messagebox.showinfo(
             "Éxito",
@@ -1212,12 +1397,12 @@ def cargar_archivo():
 # UI
 # =============================================================================
 ventana = tk.Tk()
-ventana.title(f"CM_HorasExtras v{get_version()}")
-ventana.geometry("480x490")
+ventana.title(f"CM HorasExtras v{get_version()}")
+ventana.geometry("520x590")
 ventana.resizable(False, False)
 ventana.configure(bg=BG_WIN)
 
-# ─── Tema ttk global ────────────────────────────────────────────────────────
+# ─── Tema ttk ────────────────────────────────────────────────────────────────
 _style = ttk.Style()
 try:
     _style.theme_use("vista")
@@ -1226,163 +1411,139 @@ except Exception:
         _style.theme_use("clam")
     except Exception:
         pass
-_style.configure("Treeview",        rowheight=26, font=FONT_BASE)
+_style.configure("Treeview",         rowheight=26, font=FONT_BASE)
 _style.configure("Treeview.Heading", font=FONT_BOLD, background=BG_FRAME)
 _style.map("Treeview",
            background=[("selected", C_PRI)],
            foreground=[("selected", C_TITLE)])
 _style.configure("TCombobox", font=FONT_BASE)
 
-# Ícono de la ventana (prioridad: recursos/logo.ico)
 try:
     if os.path.exists(ICON_ICO):
         ventana.iconbitmap(ICON_ICO)
 except Exception:
     pass
-
-# Fallback iconphoto si hay PNG (Tk usa PhotoImage)
 try:
     if os.path.exists(ICON_PNG):
         ventana.iconphoto(True, tk.PhotoImage(file=ICON_PNG))
 except Exception:
     pass
 
-# =========================================================
-# MENÚ SUPERIOR
-# =========================================================
+# ── Login ─────────────────────────────────────────────────────────────────────
+ventana.update_idletasks()
+if not mostrar_login(ventana):
+    ventana.destroy()
+    sys.exit(0)
+
+# ── MENÚ ──────────────────────────────────────────────────────────────────────
 menubar = tk.Menu(ventana)
 ventana.config(menu=menubar)
 
-# -------------------------
-# ARCHIVO
-# -------------------------
 menu_archivo = tk.Menu(menubar, tearoff=0)
 menubar.add_cascade(label="Archivo", menu=menu_archivo)
-
-menu_archivo.add_command(
-    label="Cargar archivo de fichadas…",
-    command=cargar_archivo
-)
-
+menu_archivo.add_command(label="📂  Cargar fichadas…",    command=cargar_archivo)
 menu_archivo.add_separator()
-
-menu_archivo.add_command(
-    label="Gestionar feriados…",
-    command=_accion_gestionar_feriados
-)
-
+menu_archivo.add_command(label="📅  Gestionar feriados…", command=_accion_gestionar_feriados)
 menu_archivo.add_separator()
+menu_archivo.add_command(label="Salir",                   command=ventana.destroy)
 
-menu_archivo.add_command(
-    label="Salir",
-    command=_accion_salir
-)
-
-# -------------------------
-# VER
-# -------------------------
 menu_ver = tk.Menu(menubar, tearoff=0)
 menubar.add_cascade(label="Ver", menu=menu_ver)
+menu_ver.add_command(label="Resumen estadístico…", command=_accion_ver_resumen)
+menu_ver.add_command(label="Gráficos…",            command=_accion_ver_graficos)
 
-menu_ver.add_command(
-    label="Resumen estadístico…",
-    command=_accion_ver_resumen
-)
-
-menu_ver.add_command(
-    label="Gráficos…",
-    command=_accion_ver_graficos
-)
-
-# -------------------------
-# OPERATIVO
-# -------------------------
 menu_operativo = tk.Menu(menubar, tearoff=0)
 menubar.add_cascade(label="Operativo", menu=menu_operativo)
-
-menu_operativo.add_command(
-    label="Asignaciones cortadores…",
-    command=abrir_gestor_asignaciones_especiales
-)
-
+menu_operativo.add_command(label="Asignaciones cortadores…", command=abrir_gestor_asignaciones_especiales)
 menu_operativo.add_separator()
+menu_operativo.add_command(label="Horarios Base Paro…",      command=abrir_gestor_horarios_paro)
+menu_operativo.add_command(label="Gestionar Días de Paro…",  command=abrir_gestor_dias_paro)
+menu_operativo.add_separator()
+menu_operativo.add_command(label="🔑  Cambiar contraseña…",  command=cambiar_password)
 
-menu_operativo.add_command(
-    label="Horarios Base Paro…",
-    command=abrir_gestor_horarios_paro
-)
-menu_operativo.add_command(
-    label="Gestionar Días de Paro…",
-    command=abrir_gestor_dias_paro
-)
-# ── Label de versión (reserva espacio desde abajo primero) ──────────────────
-tk.Label(ventana, text=f"v{get_version()}", font=FONT_SM, bg=BG_WIN, fg="#aaaaaa"
-).pack(side="bottom", pady=(0, 4))
+# ── Logo + título ─────────────────────────────────────────────────────────────
+frm_header = tk.Frame(ventana, bg=BG_WIN)
+frm_header.pack(pady=(14, 2))
 
-# ── Logo + título ────────────────────────────────────────────────────────────
 try:
     if os.path.exists(LOGO_PATH):
-        logo_img = Image.open(LOGO_PATH)
-        logo_img = logo_img.resize((72, 72))
-        logo_tk = ImageTk.PhotoImage(logo_img)
-        logo_label = tk.Label(ventana, image=logo_tk, bg=BG_WIN)
-        logo_label.image = logo_tk
-        logo_label.pack(pady=(12, 2))
-
-    app_title = tk.Label(ventana, text="CM La Paz Online",
-                         font=FONT_TITLE, bg=BG_WIN, fg=C_TITLE)
-    app_title.pack(pady=(2, 2))
+        logo_img = Image.open(LOGO_PATH).resize((68, 68))
+        logo_tk  = ImageTk.PhotoImage(logo_img)
+        lbl_logo = tk.Label(frm_header, image=logo_tk, bg=BG_WIN)
+        lbl_logo.image = logo_tk
+        lbl_logo.pack(pady=(0, 2))
 except Exception:
-    app_title = tk.Label(ventana, text="CM La Paz Online",
-                         font=FONT_TITLE, bg=BG_WIN, fg=C_TITLE)
-    app_title.pack(pady=(18, 2))
+    pass
 
-tk.Label(ventana, text="Sistema de Control de Horas Extras",
-         font=FONT_BASE, bg=BG_WIN, fg=C_TITLE).pack(pady=(0, 8))
+tk.Label(frm_header, text="CM La Paz Online",
+         font=FONT_TITLE, bg=BG_WIN, fg=C_TITLE).pack()
+tk.Label(frm_header, text="Sistema de Control de Horas Extras",
+         font=FONT_BASE, bg=BG_WIN, fg=C_TITLE).pack()
 
-# ── Marco central ────────────────────────────────────────────────────────────
-marco = tk.Frame(ventana, bg=BG_FRAME, relief=tk.RIDGE, bd=2)
-marco.pack(padx=24, pady=4, fill="x")
+# ── Panel de estado ───────────────────────────────────────────────────────────
+frm_estado = tk.Frame(ventana, bg="#daeef8", relief=tk.FLAT)
+frm_estado.pack(padx=28, pady=(10, 4), fill="x")
+
+tk.Label(frm_estado, text="Último procesamiento",
+         font=("Segoe UI", 8, "bold"), bg="#daeef8", fg="#1a435b"
+         ).pack(anchor="w", padx=12, pady=(6, 1))
+
+_lbl_archivo    = tk.Label(frm_estado, text="Archivo:    —",
+                            font=FONT_MONO, bg="#daeef8", fg="#334155", anchor="w")
+_lbl_fecha_proc = tk.Label(frm_estado, text="Fecha:      —",
+                            font=FONT_MONO, bg="#daeef8", fg="#334155", anchor="w")
+_lbl_empleados  = tk.Label(frm_estado, text="Empleados:  —",
+                            font=FONT_MONO, bg="#daeef8", fg="#334155", anchor="w")
+
+for _l in (_lbl_archivo, _lbl_fecha_proc, _lbl_empleados):
+    _l.pack(anchor="w", padx=18, pady=1)
+
+tk.Frame(frm_estado, bg="#daeef8", height=6).pack()
+
+# ── Acciones ──────────────────────────────────────────────────────────────────
+frm_acc = tk.Frame(ventana, bg=BG_FRAME, relief=tk.RIDGE, bd=2)
+frm_acc.pack(padx=28, pady=8, fill="x")
 
 var_resumen = tk.BooleanVar(value=False)
 chk_resumen = tk.Checkbutton(
-    marco, text="Generar informe estadístico del período",
+    frm_acc, text="Generar informe estadístico al procesar",
     variable=var_resumen, font=FONT_BASE,
     bg=BG_FRAME, fg="black", activebackground=BG_FRAME
 )
 if not RESUMEN_ESTADISTICO_DISPONIBLE:
     chk_resumen.configure(state="disabled")
-chk_resumen.pack(pady=(8, 4))
+chk_resumen.pack(pady=(10, 6))
 
 tk.Button(
-    marco, text="Cargar archivo de fichadas",
+    frm_acc, text="📂  Cargar archivo de fichadas",
     command=cargar_archivo,
     font=("Segoe UI", 12, "bold"),
-    bg=C_PRI, fg="black", width=26, height=2
-).pack(pady=(2, 8))
+    bg=C_PRI, fg="black", width=28, height=2
+).pack(pady=(0, 8))
+
+frm_btn2 = tk.Frame(frm_acc, bg=BG_FRAME)
+frm_btn2.pack(pady=(0, 10))
 
 tk.Button(
-    marco, text="Gestionar feriados",
+    frm_btn2, text="📅  Feriados",
     command=abrir_gestor_feriados,
-    font=FONT_BASE,
-    bg=C_OK, fg="black", width=22
-).pack(pady=(0, 10))
+    font=FONT_BASE, bg=C_OK, fg="black", width=14
+).pack(side="left", padx=8)
 
 tk.Button(
-    marco, text="🌐  Confirmaciones web",
+    frm_btn2, text="🌐  Sistema web",
     command=lambda: webbrowser.open("https://cmhoras.pythonanywhere.com"),
-    font=FONT_BASE,
-    bg="#dbeafe", fg="#1e3a5f", width=22
-).pack(pady=(0, 6))
+    font=FONT_BASE, bg="#dbeafe", fg="#1e3a5f", width=14
+).pack(side="left", padx=8)
 
-# ── Salir ────────────────────────────────────────────────────────────────────
-def _salir():
-    ventana.destroy()
+# ── Footer ────────────────────────────────────────────────────────────────────
+tk.Label(ventana, text=f"v{get_version()}", font=FONT_SM, bg=BG_WIN, fg="#aaaaaa"
+         ).pack(side="bottom", pady=(0, 4))
 
 tk.Button(
     ventana, text="Salir del sistema",
-    command=_salir,
+    command=ventana.destroy,
     font=FONT_BOLD, bg=C_DEL, fg="black", width=18
-).pack(pady=(8, 6))
+).pack(side="bottom", pady=(6, 4))
 
 ventana.mainloop()
