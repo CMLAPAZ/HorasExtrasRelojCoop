@@ -435,18 +435,35 @@ async function resetTotal() {
 
 <script>
 // ── Dropdown de acciones por semana ──────────────
+function _cerrarTodosDropdowns() {
+  document.querySelectorAll('.actions-dropdown.open').forEach(function(d) {
+    d.classList.remove('open');
+    d.style.cssText = '';
+  });
+}
 function toggleActionsDropdown(id) {
   var el = document.getElementById(id);
   if (!el) return;
   var isOpen = el.classList.contains('open');
-  document.querySelectorAll('.actions-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  if (!isOpen) el.classList.add('open');
+  _cerrarTodosDropdowns();
+  if (!isOpen) {
+    // Posicionar con fixed para escapar del overflow del tabla-wrap
+    var btn = el.previousElementSibling;
+    var rect = btn.getBoundingClientRect();
+    el.style.position = 'fixed';
+    el.style.zIndex = '9999';
+    el.style.top = (rect.bottom + 4) + 'px';
+    el.style.left = '0px';  // temporal para poder medir
+    el.classList.add('open');
+    // Alinear borde derecho con el botón
+    var w = el.getBoundingClientRect().width;
+    el.style.left = (rect.right - w) + 'px';
+  }
 }
 document.addEventListener('click', function(e) {
-  if (!e.target.closest('.dropdown-wrap')) {
-    document.querySelectorAll('.actions-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  }
+  if (!e.target.closest('.dropdown-wrap')) _cerrarTodosDropdowns();
 });
+window.addEventListener('scroll', _cerrarTodosDropdowns, true);
 
 // ── Subir lista de telefonos ─────────────────────
 async function subirTelefonos() {
