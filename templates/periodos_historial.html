@@ -6,15 +6,41 @@
   <title>CM Horas Extras - Cierres</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;padding:22px}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827}
     .shell{max-width:1240px;margin:0 auto}
-    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+
+    /* ── Topbar / Nav ── */
+    .topbar{background:#172033;padding:0 24px;display:flex;align-items:stretch;justify-content:space-between;gap:0;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+    .topbar-brand{display:flex;flex-direction:column;justify-content:center;padding:12px 0;text-decoration:none}
+    .topbar-title{font-size:1.05rem;font-weight:800;color:#fff;line-height:1.1}
+    .topbar-sub{font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:2px}
+    .nav{display:flex;align-items:stretch;gap:0}
+    .nav a{display:inline-flex;align-items:center;padding:0 14px;color:#cbd5e1;text-decoration:none;font-size:.83rem;font-weight:600;border-bottom:3px solid transparent;transition:color .15s,border-color .15s}
+    .nav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav a.active{color:#fff;border-bottom-color:#3b82f6}
+    .nav-logout{display:inline-flex;align-items:center;padding:0 12px;color:#f87171;text-decoration:none;font-size:.83rem;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit;transition:color .15s}
+    .nav-logout:hover{color:#fca5a5;background:rgba(239,68,68,.08)}
+    .nav-admin-wrap{position:relative;display:flex;align-items:stretch}
+    .nav-admin-btn{display:inline-flex;align-items:center;gap:5px;padding:0 14px;color:#94a3b8;font-size:.83rem;font-weight:600;cursor:pointer;border:none;background:none;font-family:inherit;transition:color .15s;border-bottom:3px solid transparent}
+    .nav-admin-btn:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav-admin-btn .arrow{font-size:.6rem;transition:transform .15s}
+    .nav-admin-btn.open{color:#fff}
+    .nav-admin-btn.open .arrow{transform:rotate(180deg)}
+    .nav-admin-dropdown{position:absolute;top:100%;right:0;background:#1e293b;border:1px solid #334155;border-top:none;border-radius:0 0 8px 8px;min-width:185px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:200;display:none}
+    .nav-admin-dropdown.open{display:block}
+    .nav-admin-dropdown a{display:flex;align-items:center;padding:10px 16px;color:#cbd5e1;text-decoration:none;font-size:.82rem;font-weight:600;gap:8px;transition:background .12s;white-space:nowrap}
+    .nav-admin-dropdown a:hover{background:#334155;color:#fff}
+    .nav-admin-dropdown .sep{height:1px;background:#334155;margin:3px 0}
+
+    /* ── Page content ── */
+    .page-content{padding:22px}
+    .page-heading{margin-bottom:18px}
+
     h1{font-size:1.55rem;font-weight:750;letter-spacing:0;color:#0f172a}
     .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;margin-bottom:4px}
     .subtitle{font-size:.9rem;color:#64748b;margin-top:4px}
-    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-    .nav a,.btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
-    .nav a:hover,.btn:hover{border-color:#94a3b8;background:#f8fafc}
+    .btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
+    .btn:hover{border-color:#94a3b8;background:#f8fafc}
     .btn-primary{background:#172033;color:#fff;border-color:#172033}
     .btn-primary:hover{background:#25314a;color:#fff;border-color:#25314a}
     .btn-danger{background:#fff;color:#b91c1c;border-color:#fecaca}
@@ -44,9 +70,10 @@
     .vacio{padding:44px 18px;text-align:center;color:#64748b;font-size:.92rem}
     .mobile-label{display:none}
     @media (max-width:760px){
-      body{padding:14px}
-      .topbar{display:block}
-      .nav{justify-content:flex-start;margin-top:12px}
+      .topbar{padding:0 12px}
+      .nav a{padding:0 8px;font-size:.78rem}
+      .nav-admin-btn{padding:0 8px;font-size:.78rem}
+      .page-content{padding:14px}
       .panel-head{display:block}
       .tools{margin-top:12px}
       .search{width:100%}
@@ -60,18 +87,38 @@
   </style>
 </head>
 <body>
+
+<!-- Topbar de navegacion -->
+<div class="topbar">
+  <a href="/supervisor" class="topbar-brand">
+    <span class="topbar-title">CM Horas Extras</span>
+    <span class="topbar-sub">Panel del supervisor</span>
+  </a>
+  <div class="nav">
+    <a href="/supervisor">Supervisor</a>
+    <a href="/periodo">Per&#xED;odos</a>
+    <a href="/francos">Francos</a>
+    <a href="/periodos/historial" class="active">Cierres</a>
+    <a href="/historial">Historial</a>
+    <div class="nav-admin-wrap">
+      <button type="button" class="nav-admin-btn" id="admin-nav-btn" onclick="toggleAdminDropdown()">
+        Admin <span class="arrow">&#9660;</span>
+      </button>
+      <div class="nav-admin-dropdown" id="admin-nav-dropdown">
+        <a href="/empleados/importar">&#128100; Empleados</a>
+        <a href="/configuracion/email">&#128231; Config. Email</a>
+      </div>
+    </div>
+    <a href="/logout" class="nav-logout">Salir</a>
+  </div>
+</div>
+
+<div class="page-content">
 <div class="shell">
-  <div class="topbar">
-    <div>
-      <div class="eyebrow">Periodos</div>
-      <h1>Historial de cierres</h1>
-      <div class="subtitle">Consultas, confirmaciones archivadas y anulaciones de cierre.</div>
-    </div>
-    <div class="nav">
-      <a href="/">Panel principal</a>
-      <a href="/periodo">Periodos</a>
-      <a href="/logout">Salir</a>
-    </div>
+  <div class="page-heading">
+    <div class="eyebrow">Periodos</div>
+    <h1>Historial de cierres</h1>
+    <div class="subtitle">Consultas, confirmaciones archivadas y anulaciones de cierre.</div>
   </div>
 
   <div class="panel">
@@ -148,7 +195,6 @@
     <div class="vacio">No hay periodos cerrados todavia.</div>
     {% endif %}
   </div>
-</div>
 
 <script>
 const buscar = document.getElementById('buscar');
@@ -175,6 +221,21 @@ async function anularCierre(id) {
   alert('Cierre anulado correctamente.');
   location.reload();
 }
+
+// ── Dropdown Admin en nav ────────────────────────
+function toggleAdminDropdown() {
+  document.getElementById('admin-nav-btn').classList.toggle('open');
+  document.getElementById('admin-nav-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.nav-admin-wrap')) {
+    document.getElementById('admin-nav-btn').classList.remove('open');
+    document.getElementById('admin-nav-dropdown').classList.remove('open');
+  }
+});
 </script>
+
+</div><!-- /shell -->
+</div><!-- /page-content -->
 </body>
 </html>
