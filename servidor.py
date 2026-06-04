@@ -2991,6 +2991,47 @@ def _generar_pdf_cierre_completo(pid):
     return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
 
 
+@app.route("/periodos/informe_mensual")
+def periodos_informe_mensual():
+    """PDF combinado de todos los cierres ACTIVOS de un mes (un depto por página)."""
+    if not _autenticado(): return _requiere_auth()
+    mes = request.args.get("mes", "").strip()  # "YYYY-MM"
+    if not mes or len(mes) != 7 or mes[4] != "-":
+        return "Parámetro 'mes' requerido con formato YYYY-MM.", 400
+
+    with _get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, fecha_desde, fecha_hasta FROM periodos "
+            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND fecha_desde LIKE ? ORDER BY id",
+            (f"{mes}%",)
+        ).fetchall()
+
+    if not rows:
+        return f"No hay cierres activos para {mes}.", 404
+
+    try:
+        from pypdf import PdfWriter, PdfReader
+    except ImportError:
+        return "Librería pypdf no instalada en el servidor.", 500
+
+    writer = PdfWriter()
+    for r in rows:
+        pdf_bytes = _generar_pdf_cierre_completo(r["id"])
+        if pdf_bytes:
+            for page in PdfReader(BytesIO(pdf_bytes)).pages:
+                writer.add_page(page)
+
+    if len(writer.pages) == 0:
+        return "No se pudo generar el informe.", 500
+
+    out = BytesIO()
+    writer.write(out)
+    out.seek(0)
+    nombre = f"informe_mensual_{mes.replace('-', '_')}.pdf"
+    return send_file(out, mimetype="application/pdf",
+                     as_attachment=True, download_name=nombre)
+
+
 @app.route("/periodos/<int:pid>/informe_completo")
 def periodos_informe_completo(pid):
     """PDF completo del cierre: horas + saldo francos + detalle tomados."""

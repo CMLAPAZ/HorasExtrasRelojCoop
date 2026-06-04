@@ -121,6 +121,22 @@
     <div class="subtitle">Consultas, confirmaciones archivadas y anulaciones de cierre.</div>
   </div>
 
+  <!-- Informe mensual combinado -->
+  <div class="panel" style="margin-bottom:14px">
+    <div class="panel-head">
+      <div class="panel-title">📄 Informe mensual combinado</div>
+    </div>
+    <div style="padding:14px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-size:.86rem;font-weight:700;color:#334155;margin:0">Mes:</label>
+      <input type="month" id="mes-informe" aria-label="Mes para informe combinado" style="padding:7px 10px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;background:#fff;color:#111827">
+      <a id="btn-informe-mensual" href="#" onclick="descargarInformeMensual(event)"
+         style="height:36px;padding:0 18px;background:#172033;color:#fff;border-radius:7px;font-size:.85rem;font-weight:700;display:inline-flex;align-items:center;text-decoration:none">
+        Descargar PDF combinado
+      </a>
+      <span style="font-size:.8rem;color:#64748b">Un PDF con los cierres de todos los departamentos del mes seleccionado.</span>
+    </div>
+  </div>
+
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">Cierres registrados</div>
@@ -233,6 +249,22 @@ document.addEventListener('click', function(e) {
     document.getElementById('admin-nav-dropdown').classList.remove('open');
   }
 });
+
+function descargarInformeMensual(e) {
+  e.preventDefault();
+  const mes = document.getElementById('mes-informe').value;
+  if (!mes) { alert('Seleccioná un mes primero.'); return; }
+  window.location.href = '/periodos/informe_mensual?mes=' + mes;
+}
+
+// Pre-seleccionar mes anterior
+(function() {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  document.getElementById('mes-informe').value = yyyy + '-' + mm;
+})();
 </script>
 
 </div><!-- /shell -->
