@@ -755,12 +755,12 @@ async function cargarSemanas() {
         </td>
         <td>
           <div class="dropdown-wrap">
-            <button type="button" class="btn-more" onclick="toggleActionsDropdown('${ddId}')">M&#xE1;s &#x25BE;</button>
-            <div class="actions-dropdown" id="${ddId}">
-              <button type="button" class="dd-warn" onclick="regenerarLinks(${s.numero});toggleActionsDropdown('${ddId}')">&#x1F504; Regenerar links</button>
-              <button type="button" class="dd-green" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}');toggleActionsDropdown('${ddId}')">&#x1F4BE; Guardar francos</button>
+            <button type="button" class="btn-more" onclick="toggleActionsDropdown('dd-sem-${s.numero}')">M&#xE1;s &#x25BE;</button>
+            <div class="actions-dropdown" id="dd-sem-${s.numero}">
+              <button type="button" class="dd-warn" onclick="regenerarLinks(${s.numero});toggleActionsDropdown('dd-sem-${s.numero}')">&#x1F504; Regenerar links</button>
+              <button type="button" class="dd-green" onclick="guardarFrancosSemana(${s.numero},'${s.departamento || ''}','${s.num_depto || s.numero}');toggleActionsDropdown('dd-sem-${s.numero}')">&#x1F4BE; Guardar francos</button>
               <div class="dd-sep"></div>
-              <button type="button" class="dd-danger" onclick="eliminarSemana(${s.numero});toggleActionsDropdown('${ddId}')">&#x1F5D1; Eliminar semana</button>
+              <button type="button" class="dd-danger" onclick="eliminarSemana(${s.numero});toggleActionsDropdown('dd-sem-${s.numero}')">&#x1F5D1; Eliminar semana</button>
             </div>
           </div>
         </td>
