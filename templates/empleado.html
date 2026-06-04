@@ -127,8 +127,8 @@
       {% if d.tarde  %}<span class="badge b-tarde">tardanza</span>{% endif %}
     </div>
     {% endif %}
-    <div class="desc-label">¿Qué trabajo realizaste?</div>
-    <textarea name="desc_{{ d.fecha }}" placeholder="Describí brevemente la tarea del día…">{{ d.descripcion or '' }}</textarea>
+    <label class="desc-label" for="desc_{{ d.fecha }}">¿Qué trabajo realizaste?</label>
+    <textarea id="desc_{{ d.fecha }}" name="desc_{{ d.fecha }}" placeholder="Describí brevemente la tarea del día…">{{ d.descripcion or '' }}</textarea>
   </div>
   {% endif %}{% endfor %}
   {% if not tiene_dias %}<p class="sin-ot">Sin horas extras para confirmar en este período.</p>{% endif %}

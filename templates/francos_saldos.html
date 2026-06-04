@@ -138,7 +138,7 @@
   <form method="post" action="/francos/saldos/guardar">
     <div class="grid-4">
       <div>
-        <label>Empleado</label>
+        <label for="sel-legajo-ini">Empleado</label>
         <select name="legajo" id="sel-legajo-ini" onchange="completarNombre('ini')" required>
           <option value="">— Seleccionar —</option>
           {% for grupo in empleados_grupos %}
@@ -152,12 +152,12 @@
         <input type="hidden" name="nombre" id="campo-nombre-ini">
       </div>
       <div>
-        <label>Saldo inicial (días)</label>
-        <input type="number" name="saldo" min="0" value="0" required>
+        <label for="saldo-ini">Saldo inicial (días)</label>
+        <input type="number" id="saldo-ini" name="saldo" min="0" value="0" required>
       </div>
       <div>
-        <label>Nota (opcional)</label>
-        <input type="text" name="nota" placeholder="ej: saldo al 31/01/2026">
+        <label for="nota-ini">Nota (opcional)</label>
+        <input type="text" id="nota-ini" name="nota" placeholder="ej: saldo al 31/01/2026">
       </div>
       <div style="display:flex;align-items:flex-end">
         <button type="submit" class="btn" style="width:100%">Guardar</button>
@@ -176,7 +176,7 @@
   <form method="post" action="/francos/generados/nuevo">
     <div class="grid-5">
       <div>
-        <label>Departamento</label>
+        <label for="sel-depto-gen">Departamento</label>
         <select id="sel-depto-gen" onchange="filtrarLegajosGen()" required>
           <option value="">— Seleccionar —</option>
           {% for dep in departamentos %}
@@ -186,7 +186,7 @@
         </select>
       </div>
       <div>
-        <label>Legajo — Empleado</label>
+        <label for="sel-legajo-gen">Legajo — Empleado</label>
         <select name="legajo" id="sel-legajo-gen" onchange="completarNombreGen()" required disabled>
           <option value="">— Primero seleccioná depto —</option>
         </select>
@@ -194,12 +194,12 @@
         <input type="hidden" name="departamento" id="campo-depto-gen">
       </div>
       <div>
-        <label>Descripción del período</label>
-        <input type="text" name="descripcion" placeholder="ej: Semana 2 Mayo 2026" required>
+        <label for="gen-descripcion">Descripción del período</label>
+        <input type="text" id="gen-descripcion" name="descripcion" placeholder="ej: Semana 2 Mayo 2026" required>
       </div>
       <div>
-        <label>Días generados</label>
-        <input type="number" name="dias" min="1" value="1" required>
+        <label for="gen-dias">Días generados</label>
+        <input type="number" id="gen-dias" name="dias" min="1" value="1" required>
       </div>
       <div style="display:flex;align-items:flex-end">
         <button type="submit" class="btn" style="width:100%">Agregar</button>

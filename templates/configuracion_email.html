@@ -131,13 +131,13 @@
   <form method="post" action="/configuracion/email/smtp">
     <div class="grid-2" style="margin-bottom:14px">
       <div>
-        <label>Email remitente</label>
-        <input type="email" name="smtp_user" value="{{ cfg.get('smtp_user','') }}"
+        <label for="smtp_user">Email remitente</label>
+        <input type="email" id="smtp_user" name="smtp_user" value="{{ cfg.get('smtp_user','') }}"
                placeholder="tucuenta@gmail.com" required>
       </div>
       <div>
-        <label>Contraseña</label>
-        <input type="password" name="smtp_pass"
+        <label for="smtp_pass">Contraseña</label>
+        <input type="password" id="smtp_pass" name="smtp_pass"
                value="{{ cfg.get('smtp_pass','') }}"
                placeholder="Contraseña de aplicación" required>
         <p class="hint">Si tenés verificación en 2 pasos, generá una "Contraseña de aplicación" en la configuración de tu cuenta.</p>
@@ -145,19 +145,19 @@
     </div>
     <div class="grid-3" style="margin-bottom:16px">
       <div>
-        <label>Nombre del remitente</label>
-        <input type="text" name="smtp_from_name"
+        <label for="smtp_from_name">Nombre del remitente</label>
+        <input type="text" id="smtp_from_name" name="smtp_from_name"
                value="{{ cfg.get('smtp_from_name','CM Horas Extras') }}"
                placeholder="CM Horas Extras">
       </div>
       <div>
-        <label>Servidor SMTP</label>
-        <input type="text" name="smtp_host"
+        <label for="smtp_host">Servidor SMTP</label>
+        <input type="text" id="smtp_host" name="smtp_host"
                value="{{ cfg.get('smtp_host','smtp.gmail.com') }}">
       </div>
       <div>
-        <label>Puerto</label>
-        <input type="number" name="smtp_port"
+        <label for="smtp_port">Puerto</label>
+        <input type="number" id="smtp_port" name="smtp_port"
                value="{{ cfg.get('smtp_port', 587) }}">
       </div>
     </div>
@@ -171,12 +171,12 @@
   <form method="post" action="/configuracion/supervisores/nuevo">
     <div class="grid-2" style="margin-bottom:14px">
       <div>
-        <label>Nombre del supervisor</label>
-        <input type="text" name="nombre" placeholder="Apellido Nombre" required>
+        <label for="sup_nombre">Nombre del supervisor</label>
+        <input type="text" id="sup_nombre" name="nombre" placeholder="Apellido Nombre" required>
       </div>
       <div>
-        <label>Email</label>
-        <input type="email" name="email" placeholder="supervisor@ejemplo.com" required>
+        <label for="sup_email">Email</label>
+        <input type="email" id="sup_email" name="email" placeholder="supervisor@ejemplo.com" required>
       </div>
     </div>
     <div style="margin-bottom:16px">
