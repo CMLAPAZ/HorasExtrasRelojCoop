@@ -447,17 +447,15 @@ function toggleActionsDropdown(id) {
   var isOpen = el.classList.contains('open');
   _cerrarTodosDropdowns();
   if (!isOpen) {
-    // Posicionar con fixed para escapar del overflow del tabla-wrap
     var btn = el.previousElementSibling;
     var rect = btn.getBoundingClientRect();
-    el.style.position = 'fixed';
-    el.style.zIndex = '9999';
-    el.style.top = (rect.bottom + 4) + 'px';
-    el.style.left = '0px';  // temporal para poder medir
+    // Alineamos el borde derecho del dropdown con el borde derecho del botón
+    // usando 'right' desde el viewport en lugar de calcular 'left'
+    el.style.cssText = 'position:fixed;z-index:9999;'
+      + 'top:' + (rect.bottom + 4) + 'px;'
+      + 'right:' + (window.innerWidth - rect.right) + 'px;'
+      + 'left:auto;';
     el.classList.add('open');
-    // Alinear borde derecho con el botón
-    var w = el.getBoundingClientRect().width;
-    el.style.left = (rect.right - w) + 'px';
   }
 }
 document.addEventListener('click', function(e) {
