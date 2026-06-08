@@ -546,6 +546,7 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
             FROM francos_tomados
             WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
               AND legajo IN ({placeholders})
+              AND COALESCE(estado,'') != 'Anulado'
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
         """, (fecha_hasta, fecha_desde, *legajos_norm)).fetchall()
     else:
@@ -554,6 +555,7 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
                    fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
             FROM francos_tomados
             WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
+              AND COALESCE(estado,'') != 'Anulado'
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
         """, (fecha_hasta, fecha_desde)).fetchall()
     depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
@@ -3293,7 +3295,7 @@ def _calcular_saldos():
         gen_manual_raw   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
         gen_parcial      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
         gen_manual_sem   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
-        tomados_raw      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo")}
+        tomados_raw      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' GROUP BY legajo")}
 
     # gen_periodos filtrado por fecha_corte de cada empleado
     gen_periodos_por_emp = {}
@@ -3476,7 +3478,7 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
         return "El período no contiene días válidos"
 
     # Verificar superposición con registros existentes del mismo empleado
-    query = "SELECT id, tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_tomados WHERE legajo=?"
+    query = "SELECT id, tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' AND legajo=?"
     params = [str(legajo)]
     if exclude_id:
         query += " AND id != ?"
@@ -3777,8 +3779,11 @@ def francos_nuevo():
 @app.route("/francos/eliminar/<int:fid>", methods=["POST"])
 def francos_eliminar(fid):
     if not _autenticado(): return _requiere_auth()
+    motivo = request.form.get("motivo", "").strip()
     with _get_db() as conn:
-        conn.execute("DELETE FROM francos_tomados WHERE id=?", (fid,))
+        obs_actual = (conn.execute("SELECT observaciones FROM francos_tomados WHERE id=?", (fid,)).fetchone() or [""])[0] or ""
+        nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
+        conn.execute("UPDATE francos_tomados SET estado='Anulado', observaciones=? WHERE id=?", (nueva_obs, fid))
         conn.commit()
     return redirect(url_for("francos"))
 
