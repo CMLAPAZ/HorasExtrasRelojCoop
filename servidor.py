@@ -1663,6 +1663,18 @@ def reprocesar_semana(n):
     # Actualizar solo los legajos indicados (o todos si no se especificaron)
     legajos_a_actualizar = solo_legajos if solo_legajos else set(nuevos_por_legajo.keys())
 
+    # Reprocesar completo: eliminar tokens de empleados que ya no están en el CSV
+    if not solo_legajos:
+        for t in list(tokens_finales):
+            if t not in _sesion:
+                continue
+            leg_t = str(_sesion[t].get("legajo", ""))
+            if leg_t not in nuevos_por_legajo:
+                del _sesion[leg_t] if leg_t in _sesion else None
+                if t in _sesion:
+                    del _sesion[t]
+                tokens_finales.remove(t)
+
     for leg in legajos_a_actualizar:
         emp = nuevos_por_legajo.get(leg)
         if not emp:
