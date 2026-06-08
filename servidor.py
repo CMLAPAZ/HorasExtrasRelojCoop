@@ -2993,7 +2993,8 @@ def _generar_pdf_cierre_completo(pid):
 
         cabecera_tabla(COLS_R, ANCH_R)
 
-        tot_ot50 = tot_ot100 = tot_com = tot_fr = tot_tard = tot_conf = 0
+        tot_ot50 = tot_ot100 = timedelta(0)
+        tot_com = tot_fr = tot_tard = tot_conf = 0
         for e in sorted(emps_db, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
             check_pag()
             ot50  = _parse_hm(e.get("ot50")  or "0h")
