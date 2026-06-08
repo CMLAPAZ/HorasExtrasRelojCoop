@@ -49,7 +49,7 @@
     .tabla-wrap{overflow-x:auto}
     table{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
     th{background:#f8fafc;text-align:left;padding:7px 10px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;white-space:nowrap}
-    td{padding:7px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
+    td{padding:7px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     tr:last-child td{border-bottom:none}
     .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
@@ -478,23 +478,41 @@
 <div class="card card-registros-f">
   <div id="print-titulo-depto" style="display:none;font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:10px"></div>
   <div class="card-header">
-    <div class="card-title-inline">Francos Registrados ({{ registros|length }})</div>
+    <div class="card-title-inline">
+      Francos Registrados ({{ registros|length }})
+      {% set total_dias = registros | selectattr('estado','ne','Anulado') | selectattr('estado','ne','') | sum(attribute='dias') %}
+      &nbsp;—&nbsp;<strong>{{ registros | selectattr('estado','ne','Anulado') | sum(attribute='dias') }} días tomados</strong>
+    </div>
     <button type="button" class="btn-print-f no-print" onclick="imprimirDetalleFrancos()">🖨 Imprimir detalle</button>
   </div>
   {% if registros %}
   <div class="tabla-wrap">
-    <table>
+    <table style="table-layout:fixed;width:100%;min-width:820px">
+      <colgroup>
+        <col style="width:36px">
+        <col style="width:54px">
+        <col style="width:140px">
+        <col style="width:60px">
+        <col style="width:160px">
+        <col style="width:42px">
+        <col style="width:70px">
+        <col style="width:80px">
+        <col style="width:90px">
+        <col style="width:auto">
+        <col style="width:76px">
+        <col style="width:90px">
+      </colgroup>
       <thead>
         <tr>
           <th>#</th>
-          <th>Legajo</th>
+          <th>Leg.</th>
           <th>Nombre</th>
           <th>Tipo</th>
           <th>Fechas</th>
           <th>Días</th>
           <th>Estado</th>
           <th>F. Emisión</th>
-          <th>Autorizado por</th>
+          <th>Autorizado</th>
           <th>Obs.</th>
           <th>Cargado</th>
           <th></th>
@@ -554,6 +572,15 @@
           </td>
         </tr>
         {% endfor %}
+        <tr style="background:#f0f4ff;font-weight:700;font-size:.8rem">
+          <td colspan="5" style="text-align:right;padding:4px 8px;color:#1e3a5f">
+            Subtotal {{ grupo.departamento | upper }}
+          </td>
+          <td style="text-align:center;color:#1e3a5f">
+            {{ grupo.registros | selectattr('estado','ne','Anulado') | sum(attribute='dias') }}
+          </td>
+          <td colspan="6"></td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
