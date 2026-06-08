@@ -825,6 +825,18 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
                         if pdf.get_y() < y + 5:
                             pdf.set_y(y + 5)
                         pdf.set_x(x)
+
+        # Total acumulado del período (desde periodo_empleados)
+        if pdf.get_y() + 6 > pdf.h - pdf.b_margin:
+            pdf.add_page()
+        pdf.set_font(fam, "B", 8)
+        pdf.set_fill_color(240, 240, 240)
+        total_line = (f"  TOTAL PERÍODO — OT50: {emp.get('ot50','0h')}  "
+                      f"OT100: {emp.get('ot100','0h')}  "
+                      f"Comidas: {emp.get('comidas',0)}  "
+                      f"Francos: {emp.get('francos',0)}  "
+                      f"Tardanzas: {emp.get('tardanzas',0)}")
+        pdf.cell(0, 5, total_line, border=1, ln=1, fill=True)
         pdf.ln(1)
 
     return _pdf_bytes(pdf)
