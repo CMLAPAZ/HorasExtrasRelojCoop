@@ -3477,7 +3477,7 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
     if not nuevas:
         return "El período no contiene días válidos"
 
-    # Verificar superposición con registros existentes del mismo empleado
+    # Verificar superposición con registros vigentes (francos_tomados, no anulados)
     query = "SELECT id, tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' AND legajo=?"
     params = [str(legajo)]
     if exclude_id:
@@ -3495,6 +3495,19 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
         if solapadas:
             primera = min(solapadas).strftime("%d/%m/%Y")
             return f"El empleado ya tiene franco registrado el {primera}"
+
+    # También verificar contra historial de cierres (cubre francos eliminados antes del cambio a Anular)
+    for row in conn.execute(
+        "SELECT tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_cierre_detalle WHERE legajo=?",
+        (str(legajo),)
+    ).fetchall():
+        existentes = _fechas_del_registro(
+            row["tipo"], row["fecha_desde"], row["fecha_hasta"], row["fechas_sueltas"], feriados,
+        )
+        solapadas = nuevas & existentes
+        if solapadas:
+            primera = min(solapadas).strftime("%d/%m/%Y")
+            return f"El empleado ya tiene franco de cierre registrado el {primera}"
 
     return None
 
