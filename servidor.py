@@ -740,8 +740,6 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
     rango = f"{periodo['fecha_desde'] or ''} al {periodo['fecha_hasta'] or ''}".strip()
     estado = periodo["estado"] or "ACTIVO"
 
-    pdf.set_font(fam, "B", 12)
-    pdf.cell(0, 8, "Confirmaciones del cierre", ln=1)
     pdf.set_font(fam, "", 9)
     pdf.cell(0, 6, f"Cierre ID: {periodo['id']}    Estado: {estado}    Cerrado: {cerrado}", ln=1)
     pdf.cell(0, 6, f"Semanas: {', '.join(str(s) for s in semanas_periodo)}    Periodo: {rango}", ln=1)
