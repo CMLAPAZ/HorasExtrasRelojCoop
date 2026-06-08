@@ -252,6 +252,16 @@ def _init_db():
                 cargado_en    TEXT DEFAULT ''
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cierres_francos (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                cerrado_en    TEXT NOT NULL,
+                departamento  TEXT NOT NULL,
+                fecha_hasta   TEXT NOT NULL,
+                total_dias    INTEGER DEFAULT 0,
+                estado        TEXT NOT NULL DEFAULT 'ACTIVO'
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -2746,7 +2756,108 @@ def periodos_historial():
             "confirmados": conf,
             "pendientes":  total - conf,
         })
-    return render_template("periodos_historial.html", cierres=cierres)
+    with _get_db() as conn:
+        cf_rows = conn.execute(
+            "SELECT * FROM cierres_francos ORDER BY id DESC"
+        ).fetchall()
+    cierres_francos = [dict(r) for r in cf_rows]
+    for c in cierres_francos:
+        c["cerrado_en"] = (c["cerrado_en"] or "")[:16].replace("T", " ")
+    deptos_conocidos = sorted({
+        e["departamento"] for e in _empleados_conocidos() if e["departamento"]
+    })
+    return render_template("periodos_historial.html", cierres=cierres,
+                           cierres_francos=cierres_francos,
+                           deptos_conocidos=deptos_conocidos)
+
+
+@app.route("/francos/cierre/nuevo", methods=["POST"])
+def francos_cierre_nuevo():
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    departamento = _normalizar_departamento_web(request.form.get("departamento", ""))
+    fecha_hasta  = request.form.get("fecha_hasta", "").strip()
+    if not departamento or not fecha_hasta:
+        return jsonify({"error": "Completá departamento y fecha."}), 400
+    depto_visible = _nombre_departamento_visible(departamento)
+    ahora = datetime.now().isoformat()
+    with _get_db() as conn:
+        legajos = [str(r["legajo"]) for r in conn.execute(
+            "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
+            "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
+            (depto_visible.lower(), departamento)
+        )]
+        if not legajos:
+            return jsonify({"error": f"Sin empleados para {depto_visible}."}), 400
+        ph = ",".join("?" * len(legajos))
+        # Calcular total días
+        total = conn.execute(
+            f"SELECT COALESCE(SUM(dias),0) FROM francos_tomados "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ?",
+            (*legajos, fecha_hasta)
+        ).fetchone()[0]
+        # Marcar como Cerrado
+        conn.execute(
+            f"UPDATE francos_tomados SET estado='Cerrado' "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado') AND fecha_desde <= ?",
+            (*legajos, fecha_hasta)
+        )
+        # Registrar cierre
+        cur = conn.execute(
+            "INSERT INTO cierres_francos (cerrado_en, departamento, fecha_hasta, total_dias, estado) VALUES (?,?,?,?,?)",
+            (ahora, depto_visible, fecha_hasta, total, "ACTIVO")
+        )
+        cid = cur.lastrowid
+        conn.commit()
+    # Generar PDF
+    with _get_db() as conn:
+        rows = conn.execute(
+            f"SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, "
+            f"fecha_emision, autorizado_por, observaciones FROM francos_tomados "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
+            f"ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (*legajos, fecha_hasta)
+        ).fetchall()
+    francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
+    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, "", fecha_hasta)
+    return jsonify({"ok": True, "id": cid, "total": total})
+
+
+@app.route("/francos/cierre/pdf/<int:cid>")
+def francos_cierre_pdf(cid):
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        cf = conn.execute("SELECT * FROM cierres_francos WHERE id=?", (cid,)).fetchone()
+    if not cf:
+        return "Cierre no encontrado.", 404
+    cf = dict(cf)
+    depto_visible = cf["departamento"]
+    fecha_hasta   = cf["fecha_hasta"]
+    departamento  = _normalizar_departamento_web(depto_visible)
+    with _get_db() as conn:
+        legajos = [str(r["legajo"]) for r in conn.execute(
+            "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
+            "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
+            (depto_visible.lower(), departamento)
+        )]
+    if not legajos:
+        return "Sin empleados.", 404
+    ph = ",".join("?" * len(legajos))
+    with _get_db() as conn:
+        rows = conn.execute(
+            f"SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, "
+            f"fecha_emision, autorizado_por, observaciones FROM francos_tomados "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
+            f"ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (*legajos, fecha_hasta)
+        ).fetchall()
+    francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
+    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, "", fecha_hasta)
+    import glob as _glob
+    matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_cf{cid}_*.pdf"))))
+    if not matches:
+        return "Error generando PDF.", 500
+    return send_file(matches[-1], as_attachment=True,
+                     download_name=f"francos_{depto_visible.lower()}_{fecha_hasta}.pdf")
 
 
 @app.route("/periodos/anular/<int:pid>", methods=["POST"])
