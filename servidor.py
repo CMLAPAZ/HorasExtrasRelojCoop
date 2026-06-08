@@ -2631,7 +2631,7 @@ def periodo_cerrar():
 
             # Leer totales actuales de tomados y gen_extra para cada legajo del cierre
             tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
-                "SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo"
+                "SELECT legajo, SUM(dias) as total FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' GROUP BY legajo"
             )}
             gen_extra_totales = {}
             for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo"):
@@ -3795,9 +3795,27 @@ def francos_eliminar(fid):
     if not _autenticado(): return _requiere_auth()
     motivo = request.form.get("motivo", "").strip()
     with _get_db() as conn:
-        obs_actual = (conn.execute("SELECT observaciones FROM francos_tomados WHERE id=?", (fid,)).fetchone() or [""])[0] or ""
+        franco = conn.execute(
+            "SELECT legajo, dias, fecha_desde, observaciones FROM francos_tomados WHERE id=?", (fid,)
+        ).fetchone()
+        if not franco:
+            return redirect(url_for("francos"))
+        obs_actual = franco["observaciones"] or ""
         nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
         conn.execute("UPDATE francos_tomados SET estado='Anulado', observaciones=? WHERE id=?", (nueva_obs, fid))
+
+        # Si el franco fue contado en tomados_al_corte, devolver los días al saldo
+        leg = str(franco["legajo"])
+        dias = franco["dias"] or 0
+        fecha_franco = franco["fecha_desde"] or ""
+        si = conn.execute(
+            "SELECT saldo, tomados_al_corte, fecha_corte FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+        ).fetchone()
+        if si and dias > 0 and fecha_franco <= (si["fecha_corte"] or ""):
+            conn.execute(
+                "UPDATE francos_saldo_inicial SET saldo=saldo+?, tomados_al_corte=MAX(0,tomados_al_corte-?) WHERE legajo=?",
+                (dias, dias, leg)
+            )
         conn.commit()
     return redirect(url_for("francos"))
 
