@@ -697,7 +697,15 @@ def _leer_confirmaciones_cierre(periodo):
                 items.append(json.loads(f.read_text(encoding="utf-8")))
             except Exception:
                 continue
-    return sorted(items, key=lambda x: (
+    # Deduplicar por (legajo, semana): si hay dos archivos para el mismo empleado y semana,
+    # conservar el de mayor score (confirmado_en más reciente)
+    dedup = {}
+    for item in items:
+        key = (str(item.get("legajo", "")), item.get("semana_depto", item.get("semana", 0)))
+        prev = dedup.get(key)
+        if prev is None or (item.get("confirmado_en") or "") > (prev.get("confirmado_en") or ""):
+            dedup[key] = item
+    return sorted(dedup.values(), key=lambda x: (
         _normalizar_departamento_web(x.get("departamento", "")),
         _legajo_key(x),
     ))
@@ -722,7 +730,10 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
     pdf.add_page()
     fam = "DejaVu" if pdf._unicode else "Helvetica"
 
-    semanas = list(range(periodo["semana_desde"], periodo["semana_hasta"] + 1))
+    # Semanas visibles reales: desde los empleados del cierre (ya tienen números visibles)
+    semanas = sorted(set(s for e in empleados for s in e.get("semanas", [])))
+    if not semanas:
+        semanas = list(range(periodo["semana_desde"], periodo["semana_hasta"] + 1))
     cerrado = (periodo["cerrado_en"] or "")[:16].replace("T", " ")
     rango = f"{periodo['fecha_desde'] or ''} al {periodo['fecha_hasta'] or ''}".strip()
     estado = periodo["estado"] or "ACTIVO"
@@ -759,8 +770,18 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
             pdf.cell(0, 4, f"Confirmado: {(c.get('confirmado_en') or '')[:16].replace('T', ' ')}    Semana: {c.get('semana_depto', c.get('semana', ''))}", ln=1)
             pdf.cell(0, 4, f"OT50: {tot.get('ot50', '0h')}    OT100: {tot.get('ot100', '0h')}    Comidas: {tot.get('comidas', 0)}    Francos: {tot.get('francos', 0)}    Tardanzas: {tot.get('tardanzas', 0)}", ln=1)
 
+            excluido = c.get("excluido_ot", False)
             dias = c.get("dias", [])
-            if dias:
+            # Solo días con actividad real
+            dias_activos = [
+                d for d in dias
+                if d.get("franco") or d.get("comida") or d.get("tarde")
+                or (not excluido and (
+                    _parse_td(d.get("ot50", "")) > timedelta(0)
+                    or _parse_td(d.get("ot100", "")) > timedelta(0)
+                ))
+            ]
+            if dias_activos:
                 pdf.set_font(fam, "B", 7)
                 pdf.cell(23, 5, "Fecha", 1)
                 pdf.cell(24, 5, "Tipo", 1)
@@ -769,7 +790,7 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
                 pdf.cell(22, 5, "Marcas", 1)
                 pdf.cell(0, 5, "Descripcion", 1, ln=1)
                 pdf.set_font(fam, "", 7)
-                for d in dias:
+                for d in dias_activos:
                     if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
                         pdf.add_page()
                     marcas = []
@@ -777,12 +798,16 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
                         marcas.append("Franco")
                     if d.get("comida"):
                         marcas.append("Comida")
+                    if d.get("tarde"):
+                        marcas.append("Tardanza")
                     x, y = pdf.get_x(), pdf.get_y()
                     desc = _pdf_cell_text(d.get("descripcion") or "Sin descripcion")
+                    ot50_val = "" if excluido else _pdf_cell_text(d.get("ot50", ""))
+                    ot100_val = "" if excluido else _pdf_cell_text(d.get("ot100", ""))
                     pdf.cell(23, 5, _pdf_cell_text(d.get("fecha", "")), 1)
                     pdf.cell(24, 5, _pdf_cell_text(d.get("tipo_dia", "normal")), 1)
-                    pdf.cell(20, 5, _pdf_cell_text(d.get("ot50", "")), 1)
-                    pdf.cell(20, 5, _pdf_cell_text(d.get("ot100", "")), 1)
+                    pdf.cell(20, 5, ot50_val, 1)
+                    pdf.cell(20, 5, ot100_val, 1)
                     pdf.cell(22, 5, ", ".join(marcas), 1)
                     pdf.multi_cell(0, 5, desc, 1)
                     if pdf.get_y() < y + 5:
@@ -958,9 +983,9 @@ def _mapa_semanas_visibles_periodo(periodo):
         return {}
     semanas = data.get("semanas") or []
     try:
-        visible_desde = int(data.get("semana_visible_desde") or semanas[0])
+        visible_desde = int(data.get("semana_visible_desde")) if data.get("semana_visible_desde") else 1
     except Exception:
-        visible_desde = semanas[0] if semanas else 0
+        visible_desde = 1
     return {int(global_n): visible_desde + i for i, global_n in enumerate(semanas)}
 
 def _aplicar_semanas_visibles(empleados, periodo):
@@ -2398,9 +2423,9 @@ def periodo_cerrar():
     if not semanas_cerradas:
         return jsonify({"error": "No hay semanas activas de ese departamento en el rango seleccionado."}), 400
     try:
-        visible_desde_int = int(semana_visible_desde or semanas_cerradas[0])
+        visible_desde_int = int(semana_visible_desde) if semana_visible_desde else 1
     except Exception:
-        visible_desde_int = semanas_cerradas[0]
+        visible_desde_int = 1
     semanas_visibles_mapa = {
         int(n): visible_desde_int + i
         for i, n in enumerate(semanas_cerradas)
@@ -2433,7 +2458,7 @@ def periodo_cerrar():
                 (pid, str(e.get("legajo","")), e.get("nombre",""), e.get("departamento",""),
                  e.get("ot50","0h"), e.get("ot100","0h"),
                  e.get("comidas",0), e.get("francos",0), e.get("tardanzas",0),
-                 json.dumps([semanas_visibles_mapa.get(int(s), s) for s in e.get("semanas",[])]),
+                 json.dumps(sorted(semanas_visibles_mapa.values())),
                  1 if e.get("confirmado") else 0)
             )
         # Snapshot de francos tomados — solo legajos del departamento cerrado
@@ -2575,14 +2600,25 @@ def periodos_historial():
             GROUP BY p.id
             ORDER BY p.id DESC
         """).fetchall()
+        # Semanas visibles reales por período (ya guardadas como números visibles en periodo_empleados)
+        sem_rows = conn.execute("SELECT periodo_id, semanas FROM periodo_empleados").fetchall()
+    semanas_por_pid = {}
+    for sr in sem_rows:
+        pid = sr["periodo_id"]
+        try:
+            nums = json.loads(sr["semanas"] or "[]")
+            semanas_por_pid.setdefault(pid, set()).update(nums)
+        except Exception:
+            pass
     cierres = []
     for r in rows:
         total = r["total"] or 0
         conf  = r["confirmados"] or 0
+        sems = sorted(semanas_por_pid.get(r["id"], set())) or list(range(r["semana_desde"], r["semana_hasta"]+1))
         cierres.append({
             "id":          r["id"],
             "cerrado_en":  (r["cerrado_en"] or "")[:16].replace("T", " "),
-            "semanas":     list(range(r["semana_desde"], r["semana_hasta"]+1)),
+            "semanas":     sems,
             "fecha_desde": r["fecha_desde"] or "",
             "fecha_hasta": r["fecha_hasta"] or "",
             "estado":      r["estado"] or "ACTIVO",
