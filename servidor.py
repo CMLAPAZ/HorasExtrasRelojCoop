@@ -533,8 +533,9 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
 def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, departamento=""):
-    """Copia francos_tomados del período a francos_cierre_detalle y genera PDF.
-    Filtra por legajos del departamento que se está cerrando para no mezclar deptos."""
+    """Copia francos_tomados a francos_cierre_detalle y genera PDF.
+    Incluye TODOS los francos del empleado a la fecha (sin filtro de período),
+    filtrando solo por legajos del departamento para no mezclar deptos."""
     if not fecha_desde or not fecha_hasta:
         return
     legajos_norm = [str(l) for l in (legajos or [])]
@@ -544,20 +545,20 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
             SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
                    fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
             FROM francos_tomados
-            WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
-              AND legajo IN ({placeholders})
+            WHERE legajo IN ({placeholders})
               AND COALESCE(estado,'') != 'Anulado'
+              AND fecha_desde <= ?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (fecha_hasta, fecha_desde, *legajos_norm)).fetchall()
+        """, (*legajos_norm, fecha_hasta)).fetchall()
     else:
         rows = conn.execute("""
             SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
                    fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
             FROM francos_tomados
-            WHERE fecha_desde <= ? AND COALESCE(NULLIF(fecha_hasta,''), fecha_desde) >= ?
-              AND COALESCE(estado,'') != 'Anulado'
+            WHERE COALESCE(estado,'') != 'Anulado'
+              AND fecha_desde <= ?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (fecha_hasta, fecha_desde)).fetchall()
+        """, (fecha_hasta,)).fetchall()
     depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
     for r in rows:
         conn.execute("""
