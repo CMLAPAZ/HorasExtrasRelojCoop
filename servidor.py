@@ -3183,12 +3183,40 @@ def periodos_informe_completo(pid):
 @app.route("/periodos/francos_pdf/<int:pid>")
 def periodos_francos_pdf(pid):
     if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return "Cierre no encontrado.", 404
+        legajos = [str(r["legajo"]) for r in conn.execute(
+            "SELECT DISTINCT legajo FROM periodo_empleados WHERE periodo_id=?", (pid,)
+        )]
+        departamento = ""
+        if legajos:
+            dep_row = conn.execute(
+                "SELECT departamento FROM periodo_empleados WHERE periodo_id=? LIMIT 1", (pid,)
+            ).fetchone()
+            departamento = dep_row["departamento"] if dep_row else ""
+        if not legajos:
+            return "Sin empleados en este cierre.", 404
+        placeholders = ",".join("?" * len(legajos))
+        francos = conn.execute(f"""
+            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+            FROM francos_tomados
+            WHERE legajo IN ({placeholders})
+              AND COALESCE(estado,'') != 'Anulado'
+            ORDER BY CAST(legajo AS INTEGER), fecha_desde
+        """, legajos).fetchall()
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    francos_list = [{**dict(r), "departamento": departamento} for r in francos]
+    fd = dict(p).get("fecha_desde", "")
+    _generar_pdf_francos_cierre(pid, francos_list, fd, hoy)
     import glob as _glob
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid}_*.pdf"))))
     if not matches:
-        return "PDF de francos no encontrado para este cierre.", 404
+        return "Error generando PDF.", 500
     return send_file(matches[-1], as_attachment=True,
-                     download_name=Path(matches[-1]).name)
+                     download_name=f"francos_cierre_{pid}_{hoy}.pdf")
 
 
 @app.route("/periodos/confirmaciones_pdf/<int:pid>")
