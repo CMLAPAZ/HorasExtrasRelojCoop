@@ -3436,6 +3436,61 @@ def periodos_confirmaciones_pdf(pid):
         )
 
 
+@app.route("/admin/recalcular-saldos", methods=["POST"])
+def admin_recalcular_saldos():
+    """Recalcula y actualiza francos_saldo_inicial para un departamento o todos."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    depto_param = request.form.get("departamento", "").strip()
+    ahora_str   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    saldos = _calcular_saldos()
+    empleados = _empleados_conocidos()
+    emp_map = {str(e["legajo"]): e for e in empleados}
+    actualizados = 0
+    with _get_db() as conn:
+        tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+            "SELECT legajo, SUM(dias) as total FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' GROUP BY legajo"
+        )}
+        gen_extra_totales = {}
+        for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo"):
+            gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+        for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo"):
+            gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+        # Buscar fecha_corte del cierre manual más reciente por depto
+        fecha_corte_por_leg = {}
+        for cf in conn.execute("SELECT departamento, fecha_hasta FROM cierres_francos ORDER BY id DESC").fetchall():
+            dep_cf = _normalizar_departamento_web(cf["departamento"])
+            for emp in empleados:
+                if _normalizar_departamento_web(emp["departamento"]) == dep_cf:
+                    leg = str(emp["legajo"])
+                    if leg not in fecha_corte_por_leg:
+                        fecha_corte_por_leg[leg] = cf["fecha_hasta"]
+        for s in saldos:
+            leg = str(s["legajo"])
+            emp = emp_map.get(leg)
+            if not emp:
+                continue
+            if depto_param and _normalizar_departamento_web(emp["departamento"]) != _normalizar_departamento_web(depto_param):
+                continue
+            nombre = emp["nombre"]
+            fecha_corte = fecha_corte_por_leg.get(leg, ahora_str[:10])
+            conn.execute("""
+                INSERT INTO francos_saldo_inicial
+                    (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(legajo) DO UPDATE SET
+                    saldo=excluded.saldo, nota=excluded.nota, cargado_en=excluded.cargado_en,
+                    tomados_al_corte=excluded.tomados_al_corte,
+                    gen_extra_al_corte=excluded.gen_extra_al_corte,
+                    fecha_corte=excluded.fecha_corte
+            """, (leg, nombre, s["saldo_actual"],
+                  f"Recalculado manualmente {ahora_str[:10]}",
+                  ahora_str, tomados_totales.get(leg, 0),
+                  gen_extra_totales.get(leg, 0), fecha_corte))
+            actualizados += 1
+        conn.commit()
+    return jsonify({"ok": True, "actualizados": actualizados})
+
+
 @app.route("/admin/reset", methods=["POST"])
 def admin_reset():
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
