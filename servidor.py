@@ -3704,6 +3704,53 @@ def francos_saldos():
                            departamentos=departamentos)
 
 
+@app.route("/francos/pdf_depto")
+def francos_pdf_depto():
+    """PDF de francos tomados por departamento (sin cierre — para Guardias, Internet, Telefonía, etc.)."""
+    if not _autenticado(): return _requiere_auth()
+    depto_param = request.args.get("depto", "").strip()
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    with _get_db() as conn:
+        if depto_param and depto_param != "__todos__":
+            depto_norm = _normalizar_departamento_web(depto_param)
+            legajos = [str(r["legajo"]) for r in conn.execute(
+                "SELECT DISTINCT legajo FROM periodo_empleados WHERE departamento=? "
+                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
+                (_nombre_departamento_visible(depto_norm), depto_norm)
+            )]
+            if not legajos:
+                return "Sin empleados para ese departamento.", 404
+            ph = ",".join("?" * len(legajos))
+            rows = conn.execute(f"""
+                SELECT ft.legajo, ft.nombre, ft.tipo, ft.fecha_desde, ft.fecha_hasta,
+                       ft.fechas_sueltas, ft.dias, ft.estado, ft.fecha_emision,
+                       ft.autorizado_por, ft.observaciones
+                FROM francos_tomados ft
+                WHERE ft.legajo IN ({ph})
+                  AND COALESCE(ft.estado,'') != 'Anulado'
+                ORDER BY CAST(ft.legajo AS INTEGER), ft.fecha_desde
+            """, legajos).fetchall()
+            depto_label = _nombre_departamento_visible(depto_norm)
+        else:
+            rows = conn.execute("""
+                SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
+                       fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+                FROM francos_tomados
+                WHERE COALESCE(estado,'') != 'Anulado'
+                ORDER BY CAST(legajo AS INTEGER), fecha_desde
+            """).fetchall()
+            depto_label = "Todos los departamentos"
+    francos_list = [{**dict(r), "departamento": depto_label} for r in rows]
+    pid_fake = f"depto_{depto_param or 'todos'}_{hoy.replace('-','')}"
+    _generar_pdf_francos_cierre(pid_fake, francos_list, "inicio", hoy)
+    import glob as _glob
+    matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid_fake}_*.pdf"))))
+    if not matches:
+        return "Error generando PDF.", 500
+    nombre_dl = f"francos_{(depto_param or 'todos').replace(' ','_')}_{hoy}.pdf"
+    return send_file(matches[-1], as_attachment=True, download_name=nombre_dl)
+
+
 @app.route("/francos/saldos/exportar")
 def francos_saldos_exportar():
     if not _autenticado(): return _requiere_auth()

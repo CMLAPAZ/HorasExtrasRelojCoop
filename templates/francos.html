@@ -264,6 +264,7 @@
         {% endfor %}
       </select>
       <a id="btn-dl-francos" href="/francos/saldos/exportar" style="display:none;height:34px;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;align-items:center">⬇ CSV</a>
+      <a id="btn-pdf-francos" href="#" style="display:none;height:34px;padding:0 14px;background:#1e3a5f;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;align-items:center">📄 PDF Francos</a>
       <button class="btn-print-f no-print" onclick="imprimirSaldosFrancos()">🖨 Imprimir</button>
     </div>
   </div>
@@ -716,11 +717,13 @@ function filtrarDeptoFrancos() {
     return;
   }
   if (msg) msg.style.display = 'none';
+  const btnPdf = document.getElementById('btn-pdf-francos');
   if (dep === '__todos__') {
     filasSaldo.forEach(tr => tr.style.display = '');
     filasReg.forEach(tr => tr.style.display = '');
     if (totalGen) totalGen.style.display = '';
     if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
+    if (btnPdf) { btnPdf.style.display = 'inline-flex'; btnPdf.href = '/francos/pdf_depto?depto=__todos__'; }
     if (titulo) titulo.style.display = 'none';
     if (pt) pt.textContent = 'TODOS LOS DEPARTAMENTOS';
     return;
@@ -729,6 +732,7 @@ function filtrarDeptoFrancos() {
   filasSaldo.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
+  if (btnPdf) { btnPdf.style.display = 'inline-flex'; btnPdf.href = '/francos/pdf_depto?depto=' + encodeURIComponent(dep); }
   if (titulo) { titulo.textContent = dep.toUpperCase(); titulo.style.display = 'block'; }
   if (pt) pt.textContent = dep.toUpperCase();
 }
