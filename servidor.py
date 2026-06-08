@@ -560,6 +560,7 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
         """, (fecha_hasta,)).fetchall()
     depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
+    ids_cerrar = []
     for r in rows:
         conn.execute("""
             INSERT INTO francos_cierre_detalle
@@ -570,6 +571,17 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
               r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
               r["dias"], r["estado"] or "", r["fecha_emision"] or "",
               r["autorizado_por"] or "", r["observaciones"] or ""))
+        # Marcar el franco original como Cerrado para bloquear reedición
+        if hasattr(r, "keys"):
+            ids_cerrar.append(r["id"] if "id" in r.keys() else None)
+    # Marcar como Cerrado en francos_tomados (solo los no-anulados del depto)
+    if legajos_norm:
+        conn.execute(f"""
+            UPDATE francos_tomados SET estado='Cerrado'
+            WHERE legajo IN ({','.join('?' * len(legajos_norm))})
+              AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')
+              AND fecha_desde <= ?
+        """, (*legajos_norm, fecha_hasta))
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(pid, francos_list, fecha_desde, fecha_hasta)
 

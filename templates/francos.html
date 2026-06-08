@@ -121,6 +121,8 @@
     }
     tr.franco-anulado td { opacity:.45; text-decoration:line-through; }
     tr.franco-anulado td:last-child { text-decoration:none; }
+    tr.franco-cerrado td { opacity:.6; }
+    tr.franco-cerrado td:last-child { text-decoration:none; }
     .badge-anulado { font-size:.7rem; background:#fee2e2; color:#b91c1c; border-radius:4px; padding:1px 5px; font-weight:700; }
   </style>
 </head>
@@ -507,7 +509,7 @@
           </td>
         </tr>
         {% for r in grupo.registros %}
-        <tr class="fila-reg-f{% if r.estado == 'Anulado' %} franco-anulado{% endif %}" data-depto="{{ grupo.departamento }}">
+        <tr class="fila-reg-f{% if r.estado == 'Anulado' %} franco-anulado{% elif r.estado == 'Cerrado' %} franco-cerrado{% endif %}" data-depto="{{ grupo.departamento }}">
           <td style="color:#94a3b8;font-size:.78rem">{{ r.id }}</td>
           <td>{{ r.legajo }}</td>
           <td>{{ r.nombre }}</td>
@@ -534,16 +536,20 @@
           <td style="font-size:.82rem;color:#64748b">{{ r.observaciones }}</td>
           <td style="font-size:.78rem;color:#94a3b8">{{ r.cargado_en[:10] if r.cargado_en else '' }}</td>
           <td style="white-space:nowrap">
-            {% if r.estado != 'Aprobado' %}
-            <form method="post" action="/francos/aprobar/{{ r.id }}" style="display:inline">
-              <button type="submit" class="btn-del" style="background:#fff;border-color:#bbf7d0;color:#166534">✓ Aprobar</button>
-            </form>
-            {% endif %}
-            {% if r.estado != 'Anulado' %}
-            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return anularFranco(this)" style="display:inline">
-              <input type="hidden" name="motivo" value="">
-              <button type="submit" class="btn-del">Anular</button>
-            </form>
+            {% if r.estado == 'Cerrado' %}
+              <span class="badge-anulado" style="background:#dbeafe;color:#1e40af">Cerrado</span>
+            {% elif r.estado == 'Anulado' %}
+              <span class="badge-anulado">Anulado</span>
+            {% else %}
+              {% if r.estado != 'Aprobado' %}
+              <form method="post" action="/francos/aprobar/{{ r.id }}" style="display:inline">
+                <button type="submit" class="btn-del" style="background:#fff;border-color:#bbf7d0;color:#166534">✓ Aprobar</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return anularFranco(this)" style="display:inline">
+                <input type="hidden" name="motivo" value="">
+                <button type="submit" class="btn-del">Anular</button>
+              </form>
             {% endif %}
           </td>
         </tr>
