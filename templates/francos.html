@@ -536,7 +536,7 @@
               <button type="submit" class="btn-del" style="background:#fff;border-color:#bbf7d0;color:#166534">✓ Aprobar</button>
             </form>
             {% endif %}
-            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return confirm('¿Eliminar este franco?')" style="display:inline">
+            <form method="post" action="/francos/eliminar/{{ r.id }}" onsubmit="return confirm('¿Eliminar este franco?\n\nNota: si fue incluido en un cierre, el historial del cierre no cambia — solo se actualiza el saldo actual.')" style="display:inline">
               <button type="submit" class="btn-del">Eliminar</button>
             </form>
           </td>
