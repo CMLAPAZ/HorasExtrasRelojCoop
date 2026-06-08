@@ -1015,13 +1015,6 @@ def _datos_semanas_periodo(periodo):
     if not mapa:
         return {}
     departamento = _normalizar_departamento_web(periodo.get("departamento", "") or "")
-    from procesador import procesar_fichadas, cargar_config, cargar_feriados
-    try:
-        config = cargar_config()
-        feriados = cargar_feriados(config)
-    except Exception:
-        feriados = set()
-    excluidos = _cargar_excluidos_ot()
     resultado = {}
     for global_n, visible_sem in mapa.items():
         csv_path = SEMANAS_DIR / f"semana_{global_n}.csv"
@@ -1029,13 +1022,16 @@ def _datos_semanas_periodo(periodo):
             continue
         try:
             df = _cargar_semana_csv(global_n)
-            empleados_raw = procesar_fichadas(df, feriados)
+            if df is None:
+                continue
+            empleados_raw, _, _ = _procesar_empleados(_normalizar_columnas(df))
+            _aplicar_exclusiones_ot(empleados_raw)
             sem_data = {}
             for emp in empleados_raw:
                 if departamento and _normalizar_departamento_web(emp.get("departamento", "")) != departamento:
                     continue
                 leg = str(emp.get("legajo", ""))
-                excluido = leg in excluidos
+                excluido = emp.get("excluido_ot", False)
                 dias_prep = _preparar_dias(emp["registros"])
                 ot50 = ot100 = timedelta(0)
                 comidas = francos = tardanzas = 0
