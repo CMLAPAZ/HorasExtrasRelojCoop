@@ -663,6 +663,18 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
             pdf.cell(ANCHOS[6], 6, r.get("autorizado_por","") or "",1, 0, "L")
             pdf.cell(ANCHOS[7], 6, r.get("observaciones","") or "", 1, 1, "L")
 
+        # Fila de total general
+        total_dias = sum(r.get("dias", 0) or 0 for r in francos)
+        if pdf.get_y() + 8 > pdf.h - pdf.b_margin:
+            pdf.add_page(); cabecera()
+        pdf.set_fill_color(23, 32, 51)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(f, "B", 8)
+        pdf.cell(ANCHOS[0]+ANCHOS[1]+ANCHOS[2]+ANCHOS[3], 7, "TOTAL", 1, 0, "R", fill=True)
+        pdf.cell(ANCHOS[4], 7, str(total_dias), 1, 0, "C", fill=True)
+        pdf.cell(sum(ANCHOS[5:]), 7, "", 1, 1, "C", fill=True)
+        pdf.set_text_color(0, 0, 0)
+
         Path("reportes").mkdir(exist_ok=True)
         ts = fecha_desde.replace("-","") if fecha_desde else datetime.now().strftime("%Y%m%d")
         pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
