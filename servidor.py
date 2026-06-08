@@ -3112,7 +3112,7 @@ def periodos_confirmaciones_pdf(pid):
         d["semanas"] = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
-    empleados = _aplicar_semanas_visibles(empleados, periodo)
+    # semanas en periodo_empleados ya son números visibles — no remapear
 
     try:
         pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
