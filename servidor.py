@@ -2808,6 +2808,45 @@ def francos_cierre_nuevo():
         )
         cid = cur.lastrowid
         conn.commit()
+
+    # Actualizar saldo_inicial con el saldo calculado al corte
+    try:
+        ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        saldos = _calcular_saldos()
+        with _get_db() as conn:
+            tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+                f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
+                f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' GROUP BY legajo",
+                legajos
+            )}
+            gen_extra_totales = {}
+            for r in conn.execute(f"SELECT legajo, SUM(dias) as total FROM francos_generados WHERE legajo IN ({ph}) GROUP BY legajo", legajos):
+                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+            for r in conn.execute(f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual WHERE legajo IN ({ph}) GROUP BY legajo", legajos):
+                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
+            for s in saldos:
+                leg = str(s["legajo"])
+                if leg not in legajos:
+                    continue
+                emp_row = next((e for e in _empleados_conocidos() if str(e["legajo"]) == leg), None)
+                nombre = emp_row["nombre"] if emp_row else s["nombre"]
+                conn.execute("""
+                    INSERT INTO francos_saldo_inicial
+                        (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
+                    VALUES (?,?,?,?,?,?,?,?)
+                    ON CONFLICT(legajo) DO UPDATE SET
+                        saldo=excluded.saldo, nota=excluded.nota, cargado_en=excluded.cargado_en,
+                        tomados_al_corte=excluded.tomados_al_corte,
+                        gen_extra_al_corte=excluded.gen_extra_al_corte,
+                        fecha_corte=excluded.fecha_corte
+                """, (leg, nombre, s["saldo_actual"],
+                      f"Cierre manual francos {depto_visible} al {fecha_hasta}",
+                      ahora_str, tomados_totales.get(leg, 0),
+                      gen_extra_totales.get(leg, 0), fecha_hasta))
+            conn.commit()
+    except Exception as e:
+        print(f"[ADVERTENCIA] Error actualizando saldo en cierre manual: {e}")
+
     # Generar PDF
     with _get_db() as conn:
         rows = conn.execute(
