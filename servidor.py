@@ -710,7 +710,7 @@ def _leer_confirmaciones_cierre(periodo):
         _legajo_key(x),
     ))
 
-def _generar_pdf_confirmaciones_cierre(periodo, empleados):
+def _generar_pdf_confirmaciones_cierre(periodo, empleados, datos_csv=None):
     from pdf_generator import PDFGeneral
 
     confirmaciones = _leer_confirmaciones_cierre(periodo)
@@ -773,11 +773,49 @@ def _generar_pdf_confirmaciones_cierre(periodo, empleados):
                 pdf.add_page()
 
             if c is None:
-                # Semana sin confirmar
-                pdf.set_font(fam, "I", 8)
-                pdf.set_text_color(180, 0, 0)
-                pdf.cell(0, 5, f"  Semana {sem} — Sin confirmar", ln=1)
-                pdf.set_text_color(0, 0, 0)
+                # Semana sin confirmar — mostrar datos del CSV si están disponibles
+                csv_emp = (datos_csv or {}).get(sem, {}).get(legajo)
+                if csv_emp:
+                    tot_csv = csv_emp
+                    excluido_csv = csv_emp.get("excluido_ot", False)
+                    pdf.set_font(fam, "I", 8)
+                    pdf.set_text_color(180, 0, 0)
+                    pdf.cell(0, 4, f"  Semana {sem} — Sin confirmar  |  OT50: {tot_csv['ot50']}  OT100: {tot_csv['ot100']}  Comidas: {tot_csv['comidas']}  Francos: {tot_csv['francos']}  Tardanzas: {tot_csv['tardanzas']}", ln=1)
+                    pdf.set_text_color(0, 0, 0)
+                    dias_nc = csv_emp.get("dias", [])
+                    if dias_nc:
+                        pdf.set_font(fam, "B", 7)
+                        pdf.cell(23, 5, "Fecha", 1)
+                        pdf.cell(24, 5, "Tipo", 1)
+                        pdf.cell(20, 5, "OT50", 1)
+                        pdf.cell(20, 5, "OT100", 1)
+                        pdf.cell(22, 5, "Marcas", 1)
+                        pdf.cell(0, 5, "Descripcion", 1, ln=1)
+                        pdf.set_font(fam, "", 7)
+                        for d in dias_nc:
+                            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                                pdf.add_page()
+                            marcas = []
+                            if d.get("franco"): marcas.append("Franco")
+                            if d.get("comida"): marcas.append("Comida")
+                            if d.get("tarde"):  marcas.append("Tardanza")
+                            x, y = pdf.get_x(), pdf.get_y()
+                            ot50_val  = "" if excluido_csv else _pdf_cell_text(d.get("ot50", ""))
+                            ot100_val = "" if excluido_csv else _pdf_cell_text(d.get("ot100", ""))
+                            pdf.cell(23, 5, _pdf_cell_text(d.get("fecha", "")), 1)
+                            pdf.cell(24, 5, _pdf_cell_text(d.get("tipo_dia", "normal")), 1)
+                            pdf.cell(20, 5, ot50_val, 1)
+                            pdf.cell(20, 5, ot100_val, 1)
+                            pdf.cell(22, 5, ", ".join(marcas), 1)
+                            pdf.multi_cell(0, 5, "Sin descripcion", 1)
+                            if pdf.get_y() < y + 5:
+                                pdf.set_y(y + 5)
+                            pdf.set_x(x)
+                else:
+                    pdf.set_font(fam, "I", 8)
+                    pdf.set_text_color(180, 0, 0)
+                    pdf.cell(0, 5, f"  Semana {sem} — Sin confirmar", ln=1)
+                    pdf.set_text_color(0, 0, 0)
             else:
                 tot = c.get("totales", {})
                 excluido = c.get("excluido_ot", False)
@@ -966,6 +1004,66 @@ def _pendientes_cierre(confirmaciones, empleados):
         if not e.get("confirmado")
         and (_normalizar_departamento_web(e.get("departamento", "")), str(e.get("legajo", ""))) not in confirmados
     ]
+
+def _datos_semanas_periodo(periodo):
+    """
+    Carga y reprocesa los CSVs de cada semana del período.
+    Retorna: {visible_sem: {legajo: {ot50, ot100, comidas, francos, tardanzas, dias, excluido_ot}}}
+    Usado para mostrar datos de semanas sin confirmar en el PDF de confirmaciones.
+    """
+    mapa = _mapa_semanas_visibles_periodo(periodo)  # global → visible
+    if not mapa:
+        return {}
+    departamento = _normalizar_departamento_web(periodo.get("departamento", "") or "")
+    from procesador import procesar_fichadas, cargar_config, cargar_feriados
+    try:
+        config = cargar_config()
+        feriados = cargar_feriados(config)
+    except Exception:
+        feriados = set()
+    excluidos = _cargar_excluidos_ot()
+    resultado = {}
+    for global_n, visible_sem in mapa.items():
+        csv_path = SEMANAS_DIR / f"semana_{global_n}.csv"
+        if not csv_path.exists():
+            continue
+        try:
+            df = _cargar_semana_csv(global_n)
+            empleados_raw = procesar_fichadas(df, feriados)
+            sem_data = {}
+            for emp in empleados_raw:
+                if departamento and _normalizar_departamento_web(emp.get("departamento", "")) != departamento:
+                    continue
+                leg = str(emp.get("legajo", ""))
+                excluido = leg in excluidos
+                dias_prep = _preparar_dias(emp["registros"])
+                ot50 = ot100 = timedelta(0)
+                comidas = francos = tardanzas = 0
+                for d in dias_prep:
+                    if not excluido:
+                        ot50  += _parse_td(d["ot50"])
+                        ot100 += _parse_td(d["ot100"])
+                    comidas   += int(d.get("comida", 0))
+                    francos   += int(d.get("franco", 0))
+                    tardanzas += int(d.get("tarde", 0))
+                dias_activos = [
+                    d for d in dias_prep
+                    if d.get("franco") or d.get("comida") or d.get("tarde")
+                    or (not excluido and (
+                        _parse_td(d.get("ot50", "")) > timedelta(0)
+                        or _parse_td(d.get("ot100", "")) > timedelta(0)
+                    ))
+                ]
+                sem_data[leg] = {
+                    "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
+                    "comidas": comidas, "francos": francos, "tardanzas": tardanzas,
+                    "dias": dias_activos, "excluido_ot": excluido,
+                }
+            resultado[visible_sem] = sem_data
+        except Exception:
+            continue
+    return resultado
+
 
 def _mapa_semanas_visibles_periodo(periodo):
     archivo = periodo.get("archivo") or ""
@@ -3113,9 +3211,10 @@ def periodos_confirmaciones_pdf(pid):
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
     # semanas en periodo_empleados ya son números visibles — no remapear
+    datos_csv = _datos_semanas_periodo(periodo)
 
     try:
-        pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados)
+        pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados, datos_csv)
         nombre = f"confirmaciones_cierre_{pid}.pdf"
         return send_file(
             BytesIO(pdf_data),
