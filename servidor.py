@@ -1670,7 +1670,8 @@ def reprocesar_semana(n):
                 continue
             leg_t = str(_sesion[t].get("legajo", ""))
             if leg_t not in nuevos_por_legajo:
-                del _sesion[leg_t] if leg_t in _sesion else None
+                if leg_t in _sesion:
+                    del _sesion[leg_t]
                 if t in _sesion:
                     del _sesion[t]
                 tokens_finales.remove(t)
