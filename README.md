@@ -16,7 +16,7 @@ Sistema de gestión de horas extras y francos compensatorios para el personal de
 
 ## Arquitectura
 
-```
+```text
 main.py                    ← App de escritorio Tkinter (carga de fichadas, PDFs)
 servidor.py                ← Backend web Flask (supervisores, francos, cierres)
 procesador.py              ← Motor de cálculo de horas extras y francos
@@ -30,7 +30,7 @@ horarios_paro.py           ← Configuración de horarios de días de paro
 
 ### Flujo de datos
 
-```
+```text
 Excel de fichadas
       ↓
 procesador.py  →  sesion.json  (período activo en memoria)
@@ -57,6 +57,7 @@ python -m venv .venv
 ```
 
 **Fuentes:** Copiar los archivos `.ttf` de DejaVu en `recursos/fonts/`:
+
 - `DejaVuSans.ttf`
 - `DejaVuSans-Bold.ttf`
 - `DejaVuSans-Oblique.ttf`
@@ -86,7 +87,7 @@ Contraseña de supervisor: definida en variable de entorno `SUPERVISOR_PASS` (de
 
 ## Producción — PythonAnywhere
 
-- **URL:** https://cmhoras.pythonanywhere.com
+- **URL:** <https://cmhoras.pythonanywhere.com>
 - **Directorio:** `/home/cmhoras/cm_horas/`
 - **DB:** `/home/cmhoras/cm_horas/datos/cierres.db`
 - **Logs:** `/var/log/cmhoras.pythonanywhere.com.error.log`
@@ -112,6 +113,7 @@ y lo envía por email a los supervisores configurados.
 - **Ejecución:** Tarea Programada de Windows, viernes 08:00, usando `pythonw.exe`
 
 Para correrlo manualmente:
+
 ```bash
 .venv\Scripts\python reporte_saldos_francos.py
 ```

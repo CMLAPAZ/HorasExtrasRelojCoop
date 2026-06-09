@@ -25,3 +25,35 @@ installer*.bat
 uninstall*.bat
 dejavu-fonts-ttf-*
 .server_pid
+
+# Configuración local de Claude
+.claude/settings.local.json
+.claude/worktrees/
+
+# Bases de datos y datos operativos
+datos/*.db
+datos/*.sqlite
+datos/*.sqlite3
+semanas/
+
+# Backups
+backup_*/
+backups/
+
+# Reportes generados
+reportes/*.txt
+reportes/*.pdf
+reportes/*.xlsx
+
+# Archivos temporales
+*.tmp
+*.bak
+
+# Informes laborales con datos reales
+/Informe_Horas_Extras_*.docx
+
+# Estado runtime generado por la aplicación
+/horarios_paro.json
+
+# QR generado localmente en la raíz
+/qr_cmhoras.png

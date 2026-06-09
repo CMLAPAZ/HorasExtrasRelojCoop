@@ -19,7 +19,7 @@ y francos compensatorios del personal. Convenio Luz y Fuerza.
 
 ## Producción
 
-- **URL:** https://cmhoras.pythonanywhere.com
+- **URL:** <https://cmhoras.pythonanywhere.com>
 - **Directorio:** `/home/cmhoras/cm_horas/`
 - **DB:** `/home/cmhoras/cm_horas/datos/cierres.db`
 - **Deploy:** `git push` local → `git pull` en consola Bash de PythonAnywhere → recargar web app
@@ -62,7 +62,7 @@ o reporte que combine datos de dos departamentos distintos es un error de diseñ
 
 ## Flujo de datos
 
-```
+```text
 Excel de fichadas (biométrico)
         ↓
 procesador.procesar_fichadas()
@@ -114,12 +114,14 @@ reporte_saldos_francos.py → reportes/reporte_francos_{DEPTO}_{FECHA}.pdf → e
 Al ejecutar `/periodo/cerrar` (POST) el sistema produce:
 
 ### En base de datos
+
 1. Registro en `periodos` (id del cierre, fechas, semanas, depto, timestamp)
 2. Un registro en `periodo_empleados` por cada empleado del cierre (OT50, OT100, comidas, francos, tardanzas, confirmado)
 3. Copia de `francos_tomados` vigentes al momento en `francos_cierre_detalle` (vía `_snapshot_francos_cierre`)
 4. Borrado de `francos_semana_parcial` de las semanas incluidas en el cierre
 
 ### En disco
+
 5. **PDF de francos tomados** del cierre: `reportes/francos_periodo_{ID}.pdf`
    - Formato apaisado (landscape)
    - Columnas: Legajo, Nombre, Tipo, Fechas, Días, Estado, Emitido, Autorizado, Observaciones
@@ -129,12 +131,16 @@ Al ejecutar `/periodo/cerrar` (POST) el sistema produce:
 7. Borrado de tokens activos de las semanas cerradas en `sesion.json`
 
 ### PDF de confirmaciones (bajo demanda)
+
 Al descargar `/periodos/confirmaciones_pdf/<id>` se genera:
+
 - **PDF de confirmaciones del cierre**: descripción por empleado + pendientes
 - Generado por `_generar_pdf_confirmaciones_cierre()`
 
 ### Reporte semanal automático (cada viernes, PythonAnywhere)
+
 `reporte_saldos_francos.py` genera independientemente del cierre:
+
 - **1 PDF por departamento**: `reportes/reporte_francos_{DEPTO}_{FECHA}.pdf`
 - Tabla: Legajo, Nombre, Saldo Inicial, Generados (períodos + manual + parciales), Tomados, **Saldo Actual**
 - Sub-filas de detalle de francos tomados (fechas, estado, observaciones)
@@ -158,6 +164,7 @@ Al descargar `/periodos/confirmaciones_pdf/<id>` se genera:
 
 Si la mayoría del depto entra antes de las 06:00 en un día dado, el sistema infiere
 el horario grupal por el promedio de primeras entradas:
+
 - Antes de 04:45 → 04:30 | 04:45–05:14 → 05:00 | 05:15–05:44 → 05:30 | 05:45+ → 06:00
 
 Los legajos 100 y 101 se excluyen siempre de la inferencia grupal.
@@ -172,16 +179,18 @@ Los legajos 100 y 101 se excluyen siempre de la inferencia grupal.
 
 ### Saldo de francos
 
-```
+```text
 saldo_actual = saldo_inicial + generados_periodos + generados_manual + generados_sesion - tomados_db
 ```
 
 Fuentes de "generados":
+
 1. `periodo_empleados` — cierres automáticos por fichadas
 2. `francos_generados` — carga manual para deptos sin fichadas
 3. `sesion.json` — período activo no cerrado aún
 
 ### Validación de francos tomados
+
 - No pueden solaparse con otros francos del mismo empleado
 - Solo fechas hábiles (lun–vie), excepto GUARDIAS que pueden tomar cualquier día
 - Tipos: UNICO (un solo día), RANGO (desde-hasta), SUELTAS (lista de fechas)
@@ -311,6 +320,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 ## Funciones auxiliares `servidor.py`
 
 ### Persistencia y DB
+
 | Función | Qué hace |
 |---|---|
 | `_get_db()` | Abre conexión SQLite; configura `row_factory = sqlite3.Row` |
@@ -326,12 +336,14 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_cargar_excluidos_ot()` | Lee `recursos/excluidos_ot.json` (legajos que no generan OT) |
 
 ### Auth
+
 | Función | Qué hace |
 |---|---|
 | `_autenticado()` | Verifica si `session["auth"] is True` |
 | `_requiere_auth()` | Redirige a `/login` con `next=` si no autenticado |
 
 ### Confirmaciones
+
 | Función | Qué hace |
 |---|---|
 | `_archivos_confirmacion()` | Lista JSONs en `confirmaciones/` (desc por fecha) |
@@ -347,6 +359,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_pendientes_cierre(confirmaciones, empleados)` | Empleados que no confirmaron pero están en el cierre |
 
 ### Procesamiento de fichadas
+
 | Función | Qué hace |
 |---|---|
 | `_leer_archivo(fs)` | Lee archivo subido (Excel o CSV); detecta encoding y separador |
@@ -359,6 +372,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_recortar_semana_lunes_domingo(n, depto)` | Recorta días de semana al rango lun-dom exacto |
 
 ### Cálculo de francos y saldos
+
 | Función | Qué hace |
 |---|---|
 | `_calcular_periodo(desde, hasta, depto)` | Acumula horas del período desde historial + sesión pendiente |
@@ -373,6 +387,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_cargar_feriados_config()` | Lee feriados desde `config.json` |
 
 ### PDFs
+
 | Función | Qué hace |
 |---|---|
 | `_snapshot_francos_cierre(conn, pid, fd, fh)` | Copia `francos_tomados` a `francos_cierre_detalle` + genera PDF |
@@ -386,6 +401,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_pdf_cell_text(value)` | Convierte value a string seguro para celdas PDF |
 
 ### Utilidades
+
 | Función | Qué hace |
 |---|---|
 | `_dia_semana(fecha_str)` | Retorna nombre del día de la semana en español |
@@ -478,6 +494,7 @@ No commiteado (está en `.gitignore`). En PythonAnywhere debe existir copia loca
 **Cuándo:** después del cierre de mayo 2026, cuando todas las features estén estables.
 
 **Orden sugerido (menor a mayor riesgo):**
+
 1. `rutas_email.py` — config SMTP, supervisores, reporte semanal
 2. `rutas_francos.py` — francos tomados, saldos, carga manual
 3. `rutas_cierres.py` — períodos, cierre, anulación, PDFs
@@ -490,22 +507,27 @@ No commiteado (está en `.gitignore`). En PythonAnywhere debe existir copia loca
 ## Implementado en sesión 03/06/2026
 
 ### Informes semanales imprimibles (supervisor.html)
+
 Botones nuevos en cada fila de semana del panel supervisor:
+
 - **🖨 Informe semana** → `GET /semanas/<n>/pdf` — PDF día a día de esa semana (para mostrar al supervisor el viernes)
 - **🖨 Acumulado** → `GET /semanas/acumulado/pdf?desde=1&hasta=N&depto=X` — PDF acumulado de todas las semanas del depto
 
 Ambos recargan el CSV guardado y reprocesan con `procesar_fichadas()`. Sin tocar cálculos.
 
 ### Separación por departamento en cierre (fix crítico)
+
 `_snapshot_francos_cierre` ahora filtra por legajos del departamento que se cierra.
 Antes capturaba francos de todos los deptos que coincidieran en fechas.
 Cada cierre graba el nombre del depto en `francos_cierre_detalle.departamento`.
 
 ### Actualización automática de saldo_inicial al cerrar período
+
 Al ejecutar `periodo_cerrar`, al final del proceso (después de limpiar sesión y parciales)
 se actualiza automáticamente `francos_saldo_inicial` con el saldo neto real del cierre.
 
 **Schema nuevo** (solo ADD COLUMN, no toca datos):
+
 - `francos_saldo_inicial`: `+tomados_al_corte`, `+gen_extra_al_corte`, `+fecha_corte`
 - `periodos`: `+saldo_anterior` (JSON para revertir al anular)
 
@@ -514,6 +536,7 @@ se actualiza automáticamente `francos_saldo_inicial` con el saldo neto real del
 **Reversión**: al anular un cierre (`periodo_anular`), se restauran los saldos anteriores desde `periodos.saldo_anterior`.
 
 ### PDF completo de cierre (`_generar_pdf_cierre_completo`)
+
 Botón "📄 Informe completo" en `/periodos/ver/<pid>`.
 Ruta: `GET /periodos/<pid>/informe_completo`
 
@@ -529,6 +552,7 @@ Secciones según si el depto tiene fichadas o no:
 Saldo final en verde (>0), rojo (<0), gris (=0). Un departamento por PDF, sin mezcla.
 
 ### `pdf_generator.py` — generación en memoria
+
 `generar_pdf_general` y `generar_pdf_resumen` ahora soportan `salida=None` (retornan bytes).
 La llamada desde `main.py` (Tkinter) sigue igual — pasa la ruta explícita.
 
@@ -537,13 +561,16 @@ La llamada desde `main.py` (Tkinter) sigue igual — pasa la ruta explícita.
 ## Pendiente para próxima sesión
 
 ### 1. Botón "Informe mensual completo" (baja prioridad)
+
 Un PDF que combine los cierres de todos los deptos de un mes en un solo archivo,
 con salto de página entre departamentos. Se genera desde una pantalla separada
 o desde el historial de cierres filtrando por mes.
 
 ### 2. Reestructuración de UI/layout (alta prioridad)
+
 Objetivo: que la nueva persona que reemplaza a Carola pueda usar la app sola.
 Plan acordado:
+
 - Navegación simplificada: 5 secciones con nombres en lenguaje común
 - Dashboard de inicio: estado actual por departamento (semáforo verde/amarillo/gris)
 - Flujo de carga semanal paso a paso (wizard)
@@ -552,6 +579,7 @@ Plan acordado:
 - Mover acciones destructivas a una zona de administración separada
 
 ### 3. Asignación de horario especial por empleado (Redes)
+
 Extender el formulario web para que el supervisor asigne horario especial a cualquier
 empleado de Redes por rango de fechas. La lógica en `obtener_inicio_asignado()` ya
 soporta esto — falta UI y persistencia en DB (hoy solo existe para Karen Soto en

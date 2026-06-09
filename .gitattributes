@@ -1,0 +1,47 @@
+# Detección automática de archivos de texto.
+* text=auto
+
+# Python y despliegue Linux/PythonAnywhere.
+*.py        text eol=lf
+*.html      text eol=lf
+*.jinja     text eol=lf
+*.jinja2    text eol=lf
+*.wsgi      text eol=lf
+*.sh        text eol=lf
+
+# Configuración y documentación.
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+*.toml      text eol=lf
+*.txt       text eol=lf
+*.md        text eol=lf
+
+# PowerShell funciona correctamente con LF.
+*.ps1       text eol=lf
+
+# Scripts ejecutados directamente por CMD en Windows.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Archivos binarios.
+*.ttf       binary
+*.otf       binary
+*.ico       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.pdf       binary
+*.xlsx      binary
+*.xls       binary
+*.db        binary
+*.sqlite    binary
+*.sqlite3   binary
+*.docx      binary
+*.doc       binary
+*.zip       binary
+*.exe       binary
+*.dll       binary
