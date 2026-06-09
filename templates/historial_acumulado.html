@@ -60,6 +60,7 @@
     .emp-header{display:flex;align-items:center;gap:10px;padding:11px 16px;background:#1e293b;border-bottom:1px solid #334155}
     .emp-nombre{font-weight:800;color:#f8fafc;font-size:.95rem}
     .emp-legajo{font-size:.75rem;color:#94a3b8;background:rgba(255,255,255,.1);padding:2px 8px;border-radius:999px;font-weight:700}
+    .badge-no-liquida{font-size:.68rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:2px 7px;border-radius:999px;white-space:nowrap}
 
     /* Fila de semana */
     .sem-row{border-bottom:1px solid #eef2f7}
@@ -240,6 +241,9 @@
           onchange="actualizarConteo()">
         <span class="emp-nombre">{{ emp.nombre }}</span>
         <span class="emp-legajo">Leg. {{ emp.legajo }}</span>
+        {% if emp.get('excluido_ot') or emp.get('liquida_ot') == false %}
+        <span class="badge-no-liquida" title="{{ emp.get('observacion_liquidacion','') }}">Horas registradas · no liquida OT</span>
+        {% endif %}
       </div>
 
       {% for sem in semanas %}

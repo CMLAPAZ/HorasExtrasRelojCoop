@@ -39,6 +39,7 @@
     h1{font-size:1.55rem;font-weight:750;color:#0f172a}
     .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800;margin-bottom:4px}
     .subtitle{font-size:.9rem;color:#64748b;margin-top:4px}
+    .fecha-rango{font-size:1rem;font-weight:700;color:#172033;margin-top:6px}
     .btn{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:7px;border:1px solid #d7dde5;background:#fff;color:#334155;text-decoration:none;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap}
     .btn:hover{border-color:#94a3b8;background:#f8fafc}
     .btn-primary{background:#172033;color:#fff;border-color:#172033}
@@ -85,6 +86,7 @@
     .sem-head{display:flex;align-items:center;gap:10px;padding:9px 16px;background:#f8fafc;flex-wrap:wrap}
     .sem-num{font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#475569;min-width:80px}
     .sem-conf-fecha{font-size:.72rem;color:#94a3b8}
+    .badge-obs{display:inline-flex;align-items:center;height:22px;background:#fef9c3;color:#713f12;border:1px solid #fde68a;font-size:.68rem;padding:0 8px;border-radius:999px;font-weight:800;margin-left:6px;white-space:nowrap}
     .sem-head .totales{padding:0;gap:6px}
     .vacio{background:#fff;border:1px solid #e5e7eb;border-radius:8px;text-align:center;color:#64748b;padding:38px;font-size:.92rem}
     .emp-check{width:18px;height:18px;cursor:pointer;accent-color:#172033;flex-shrink:0}
@@ -145,6 +147,9 @@
   <div class="page-heading">
     <div class="eyebrow">Confirmaciones</div>
     <h1>Historial de confirmaciones</h1>
+    {% if fecha_desde and fecha_hasta %}
+    <div class="fecha-rango">{{ fecha_desde }} al {{ fecha_hasta }}</div>
+    {% endif %}
     <div class="subtitle">Filtra por departamento y semana para consultar o imprimir el resultado.</div>
   </div>
 
@@ -227,6 +232,9 @@
             {% if c.totales.tardanzas %}<div class="tot"><div class="tot-val">{{ c.totales.tardanzas }}</div><div class="tot-lbl">Tardanzas</div></div>{% endif %}
           </div>
           <span class="sem-conf-fecha">{{ c.confirmado_en[:16].replace('T',' ') if c.confirmado_en else '' }}</span>
+          {% if c.get('liquida_ot') == false or c.get('excluido_ot') %}
+          <span class="badge-obs" title="{{ c.get('observacion_liquidacion','') }}">Horas registradas · no liquida OT</span>
+          {% endif %}
         </div>
 
         {% if c.dias %}

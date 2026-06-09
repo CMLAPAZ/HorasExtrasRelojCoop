@@ -24,7 +24,8 @@ DB_FILE      = BASE_DIR / "datos" / "cierres.db"
 SESION_FILE  = BASE_DIR / "sesion.json"
 REPORTES     = BASE_DIR / "reportes"
 FONTS_DIR    = BASE_DIR / "recursos" / "fonts"
-EMAIL_CFG    = BASE_DIR / "config_email.json"
+EMAIL_CFG        = BASE_DIR / "config_email.json"
+NO_ENVIAR_FILE   = BASE_DIR / "recursos" / "no_enviar_reportes.json"
 
 FONT_REG  = FONTS_DIR / "DejaVuSans.ttf"
 FONT_BOLD = FONTS_DIR / "DejaVuSans-Bold.ttf"
@@ -47,6 +48,30 @@ def _leer_email_cfg():
         return json.loads(EMAIL_CFG.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _leer_no_enviar_reportes():
+    """Retorna set de legajos que no deben aparecer en reportes enviados por mail."""
+    try:
+        return set(str(x) for x in json.loads(
+            NO_ENVIAR_FILE.read_text(encoding="utf-8")
+        ).get("legajos", []))
+    except Exception:
+        return set()
+
+
+def _filtrar_no_enviar(por_depto):
+    """Devuelve copia de por_depto sin los empleados de no_enviar_reportes.json.
+
+    No modifica el dict original. Solo afecta PDFs y HTML enviados por mail.
+    """
+    no_enviar = _leer_no_enviar_reportes()
+    if not no_enviar:
+        return por_depto
+    return {
+        dep: [e for e in emps if str(e["legajo"]) not in no_enviar]
+        for dep, emps in por_depto.items()
+    }
 
 
 def _get_db():
@@ -570,10 +595,13 @@ def main():
     for s in saldos:
         por_depto.setdefault(s["departamento"], []).append(s)
 
+    # Versión filtrada para envío externo (excluye no_enviar_reportes.json)
+    por_depto_envio = _filtrar_no_enviar(por_depto)
+
     pdfs_por_depto = {}   # depto_lower -> Path
     errores_gen    = []
 
-    for dep, emps in sorted(por_depto.items()):
+    for dep, emps in sorted(por_depto_envio.items()):
         dep_limpio  = dep.replace(" ", "_").replace("/", "-")
         nombre_pdf  = f"reporte_francos_{dep_limpio}_{fecha_arch}.pdf"
         output_path = REPORTES / nombre_pdf
@@ -599,7 +627,7 @@ def main():
             if not adjuntos:
                 continue
             try:
-                html_body = _hacer_html_email(sup["nombre"], sup["deptos"], por_depto, fecha_str)
+                html_body = _hacer_html_email(sup["nombre"], sup["deptos"], por_depto_envio, fecha_str)
                 _enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
                 enviados += 1
             except Exception as exc:

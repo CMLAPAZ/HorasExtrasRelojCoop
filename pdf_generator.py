@@ -284,9 +284,9 @@ class PDFGeneral(FPDF):
                 fill_row = False
 
             # Datos del registro
-            norm  = _td_from_any(r.get("Normales","00:00:00"))
-            e50   = timedelta(0) if excluido_ot else _td_from_any(r.get("50%","00:00:00"))
-            e100  = timedelta(0) if excluido_ot else _td_from_any(r.get("100%","00:00:00"))
+            norm = _td_from_any(r.get("Normales","00:00:00"))
+            e50  = _td_from_any(r.get("50%","00:00:00"))
+            e100 = _td_from_any(r.get("100%","00:00:00"))
             raw_obs = r.get("Observaciones","")
             obs = self._decorar_observacion(raw_obs)
 
@@ -342,6 +342,11 @@ class PDFGeneral(FPDF):
         self.cell(0,6,f"Comidas: {tot_com}",ln=1)
         self.cell(0,6,f"Francos: {tot_fr}",ln=1)
         self.cell(0,6,f"Llegadas tarde: {tot_tarde}",ln=1)
+        if excluido_ot:
+            self.set_font(fam,"I",7)
+            self.set_text_color(180,90,0)
+            self.cell(0,5,"(*) Horas registradas para control - no se liquidan para pago",ln=1)
+            self.set_text_color(0,0,0)
         self.ln(4)
 
 # --------------------------------------------  
@@ -417,24 +422,27 @@ def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
     tot_fr   = 0
     tot_tar  = 0
 
+    hay_excluidos = False
+
     for emp in sorted(data, key=_legajo_sort_key):
-        leg = emp.get("legajo","")
-        nom = emp.get("nombre","")
+        leg  = emp.get("legajo","")
+        nom  = emp.get("nombre","")
         regs = emp.get("registros",[])
         excl = emp.get("excluido_ot", False)
+        if excl:
+            hay_excluidos = True
 
-        e_norm=timedelta(0)
-        e_50  =timedelta(0)
-        e_100 =timedelta(0)
-        e_com =0
-        e_fr  =0
-        e_tar =0
+        e_norm = timedelta(0)
+        e_50   = timedelta(0)
+        e_100  = timedelta(0)
+        e_com  = 0
+        e_fr   = 0
+        e_tar  = 0
 
         for r in regs:
             e_norm += _td_from_any(r.get("Normales","00:00:00"))
-            if not excl:
-                e_50  += _td_from_any(r.get("50%","00:00:00"))
-                e_100 += _td_from_any(r.get("100%","00:00:00"))
+            e_50   += _td_from_any(r.get("50%","00:00:00"))
+            e_100  += _td_from_any(r.get("100%","00:00:00"))
             e_com  += int(r.get("COMIDA",0))
             e_fr   += int(r.get("FRANCO",0))
             e_tar  += int(r.get("Tarde",0))
@@ -455,9 +463,10 @@ def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
             pdf.ln()
 
         pdf.set_font(fam,"",7)
+        nom_pdf = f"{nom} (*)" if excl else nom
         fila = [
             str(leg),
-            nom,
+            nom_pdf,
             formato_horas(e_norm),
             formato_horas(_round_to_hour(e_50)),
             formato_horas(_round_to_hour(e_100)),
@@ -479,6 +488,13 @@ def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
     pdf.cell(anchos[6],6,str(tot_fr),1)
     pdf.cell(anchos[7],6,str(tot_tar),1)
     pdf.ln()
+
+    if hay_excluidos:
+        pdf.ln(2)
+        pdf.set_font(fam,"I",7)
+        pdf.set_text_color(180,90,0)
+        pdf.cell(0,5,"(*) Horas registradas para control - no se liquidan para pago",ln=1)
+        pdf.set_text_color(0,0,0)
 
     if salida:
         pdf.output(salida)

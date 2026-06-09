@@ -460,6 +460,9 @@ def _leer_historial(semana=None, departamento=None):
             "semana":       d.get("semana", 0),
             "semana_depto": d.get("semana_depto", d.get("semana", 0)),
             "totales":      d.get("totales", {}),
+            "excluido_ot":  d.get("excluido_ot", False),
+            "liquida_ot":   d.get("liquida_ot", True),
+            "observacion_liquidacion": d.get("observacion_liquidacion", ""),
             "dias": [
                 {"fecha": x["fecha"], "ot50": x["ot50"], "ot100": x["ot100"],
                  "franco": x.get("franco", 0), "comida": x.get("comida", 0),
@@ -1073,19 +1076,16 @@ def _datos_semanas_periodo(periodo):
                 ot50 = ot100 = timedelta(0)
                 comidas = francos = tardanzas = 0
                 for d in dias_prep:
-                    if not excluido:
-                        ot50  += _parse_td(d["ot50"])
-                        ot100 += _parse_td(d["ot100"])
+                    ot50      += _parse_td(d["ot50"])
+                    ot100     += _parse_td(d["ot100"])
                     comidas   += int(d.get("comida", 0))
                     francos   += int(d.get("franco", 0))
                     tardanzas += int(d.get("tarde", 0))
                 dias_activos = [
                     d for d in dias_prep
                     if d.get("franco") or d.get("comida") or d.get("tarde")
-                    or (not excluido and (
-                        _parse_td(d.get("ot50", "")) > timedelta(0)
-                        or _parse_td(d.get("ot100", "")) > timedelta(0)
-                    ))
+                    or _parse_td(d.get("ot50",  "")) > timedelta(0)
+                    or _parse_td(d.get("ot100", "")) > timedelta(0)
                 ]
                 sem_data[leg] = {
                     "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
@@ -1176,14 +1176,12 @@ def _restaurar_confirmaciones_desde_archivos(departamento=None):
 def _recalcular_totales_token(d):
     ot50 = ot100 = timedelta(0)
     comidas = francos = tardanzas = 0
-    excluido = d.get("excluido_ot") or str(d.get("legajo", "")) in _cargar_excluidos_ot()
     for dia in d.get("dias", []):
-        if not excluido:
-            ot50 += _parse_td(dia.get("ot50", "00:00:00"))
-            ot100 += _parse_td(dia.get("ot100", "00:00:00"))
-        comidas += int(dia.get("comida", 0))
-        francos += int(dia.get("franco", 0))
-        tardanzas += int(dia.get("tarde", 0))
+        ot50      += _parse_td(dia.get("ot50",  "00:00:00"))
+        ot100     += _parse_td(dia.get("ot100", "00:00:00"))
+        comidas   += int(dia.get("comida",  0))
+        francos   += int(dia.get("franco",  0))
+        tardanzas += int(dia.get("tarde",   0))
     d["totales"] = {
         "ot50": _fmt_hm(ot50),
         "ot100": _fmt_hm(ot100),
@@ -1300,12 +1298,27 @@ def _cargar_excluidos_ot():
     except Exception:
         return set()
 
+_OBS_EXCLUIDO_OT = "Horas registradas para control. No se liquidan para pago."
+
 def _aplicar_exclusiones_ot(empleados):
-    """Marca empleados excluidos sin modificar sus datos."""
+    """Marca empleados cuya OT no se liquida.
+
+    Las horas se conservan intactas. El flag excluido_ot=True y
+    liquida_ot=False habilitan el indicador visual en pantallas y PDFs,
+    pero no zerean ningún valor.
+    """
     excluidos = _cargar_excluidos_ot()
     for emp in empleados:
-        emp["excluido_ot"] = str(emp["legajo"]) in excluidos
+        excl = str(emp["legajo"]) in excluidos
+        emp["excluido_ot"] = excl
+        if excl:
+            emp["liquida_ot"] = False
+            emp["observacion_liquidacion"] = _OBS_EXCLUIDO_OT
+        else:
+            emp.setdefault("liquida_ot", True)
+            emp.setdefault("observacion_liquidacion", "")
     return empleados
+
 
 def _normalizar_departamento_web(nombre):
     texto = (nombre or "").strip()
@@ -1400,18 +1413,18 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
         dias_prep = _preparar_dias(emp["registros"])
         ot50 = ot100 = timedelta(0)
         comidas = francos = tardanzas = 0
-        excluido = emp.get("excluido_ot", False)
         for d in dias_prep:
-            if not excluido:
-                ot50  += _parse_td(d["ot50"])
-                ot100 += _parse_td(d["ot100"])
+            ot50      += _parse_td(d["ot50"])
+            ot100     += _parse_td(d["ot100"])
             comidas   += int(d.get("comida", 0))
             francos   += int(d.get("franco", 0))
             tardanzas += int(d.get("tarde",  0))
         _sesion[token] = {
             "legajo": emp["legajo"], "nombre": emp["nombre"],
             "departamento": emp["departamento"],
-            "excluido_ot": excluido,
+            "excluido_ot": emp.get("excluido_ot", False),
+            "liquida_ot": emp.get("liquida_ot", True),
+            "observacion_liquidacion": emp.get("observacion_liquidacion", ""),
             "dias": dias_prep,
             "totales": {
                 "ot50": _fmt_hm(ot50), "ot100": _fmt_hm(ot100),
@@ -1591,7 +1604,8 @@ def procesar():
 
     # Número de semana por departamento (independiente del global)
     num_depto = sum(1 for s in meta.get("semanas", [])
-                    if s.get("departamento", "Todos") == depto_label) + 1
+                    if _normalizar_departamento_web(s.get("departamento", "Todos"))
+                    == _normalizar_departamento_web(depto_label)) + 1
 
     _guardar_semana_csv(n, df)
     base_url = request.host_url.rstrip("/")
@@ -1682,13 +1696,11 @@ def reprocesar_semana(n):
             continue  # legajo no encontrado en el CSV nuevo, no tocar nada
 
         dias_prep = _preparar_dias(emp["registros"])
-        excluido = emp.get("excluido_ot", False)
         ot50 = ot100 = timedelta(0)
         comidas = francos = tardanzas = 0
         for d in dias_prep:
-            if not excluido:
-                ot50  += _parse_td(d["ot50"])
-                ot100 += _parse_td(d["ot100"])
+            ot50      += _parse_td(d["ot50"])
+            ot100     += _parse_td(d["ot100"])
             comidas   += int(d.get("comida", 0))
             francos   += int(d.get("franco", 0))
             tardanzas += int(d.get("tarde",  0))
@@ -1702,7 +1714,9 @@ def reprocesar_semana(n):
                 **_sesion[token],
                 "dias": dias_prep,
                 "totales": totales,
-                "excluido_ot": excluido,
+                "excluido_ot": emp.get("excluido_ot", False),
+                "liquida_ot": emp.get("liquida_ot", True),
+                "observacion_liquidacion": emp.get("observacion_liquidacion", ""),
                 "nombre": emp["nombre"],
                 "departamento": depto_label,
             }
@@ -1712,7 +1726,9 @@ def reprocesar_semana(n):
             _sesion[token] = {
                 "legajo": leg, "nombre": emp["nombre"],
                 "departamento": depto_label,
-                "excluido_ot": excluido,
+                "excluido_ot": emp.get("excluido_ot", False),
+                "liquida_ot": emp.get("liquida_ot", True),
+                "observacion_liquidacion": emp.get("observacion_liquidacion", ""),
                 "dias": dias_prep, "totales": totales,
                 "confirmado": False, "confirmado_en": None,
                 "semana": n, "semana_depto": num_depto,
@@ -2132,11 +2148,19 @@ def historial():
         for valor, nombre in sorted(semanas_map.items(), key=lambda item: item[1])
     ]
     items = _leer_historial(semana=semana, departamento=departamento)
+    todas_fechas = [d["fecha"] for item in items for d in item.get("dias", []) if d.get("fecha")]
+    fecha_desde = fecha_hasta = None
+    if todas_fechas:
+        f_min, f_max = min(todas_fechas), max(todas_fechas)
+        fecha_desde = f"{f_min[8:10]}/{f_min[5:7]}/{f_min[:4]}"
+        fecha_hasta = f"{f_max[8:10]}/{f_max[5:7]}/{f_max[:4]}"
     return render_template("historial.html", items=items,
                            departamentos=departamentos,
                            departamento_actual=departamento,
                            semanas=semanas,
-                           semana_actual=semana)
+                           semana_actual=semana,
+                           fecha_desde=fecha_desde,
+                           fecha_hasta=fecha_hasta)
 
 
 @app.route("/historial/acumulado")
@@ -2191,6 +2215,7 @@ def historial_acumulado():
         semanas_set.add(sem)
 
         clave = (depto, legajo)
+        excluido = item.get("excluido_ot") or legajo in excluidos
         if clave not in por_empleado:
             por_empleado[clave] = {
                 "legajo": legajo,
@@ -2200,14 +2225,19 @@ def historial_acumulado():
                 "por_semana": {},
                 "total": {"ot50": timedelta(0), "ot100": timedelta(0),
                           "comidas": 0, "francos": 0, "tardanzas": 0},
+                "excluido_ot": excluido,
+                "liquida_ot": item.get("liquida_ot", not excluido),
+                "observacion_liquidacion": item.get(
+                    "observacion_liquidacion",
+                    _OBS_EXCLUIDO_OT if excluido else ""
+                ),
             }
 
         e = por_empleado[clave]
-        excluido = item.get("excluido_ot") or legajo in excluidos
-        ot50_td = _parse_hm(item["totales"]["ot50"]) if not excluido else timedelta(0)
-        ot100_td = _parse_hm(item["totales"]["ot100"]) if not excluido else timedelta(0)
-        comidas = item["totales"].get("comidas", 0)
-        francos = sum(1 for d in item.get("dias", []) if d.get("franco"))
+        ot50_td  = _parse_hm(item["totales"]["ot50"])
+        ot100_td = _parse_hm(item["totales"]["ot100"])
+        comidas   = item["totales"].get("comidas", 0)
+        francos   = sum(1 for d in item.get("dias", []) if d.get("franco"))
         tardanzas = item["totales"].get("tardanzas", 0)
         comentarios = [
             {"fecha": d["fecha"], "texto": d["descripcion"]}
@@ -2221,8 +2251,6 @@ def historial_acumulado():
             dict(d, tramos=d.get("tramos") or tramos_sesion.get((legajo, d["fecha"]), []))
             for d in dias_raw
         ]
-        if excluido:
-            dias_raw = [dict(d, ot50="00:00:00", ot100="00:00:00") for d in dias_raw]
         e["por_semana"][sem] = {
             "ot50": _fmt_hm(ot50_td),
             "ot100": _fmt_hm(ot100_td),
@@ -2232,10 +2260,10 @@ def historial_acumulado():
             "comentarios": comentarios,
             "dias_list": dias_raw,
         }
-        e["total"]["ot50"] += ot50_td
-        e["total"]["ot100"] += ot100_td
-        e["total"]["comidas"] += comidas
-        e["total"]["francos"] += francos
+        e["total"]["ot50"]      += ot50_td
+        e["total"]["ot100"]     += ot100_td
+        e["total"]["comidas"]   += comidas
+        e["total"]["francos"]   += francos
         e["total"]["tardanzas"] += tardanzas
 
     empleados_lista = []
@@ -2324,12 +2352,13 @@ def _calcular_periodo(desde, hasta, departamento=None):
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
                 "conf_sem": set(), "pend_sem": set(),
+                "excluido_ot": c.get("excluido_ot", False),
+                "liquida_ot": c.get("liquida_ot", True),
+                "observacion_liquidacion": c.get("observacion_liquidacion", ""),
             }
         e = por_empleado[clave]
-        _excl = c.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
-        if not _excl:
-            e["ot50"]  += _parse_hm(c["totales"]["ot50"])
-            e["ot100"] += _parse_hm(c["totales"]["ot100"])
+        e["ot50"]      += _parse_hm(c["totales"]["ot50"])
+        e["ot100"]     += _parse_hm(c["totales"]["ot100"])
         e["comidas"]   += c["totales"].get("comidas", 0)
         e["francos"]   += sum(1 for dia in c.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += c["totales"].get("tardanzas", 0)
@@ -2356,14 +2385,15 @@ def _calcular_periodo(desde, hasta, departamento=None):
                 "comidas": 0, "francos": 0, "tardanzas": 0,
                 "semanas": [], "dias": [],
                 "conf_sem": set(), "pend_sem": set(),
+                "excluido_ot": d.get("excluido_ot", False),
+                "liquida_ot": d.get("liquida_ot", True),
+                "observacion_liquidacion": d.get("observacion_liquidacion", ""),
             }
         e = por_empleado[clave]
         if sem in e["conf_sem"] or sem in e["pend_sem"]:
             continue
-        _excl = d.get("excluido_ot") or str(legajo) in _cargar_excluidos_ot()
-        if not _excl:
-            e["ot50"]  += _parse_hm(tot.get("ot50", "0h"))
-            e["ot100"] += _parse_hm(tot.get("ot100", "0h"))
+        e["ot50"]      += _parse_hm(tot.get("ot50", "0h"))
+        e["ot100"]     += _parse_hm(tot.get("ot100", "0h"))
         e["comidas"]   += tot.get("comidas", 0)
         e["francos"]   += sum(1 for dia in d.get("dias", []) if dia.get("franco"))
         e["tardanzas"] += tot.get("tardanzas", 0)
@@ -2372,6 +2402,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
         e["pend_sem"].add(sem)
 
 
+    excluidos  = _cargar_excluidos_ot()
     return sorted([
         {
             "legajo":      e["legajo"],
@@ -2386,6 +2417,15 @@ def _calcular_periodo(desde, hasta, departamento=None):
             "confirmado":  len(e["pend_sem"]) == 0,
             "pendientes":  sorted(e["pend_sem"]),
             "dias":        sorted(e["dias"], key=lambda d: d["fecha"]),
+            "excluido_ot": (
+                e.get("excluido_ot", False)
+                or str(e["legajo"]) in excluidos
+            ),
+            "liquida_ot":  str(e["legajo"]) not in excluidos,
+            "observacion_liquidacion": (
+                _OBS_EXCLUIDO_OT if str(e["legajo"]) in excluidos
+                else e.get("observacion_liquidacion", "")
+            ),
         }
         for e in por_empleado.values()
     ], key=lambda x: _legajo_key(x))
@@ -4276,12 +4316,15 @@ def supervisores_enviar(sid):
     for s in saldos:
         por_depto.setdefault(s["departamento"], []).append(s)
 
+    # Versión filtrada para envío externo (excluye no_enviar_reportes.json)
+    por_depto_envio = rrf._filtrar_no_enviar(por_depto)
+
     reportes_dir = Path(__file__).parent / "reportes"
     reportes_dir.mkdir(exist_ok=True)
 
     adjuntos = []
     for dep in deptos:
-        emps = next((v for k, v in por_depto.items() if k.lower() == dep.lower()), None)
+        emps = next((v for k, v in por_depto_envio.items() if k.lower() == dep.lower()), None)
         if not emps:
             continue
         dep_limpio = dep.replace(" ", "_").replace("/", "-").upper()
@@ -4297,7 +4340,7 @@ def supervisores_enviar(sid):
 
     cfg = rrf._leer_email_cfg()
     try:
-        html_body = rrf._hacer_html_email(sup["nombre"], deptos, por_depto, fecha_str)
+        html_body = rrf._hacer_html_email(sup["nombre"], deptos, por_depto_envio, fecha_str)
         rrf._enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
     except Exception:
         app.logger.error("supervisores_enviar: _enviar_email\n" + traceback.format_exc())

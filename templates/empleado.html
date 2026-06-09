@@ -43,6 +43,7 @@
     .norm-t{color:#6b7280}
     .tramo{font-size:.78rem;color:#666;margin-bottom:3px}
     .tramo span{background:#f3f4f6;border-radius:4px;padding:1px 7px;margin-right:3px}
+    .aviso-no-liquida{margin:14px 16px 0;padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;font-size:.82rem;color:#92400e;font-weight:600}
     .badges{display:flex;gap:4px;flex-wrap:wrap;margin:5px 0}
     .badge{font-size:.65rem;padding:2px 7px;border-radius:20px}
     .b-comida{background:#d1fae5;color:#065f46}
@@ -71,6 +72,12 @@
   <h1>{{ data.nombre }}</h1>
   <p>Legajo {{ data.legajo }}{% if data.departamento %} · {{ data.departamento }}{% endif %}</p>
 </div>
+
+{% if data.get('excluido_ot') or data.get('liquida_ot') == false %}
+<div class="aviso-no-liquida">
+  Tus horas están registradas para control. No se liquidan para pago de horas extras.
+</div>
+{% endif %}
 
 <!-- Resumen -->
 <div class="card">
