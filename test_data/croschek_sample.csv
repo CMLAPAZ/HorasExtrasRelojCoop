@@ -1,0 +1,5 @@
+Nro. de usuario,Nombre,Departamento,Fecha/Hora,Tipo de registro
+100,Juan,REDES,2025-09-01 06:00:00,ENTRADA
+100,Juan,REDES,2025-09-01 14:00:00,SALIDA
+200,Ana,ADM,2025-09-07 08:00:00,ENTRADA
+200,Ana,ADM,2025-09-07 13:00:00,SALIDA
