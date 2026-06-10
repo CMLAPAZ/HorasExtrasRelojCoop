@@ -3389,7 +3389,8 @@ def periodos_informe_mensual():
 
 @app.route("/periodos/<int:pid>/informe_completo")
 def periodos_informe_completo(pid):
-    """PDF completo del cierre: horas + saldo francos + detalle tomados."""
+    """PDF completo del cierre: horas + saldo francos + detalle tomados
+    + detalle de confirmaciones/descripciones por empleado (anexado al final)."""
     if not _autenticado(): return _requiere_auth()
     try:
         pdf_data = _generar_pdf_cierre_completo(pid)
@@ -3398,7 +3399,39 @@ def periodos_informe_completo(pid):
     if pdf_data is None:
         return "Cierre no encontrado.", 404
     with _get_db() as conn:
-        p = conn.execute("SELECT fecha_desde, fecha_hasta FROM periodos WHERE id=?", (pid,)).fetchone()
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        rows = conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, CAST(legajo AS INTEGER)",
+            (pid,)
+        ).fetchall()
+
+    # Anexar el detalle de confirmaciones/descripciones por empleado (con o sin
+    # confirmar) al final del informe. Si algo falla, se devuelve igualmente
+    # el informe base sin esta sección extra.
+    if p is not None:
+        try:
+            periodo = dict(p)
+            empleados = []
+            for e in rows:
+                d = dict(e)
+                d["semanas"] = json.loads(d["semanas"] or "[]")
+                d["confirmado"] = bool(d["confirmado"])
+                empleados.append(d)
+            datos_csv = _datos_semanas_periodo(periodo)
+            conf_pdf_data = _generar_pdf_confirmaciones_cierre(periodo, empleados, datos_csv)
+
+            from pypdf import PdfWriter, PdfReader
+            writer = PdfWriter()
+            for page in PdfReader(BytesIO(pdf_data)).pages:
+                writer.add_page(page)
+            for page in PdfReader(BytesIO(conf_pdf_data)).pages:
+                writer.add_page(page)
+            out = BytesIO()
+            writer.write(out)
+            pdf_data = out.getvalue()
+        except Exception:
+            pass
+
     fd = (p["fecha_desde"] if p else "").replace("-","")
     fh = (p["fecha_hasta"] if p else "").replace("-","")
     nombre = f"informe_cierre_{pid}_{fd}_{fh}.pdf"
