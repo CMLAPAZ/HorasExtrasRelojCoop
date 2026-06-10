@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, urllib.parse, sqlite3, unicodedata
+import os, re, shutil, urllib.parse, sqlite3, unicodedata
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for, send_file
 import pandas as pd
 import secrets
@@ -178,6 +178,11 @@ def _init_db():
         # Columna para guardar snapshot de saldo anterior (reversión al anular)
         try:
             conn.execute("ALTER TABLE periodos ADD COLUMN saldo_anterior TEXT DEFAULT '{}'")
+        except Exception:
+            pass
+        # Marca/log de corrección retroactiva del snapshot de francos del cierre
+        try:
+            conn.execute("ALTER TABLE periodos ADD COLUMN francos_corregido_en TEXT DEFAULT ''")
         except Exception:
             pass
         conn.execute("""
@@ -545,11 +550,13 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
     msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
-def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, departamento=""):
+def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=""):
     """Copia francos_tomados a francos_cierre_detalle y genera PDF.
-    Incluye TODOS los francos del empleado a la fecha (sin filtro de período),
-    filtrando solo por legajos del departamento para no mezclar deptos."""
-    if not fecha_desde or not fecha_hasta:
+    Incluye TODO franco no anulado CARGADO en el sistema hasta fecha_corte
+    (cargado_en <= fecha_corte), sin importar la fecha tomada (fecha_desde/
+    fecha_hasta) ni el período del cierre — filtrando solo por legajos del
+    departamento para no mezclar deptos."""
+    if not fecha_corte:
         return
     legajos_norm = [str(l) for l in (legajos or [])]
     if legajos_norm:
@@ -560,20 +567,19 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
             FROM francos_tomados
             WHERE legajo IN ({placeholders})
               AND COALESCE(estado,'') != 'Anulado'
-              AND fecha_desde <= ?
+              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (*legajos_norm, fecha_hasta)).fetchall()
+        """, (*legajos_norm, fecha_corte)).fetchall()
     else:
         rows = conn.execute("""
             SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
                    fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
             FROM francos_tomados
             WHERE COALESCE(estado,'') != 'Anulado'
-              AND fecha_desde <= ?
+              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (fecha_hasta,)).fetchall()
+        """, (fecha_corte,)).fetchall()
     depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
-    ids_cerrar = []
     for r in rows:
         conn.execute("""
             INSERT INTO francos_cierre_detalle
@@ -584,22 +590,19 @@ def _snapshot_francos_cierre(conn, pid, fecha_desde, fecha_hasta, legajos=None, 
               r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
               r["dias"], r["estado"] or "", r["fecha_emision"] or "",
               r["autorizado_por"] or "", r["observaciones"] or ""))
-        # Marcar el franco original como Cerrado para bloquear reedición
-        if hasattr(r, "keys"):
-            ids_cerrar.append(r["id"] if "id" in r.keys() else None)
     # Marcar como Cerrado en francos_tomados (solo los no-anulados del depto)
     if legajos_norm:
         conn.execute(f"""
             UPDATE francos_tomados SET estado='Cerrado'
             WHERE legajo IN ({','.join('?' * len(legajos_norm))})
               AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')
-              AND fecha_desde <= ?
-        """, (*legajos_norm, fecha_hasta))
+              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
+        """, (*legajos_norm, fecha_corte))
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
-    _generar_pdf_francos_cierre(pid, francos_list, fecha_desde, fecha_hasta)
+    _generar_pdf_francos_cierre(pid, francos_list, fecha_corte)
 
 
-def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
+def _generar_pdf_francos_cierre(pid, francos, fecha_corte):
     """Genera PDF con detalle de francos tomados para el cierre."""
     try:
         from fpdf import FPDF
@@ -622,7 +625,7 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
             def fam(self): return "DejaVu" if self._unicode else "Helvetica"
             def header(self):
                 self.set_font(self.fam(), "B", 12)
-                self.cell(0, 9, f"Francos Tomados — Cierre #{pid}   ({fecha_desde} al {fecha_hasta})", ln=1, align="C")
+                self.cell(0, 9, f"Francos Tomados — Cierre #{pid}   (Cargados hasta el {fecha_corte})", ln=1, align="C")
                 self.ln(2)
             def footer(self):
                 self.set_y(-13)
@@ -689,7 +692,7 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_desde, fecha_hasta):
         pdf.set_text_color(0, 0, 0)
 
         Path("reportes").mkdir(exist_ok=True)
-        ts = fecha_desde.replace("-","") if fecha_desde else datetime.now().strftime("%Y%m%d")
+        ts = fecha_corte.replace("-","") if fecha_corte else datetime.now().strftime("%Y%m%d")
         pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
     except Exception:
         pass
@@ -2579,6 +2582,7 @@ def periodo_cerrar():
     resumen = _calcular_periodo(desde, hasta, departamento)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     ahora = datetime.now().isoformat()
+    fecha_corte = ahora[:10]   # fecha real del cierre — criterio "ya estaba cargado antes del cierre"
     archivo = f"periodo_{ts}.json"
 
     # Extraer rango de fechas de las semanas incluidas
@@ -2642,7 +2646,7 @@ def periodo_cerrar():
             )
         # Snapshot de francos tomados — solo legajos del departamento cerrado
         legajos_cierre = [str(e.get("legajo", "")) for e in resumen]
-        _snapshot_francos_cierre(conn, pid, fecha_desde_p, fecha_hasta_p,
+        _snapshot_francos_cierre(conn, pid, fecha_corte,
                                  legajos=legajos_cierre, departamento=departamento)
         # Borrar parciales de francos de las semanas cerradas
         conn.execute(
@@ -2747,11 +2751,11 @@ def periodo_cerrar():
                 """, (
                     leg, nombre,
                     s["saldo_actual"],
-                    f"Actualizado automáticamente al cerrar período #{pid} ({fecha_hasta_p})",
+                    f"Actualizado automáticamente al cerrar período #{pid} ({fecha_corte})",
                     ahora_str,
                     tomados_totales.get(leg, 0),
                     gen_extra_totales.get(leg, 0),
-                    fecha_hasta_p,
+                    fecha_corte,
                 ))
             conn.commit()
     except Exception as exc_saldo:
@@ -2910,7 +2914,7 @@ def francos_cierre_nuevo():
             (*legajos, fecha_hasta)
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
-    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, "", fecha_hasta)
+    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
     return jsonify({"ok": True, "id": cid, "total": total})
 
 
@@ -2943,7 +2947,7 @@ def francos_cierre_pdf(cid):
             (*legajos, fecha_hasta)
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
-    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, "", fecha_hasta)
+    _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
     import glob as _glob
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_cf{cid}_*.pdf"))))
     if not matches:
@@ -3468,8 +3472,7 @@ def periodos_francos_pdf(pid):
         """, legajos).fetchall()
     hoy = datetime.now().strftime("%Y-%m-%d")
     francos_list = [{**dict(r), "departamento": departamento} for r in francos]
-    fd = dict(p).get("fecha_desde", "")
-    _generar_pdf_francos_cierre(pid, francos_list, fd, hoy)
+    _generar_pdf_francos_cierre(pid, francos_list, hoy)
     import glob as _glob
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid}_*.pdf"))))
     if not matches:
@@ -3574,6 +3577,176 @@ def admin_recalcular_saldos():
             actualizados += 1
         conn.commit()
     return jsonify({"ok": True, "actualizados": actualizados})
+
+
+@app.route("/admin/corregir-francos-cierre/<int:pid>", methods=["GET", "POST"])
+def admin_corregir_francos_cierre(pid):
+    """Corrige retroactivamente el snapshot de francos de un cierre ya hecho.
+
+    Criterio: un franco entra al cierre #pid si cargado_en <= fecha_corte
+    (fecha real del cierre, periodos.cerrado_en), sin importar su fecha
+    tomada. GET = diagnóstico de solo lectura (faltantes + saldos). POST
+    con ?confirmar=si = aplica la corrección (backup previo de la DB,
+    agrega a francos_cierre_detalle, marca francos_tomados.estado='Cerrado',
+    ajusta francos_saldo_inicial solo donde corresponda, y deja constancia
+    en periodos.francos_corregido_en). No borra ni modifica registros
+    existentes de francos_cierre_detalle, periodo_empleados, confirmaciones
+    ni semanas."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not periodo:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        fecha_corte = (periodo["cerrado_en"] or "")[:10]
+        if not fecha_corte:
+            return jsonify({"error": f"Período #{pid} no tiene fecha de cierre registrada"}), 400
+
+        emp_rows = conn.execute(
+            "SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados WHERE periodo_id=?", (pid,)
+        ).fetchall()
+        legajos = [str(r["legajo"]) for r in emp_rows]
+        if not legajos:
+            return jsonify({"error": f"Período #{pid} no tiene empleados asociados"}), 400
+        departamento = _nombre_departamento_visible(emp_rows[0]["departamento"] or "")
+        nombre_por_leg = {str(r["legajo"]): r["nombre"] for r in emp_rows}
+
+        actuales = conn.execute(
+            "SELECT * FROM francos_cierre_detalle WHERE periodo_id=?", (pid,)
+        ).fetchall()
+
+        placeholders = ",".join("?" * len(legajos))
+        correctos = conn.execute(f"""
+            SELECT * FROM francos_tomados
+            WHERE legajo IN ({placeholders})
+              AND COALESCE(estado,'') != 'Anulado'
+              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
+            ORDER BY CAST(legajo AS INTEGER), fecha_desde
+        """, (*legajos, fecha_corte)).fetchall()
+
+        def _clave(r):
+            return (str(r["legajo"]), r["tipo"] or "", r["fecha_desde"] or "",
+                    r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]", r["dias"] or 0)
+
+        claves_actuales = {_clave(r) for r in actuales}
+        faltantes = [r for r in correctos if _clave(r) not in claves_actuales]
+
+        tomados_correcto_por_leg = {}
+        for r in correctos:
+            leg = str(r["legajo"])
+            tomados_correcto_por_leg[leg] = tomados_correcto_por_leg.get(leg, 0) + (r["dias"] or 0)
+
+        saldos_iniciales = {r["legajo"]: dict(r) for r in conn.execute("SELECT * FROM francos_saldo_inicial")}
+
+        saldos_diff = []
+        for leg in legajos:
+            si = saldos_iniciales.get(leg, {})
+            tomados_actual   = si.get("tomados_al_corte") or 0
+            tomados_correcto = tomados_correcto_por_leg.get(leg, 0)
+            diferencia = tomados_correcto - tomados_actual
+            saldo_actual = si.get("saldo") or 0
+            saldos_diff.append({
+                "legajo": leg,
+                "nombre": si.get("nombre") or nombre_por_leg.get(leg, ""),
+                "tomados_al_corte_actual": tomados_actual,
+                "tomados_al_corte_correcto": tomados_correcto,
+                "diferencia_dias": diferencia,
+                "saldo_actual": saldo_actual,
+                "saldo_corregido": saldo_actual - diferencia,
+            })
+
+        diagnostico = {
+            "periodo_id": pid,
+            "departamento": departamento,
+            "fecha_corte": fecha_corte,
+            "ya_corregido_en": periodo["francos_corregido_en"] or "",
+            "registros_actuales": len(actuales),
+            "registros_correctos": len(correctos),
+            "registros_faltantes": len(faltantes),
+            "dias_agregados_total": sum((r["dias"] or 0) for r in faltantes),
+            "faltantes": [{
+                "legajo": r["legajo"], "nombre": r["nombre"], "tipo": r["tipo"],
+                "fecha_desde": r["fecha_desde"], "fecha_hasta": r["fecha_hasta"],
+                "fechas_sueltas": r["fechas_sueltas"], "dias": r["dias"],
+                "estado": r["estado"], "cargado_en": r["cargado_en"],
+            } for r in faltantes],
+            "saldos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
+        }
+
+    if request.method == "GET":
+        return jsonify(diagnostico)
+
+    # ---- POST: aplicar corrección (requiere confirmación explícita) ----
+    if request.args.get("confirmar") != "si":
+        return jsonify({"error": "Falta confirmar=si", "diagnostico": diagnostico}), 400
+
+    ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not faltantes:
+        with _get_db() as conn:
+            conn.execute("UPDATE periodos SET francos_corregido_en=? WHERE id=?", (ahora_str, pid))
+            conn.commit()
+        return jsonify({"ok": True, "mensaje": "Nada para corregir — el snapshot ya estaba completo.",
+                        "diagnostico": diagnostico})
+
+    DATOS_DIR.mkdir(exist_ok=True)
+    backup_path = DATOS_DIR / f"cierres_backup_pre_correccion_francos_{pid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    shutil.copy2(DB_FILE, backup_path)
+
+    with _get_db() as conn:
+        for r in faltantes:
+            conn.execute("""
+                INSERT INTO francos_cierre_detalle
+                  (periodo_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (pid, r["legajo"], r["nombre"], departamento, r["tipo"],
+                  r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
+                  r["dias"], r["estado"] or "", r["fecha_emision"] or "",
+                  r["autorizado_por"] or "", r["observaciones"] or ""))
+            conn.execute("""
+                UPDATE francos_tomados SET estado='Cerrado'
+                WHERE id=? AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')
+            """, (r["id"],))
+
+        for s in saldos_diff:
+            leg = s["legajo"]
+            si = saldos_iniciales.get(leg)
+            if s["diferencia_dias"] != 0:
+                conn.execute("""
+                    INSERT INTO francos_saldo_inicial
+                        (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
+                    VALUES (?,?,?,?,?,?,?,?)
+                    ON CONFLICT(legajo) DO UPDATE SET
+                        saldo=excluded.saldo, nota=excluded.nota, cargado_en=excluded.cargado_en,
+                        tomados_al_corte=excluded.tomados_al_corte, fecha_corte=excluded.fecha_corte
+                """, (leg, s["nombre"], s["saldo_corregido"],
+                      f"Corrección snapshot francos cierre #{pid} ({fecha_corte})",
+                      ahora_str, s["tomados_al_corte_correcto"],
+                      (si.get("gen_extra_al_corte", 0) if si else 0) or 0, fecha_corte))
+            elif si:
+                conn.execute("UPDATE francos_saldo_inicial SET fecha_corte=? WHERE legajo=?",
+                              (fecha_corte, leg))
+
+        conn.execute("UPDATE periodos SET francos_corregido_en=? WHERE id=?", (ahora_str, pid))
+
+        francos_actualizados = conn.execute(
+            "SELECT * FROM francos_cierre_detalle WHERE periodo_id=? ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (pid,)
+        ).fetchall()
+        francos_list = [dict(r) for r in francos_actualizados]
+        conn.commit()
+
+    _generar_pdf_francos_cierre(pid, francos_list, fecha_corte)
+
+    return jsonify({
+        "ok": True,
+        "backup": str(backup_path),
+        "registros_agregados": len(faltantes),
+        "dias_agregados_total": diagnostico["dias_agregados_total"],
+        "saldos_corregidos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
+        "fecha_corte": fecha_corte,
+    })
 
 
 @app.route("/admin/reset", methods=["POST"])
@@ -4032,7 +4205,7 @@ def francos_pdf_depto():
             depto_label = "Todos los departamentos"
     francos_list = [{**dict(r), "departamento": depto_label} for r in rows]
     pid_fake = f"depto_{depto_param or 'todos'}_{hoy.replace('-','')}"
-    _generar_pdf_francos_cierre(pid_fake, francos_list, "inicio", hoy)
+    _generar_pdf_francos_cierre(pid_fake, francos_list, hoy)
     import glob as _glob
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid_fake}_*.pdf"))))
     if not matches:
