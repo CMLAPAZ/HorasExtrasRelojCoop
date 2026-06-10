@@ -3,6 +3,9 @@ from fpdf import FPDF
 from datetime import timedelta, datetime
 import os
 
+# Legajos que no se incluyen en los informes PDF (siguen visibles/calculados en pantalla)
+LEGAJOS_EXCLUIR_INFORMES = {"100", "101"}
+
 # --- Utilidades robustas ---
 def _td_from_any(x):
     """Convierte a timedelta: timedelta | 'HH:MM:SS' | número | vacío."""
@@ -333,21 +336,30 @@ class PDFGeneral(FPDF):
             tot_fr += int(r.get("FRANCO",0))
             tot_tarde += int(r.get("Tarde",0))
 
-        # Totales
+        # Totales del mes — bloque resaltado
+        n_filas = 7 if not excluido_ot else 8
+        if self.get_y() + 6 * n_filas > self.h - self.b_margin:
+            self.add_page()
         self.set_font(fam,"B",8)
-        self.cell(0,6,"Totales del mes:",ln=1)
-        self.cell(0,6,f"Horas Normales: {formato_horas(tot_norm)}",ln=1)
-        self.cell(0,6,f"Horas 50%: {formato_horas(_round_to_hour(tot50))}",ln=1)
-        self.cell(0,6,f"Horas 100%: {formato_horas(_round_to_hour(tot100))}",ln=1)
-        self.cell(0,6,f"Comidas: {tot_com}",ln=1)
-        self.cell(0,6,f"Francos: {tot_fr}",ln=1)
-        self.cell(0,6,f"Llegadas tarde: {tot_tarde}",ln=1)
+        self.set_fill_color(230, 240, 250)
+        self.cell(0,6,"Totales del mes:",1,1,'L',True)
+        self.cell(0,6,f"Horas Normales: {formato_horas(tot_norm)}",1,1,'L',True)
+        self.cell(0,6,f"Horas 50%: {formato_horas(_round_to_hour(tot50))}",1,1,'L',True)
+        self.cell(0,6,f"Horas 100%: {formato_horas(_round_to_hour(tot100))}",1,1,'L',True)
+        self.cell(0,6,f"Comidas: {tot_com}",1,1,'L',True)
+        self.cell(0,6,f"Francos: {tot_fr}",1,1,'L',True)
+        self.cell(0,6,f"Llegadas tarde: {tot_tarde}",1,1,'L',True)
         if excluido_ot:
             self.set_font(fam,"I",7)
             self.set_text_color(180,90,0)
             self.cell(0,5,"(*) Horas registradas para control - no se liquidan para pago",ln=1)
             self.set_text_color(0,0,0)
-        self.ln(4)
+        self.ln(6)
+
+        return {
+            "norm": tot_norm, "ot50": tot50, "ot100": tot100,
+            "com": tot_com, "fr": tot_fr, "tarde": tot_tarde,
+        }
 
 # --------------------------------------------  
 # GENERAR PDF GENERAL  
@@ -359,6 +371,28 @@ def _legajo_sort_key(x):
     except ValueError:
         return 0
 
+def _total_departamento(pdf, totales):
+    """Imprime el bloque 'TOTAL GENERAL DEL DEPARTAMENTO' a partir de los
+    totales acumulados de tabla_registros() (excluyendo LEGAJOS_EXCLUIR_INFORMES)."""
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+    if pdf.get_y() + 6 * 7 > pdf.h - pdf.b_margin:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_fill_color(23, 32, 51)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font(fam, "B", 10)
+    pdf.cell(0, 8, "  TOTAL GENERAL DEL DEPARTAMENTO", ln=1, fill=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font(fam, "B", 8)
+    pdf.set_fill_color(230, 240, 250)
+    pdf.cell(0, 6, f"Horas Normales: {formato_horas(totales['norm'])}", 1, 1, 'L', True)
+    pdf.cell(0, 6, f"Horas 50%: {formato_horas(_round_to_hour(totales['ot50']))}", 1, 1, 'L', True)
+    pdf.cell(0, 6, f"Horas 100%: {formato_horas(_round_to_hour(totales['ot100']))}", 1, 1, 'L', True)
+    pdf.cell(0, 6, f"Comidas: {totales['com']}", 1, 1, 'L', True)
+    pdf.cell(0, 6, f"Francos: {totales['fr']}", 1, 1, 'L', True)
+    pdf.cell(0, 6, f"Llegadas tarde: {totales['tarde']}", 1, 1, 'L', True)
+    pdf.ln(4)
+
 def generar_pdf_general(data, mes, salida=None, feriados=None, grosor_lunes=0.6):
     pdf = PDFGeneral()
     pdf.titulo = f"Informe de Fichadas - {mes}"
@@ -368,24 +402,35 @@ def generar_pdf_general(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
     pdf.portada_abreviaciones(mes)
     pdf.add_page()
 
-    for i, empleado in enumerate(sorted(data, key=_legajo_sort_key)):
+    datos_filtrados = [e for e in data if str(e.get("legajo","")) not in LEGAJOS_EXCLUIR_INFORMES]
+    totales_depto = {"norm": timedelta(0), "ot50": timedelta(0), "ot100": timedelta(0),
+                      "com": 0, "fr": 0, "tarde": 0}
+
+    for i, empleado in enumerate(sorted(datos_filtrados, key=_legajo_sort_key)):
         if i > 0:
             espacio = pdf.h - pdf.get_y() - pdf.b_margin
             if espacio < 40:
                 pdf.add_page()
             else:
-                pdf.ln(3)
-                pdf.set_draw_color(160, 160, 160)
+                pdf.ln(5)
+                pdf.set_draw_color(110, 110, 110)
+                pdf.set_line_width(0.5)
                 pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
                 pdf.set_draw_color(0, 0, 0)
-                pdf.ln(3)
+                pdf.set_line_width(0.2)
+                pdf.ln(5)
         pdf.encabezado_empleado(
             empleado.get("legajo",""),
             empleado.get("nombre",""),
             empleado.get("departamento","")
         )
-        pdf.tabla_registros(empleado.get("registros",[]),
+        totales_emp = pdf.tabla_registros(empleado.get("registros",[]),
                             excluido_ot=empleado.get("excluido_ot", False))
+        for k in totales_depto:
+            totales_depto[k] += totales_emp[k]
+
+    if datos_filtrados:
+        _total_departamento(pdf, totales_depto)
 
     if salida:
         pdf.output(salida)
@@ -426,6 +471,8 @@ def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
 
     for emp in sorted(data, key=_legajo_sort_key):
         leg  = emp.get("legajo","")
+        if str(leg) in LEGAJOS_EXCLUIR_INFORMES:
+            continue
         nom  = emp.get("nombre","")
         regs = emp.get("registros",[])
         excl = emp.get("excluido_ot", False)

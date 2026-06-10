@@ -3077,7 +3077,8 @@ def periodos_ver(pid):
 def _generar_pdf_cierre_completo(pid):
     """PDF completo del cierre: horas día a día (si existen) + resumen totales
     + saldo de francos + detalle de francos tomados. Un depto por cierre."""
-    from pdf_generator import PDFGeneral, _td_from_any, formato_horas, _round_to_hour
+    from pdf_generator import (PDFGeneral, _td_from_any, formato_horas, _round_to_hour,
+                                LEGAJOS_EXCLUIR_INFORMES, _total_departamento)
 
     # ── Cargar datos ──────────────────────────────────────────────────────
     with _get_db() as conn:
@@ -3192,21 +3193,30 @@ def _generar_pdf_cierre_completo(pid):
         pdf.ln(3)
 
         emps_sorted = sorted(
-            todos_horas.values(),
+            (e for e in todos_horas.values() if str(e["legajo"]) not in LEGAJOS_EXCLUIR_INFORMES),
             key=lambda e: int(str(e["legajo"])) if str(e["legajo"]).isdigit() else 0
         )
+        totales_depto = {"norm": timedelta(0), "ot50": timedelta(0), "ot100": timedelta(0),
+                          "com": 0, "fr": 0, "tarde": 0}
         for i, emp in enumerate(emps_sorted):
             if i > 0:
                 if pdf.h - pdf.get_y() - pdf.b_margin < 50:
                     pdf.add_page()
                 else:
-                    pdf.ln(2)
-                    pdf.set_draw_color(180, 180, 180)
+                    pdf.ln(5)
+                    pdf.set_draw_color(110, 110, 110)
+                    pdf.set_line_width(0.5)
                     pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
                     pdf.set_draw_color(0, 0, 0)
-                    pdf.ln(2)
+                    pdf.set_line_width(0.2)
+                    pdf.ln(5)
             pdf.encabezado_empleado(emp["legajo"], emp["nombre"], emp.get("departamento", ""))
-            pdf.tabla_registros(emp.get("registros", []), excluido_ot=emp.get("excluido_ot", False))
+            totales_emp = pdf.tabla_registros(emp.get("registros", []), excluido_ot=emp.get("excluido_ot", False))
+            for k in totales_depto:
+                totales_depto[k] += totales_emp[k]
+
+        if emps_sorted:
+            _total_departamento(pdf, totales_depto)
 
         # ══════════════════════════════════════════════════════════════════
         # SECCIÓN 2: Resumen de totales
@@ -3222,9 +3232,10 @@ def _generar_pdf_cierre_completo(pid):
 
         cabecera_tabla(COLS_R, ANCH_R)
 
+        emps_db_incl = [e for e in emps_db if str(e["legajo"]) not in LEGAJOS_EXCLUIR_INFORMES]
         tot_ot50 = tot_ot100 = timedelta(0)
         tot_com = tot_fr = tot_tard = tot_conf = 0
-        for e in sorted(emps_db, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
+        for e in sorted(emps_db_incl, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
             check_pag()
             ot50  = _parse_hm(e.get("ot50")  or "0h")
             ot100 = _parse_hm(e.get("ot100") or "0h")
@@ -3253,7 +3264,7 @@ def _generar_pdf_cierre_completo(pid):
         pdf.cell(ANCH_R[4], 6, str(tot_com),  1, 0, "C", fill=True)
         pdf.cell(ANCH_R[5], 6, str(tot_fr),   1, 0, "C", fill=True)
         pdf.cell(ANCH_R[6], 6, str(tot_tard), 1, 0, "C", fill=True)
-        pdf.cell(ANCH_R[7], 6, f"{tot_conf}/{len(emps_db)}", 1, 1, "C", fill=True)
+        pdf.cell(ANCH_R[7], 6, f"{tot_conf}/{len(emps_db_incl)}", 1, 1, "C", fill=True)
         pdf.set_text_color(0, 0, 0)
 
     # ══════════════════════════════════════════════════════════════════════
