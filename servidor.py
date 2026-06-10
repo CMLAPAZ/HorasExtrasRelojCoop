@@ -3037,8 +3037,7 @@ def periodos_ver(pid):
         d["semanas"]   = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
-    empleados = _aplicar_semanas_visibles(empleados, dict(p))
-    semanas = list(range(p["semana_desde"], p["semana_hasta"]+1))
+    semanas = sorted({s for e in empleados for s in e.get("semanas", [])})
     fd = p["fecha_desde"] or ""
     fh = p["fecha_hasta"] or ""
     francos_cierre = []
