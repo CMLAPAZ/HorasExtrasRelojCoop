@@ -551,35 +551,147 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
     msg = urllib.parse.quote(texto)
     return f"https://wa.me/549{area}{phone}?text={msg}"
 
+def _normalizar_cargado_en(valor):
+    """Normaliza una fecha/hora de corte (p.ej. periodos.cerrado_en, en
+    formato ISO con 'T' y posibles microsegundos) reemplazando únicamente el
+    separador 'T' por un espacio, SIN truncar la precisión — para poder
+    compararla como string con francos_tomados.cargado_en
+    ('YYYY-MM-DD HH:MM:SS') preservando los microsegundos cuando existan.
+    Dos cortes dentro del mismo segundo con microsegundos distintos no deben
+    perder esa diferencia (de lo contrario la ventana incremental podría
+    calcularse mal)."""
+    return (valor or "").replace("T", " ")
+
+
+# Expresión SQL que normaliza francos_tomados.cargado_en de la misma forma
+# que _normalizar_cargado_en (separador 'T' -> espacio, sin truncar
+# microsegundos), recortando además espacios sobrantes. Se usa de forma
+# IDÉNTICA para detectar valores vacíos/legacy y para los límites inferior y
+# superior de la ventana incremental, así "YYYY-MM-DDTHH:MM:SS[.ffffff]" y
+# "YYYY-MM-DD HH:MM:SS[.ffffff]" se comparan de forma equivalente.
+_SQL_CARGADO_EN_NORM = "REPLACE(TRIM(COALESCE(cargado_en,'')), 'T', ' ')"
+
+
+def _fecha_corte_anterior(conn, pid, departamento, fecha_corte_actual):
+    """Busca, entre los cierres activos (estado distinto de 'ANULADO') del
+    mismo departamento y distintos de `pid`, el de fecha/hora de corte
+    (periodos.cerrado_en) "inmediatamente anterior" a `fecha_corte_actual`:
+    el de mayor corte estrictamente menor que `fecha_corte_actual`.
+
+    Si dos cierres del mismo departamento tienen exactamente el mismo
+    cerrado_en (caso límite, p.ej. dos cierres en el mismo microsegundo), se
+    usa el id como desempate secundario: el de menor id se considera
+    "anterior" al de mayor id. El id NUNCA es el criterio principal — solo
+    desempata cortes idénticos.
+
+    Devuelve esa fecha de corte normalizada ('YYYY-MM-DD HH:MM:SS[.ffffff]'),
+    o "" si no existe un cierre anterior válido — en cuyo caso la ventana del
+    cierre actual no tiene límite inferior."""
+    depto_canon = _normalizar_departamento_web(departamento)
+    rows = conn.execute("""
+        SELECT p.id AS pid, p.cerrado_en AS cerrado_en,
+               (SELECT pe.departamento FROM periodo_empleados pe
+                WHERE pe.periodo_id = p.id LIMIT 1) AS departamento
+        FROM periodos p
+        WHERE p.id != ?
+          AND COALESCE(p.estado, 'ACTIVO') != 'ANULADO'
+    """, (pid,)).fetchall()
+    candidatos = []
+    for r in rows:
+        if _normalizar_departamento_web(r["departamento"] or "") != depto_canon:
+            continue
+        corte = _normalizar_cargado_en(r["cerrado_en"])
+        if not corte:
+            continue
+        if corte < fecha_corte_actual or (corte == fecha_corte_actual and r["pid"] < pid):
+            candidatos.append((corte, r["pid"]))
+    if not candidatos:
+        return ""
+    candidatos.sort()
+    return candidatos[-1][0]
+
+
+def _seleccionar_francos_ventana_cierre(conn, pid, legajos, departamento, fecha_corte):
+    """Fuente única de verdad de la ventana incremental de un cierre:
+
+        fecha_corte_anterior < cargado_en <= fecha_corte
+
+    donde fecha_corte_anterior es el corte del cierre activo (no anulado)
+    anterior del mismo departamento (ver _fecha_corte_anterior), sin límite
+    inferior si no existe uno. cargado_en se compara normalizado vía
+    _SQL_CARGADO_EN_NORM (separador 'T' -> espacio, sin truncar
+    microsegundos), con la MISMA expresión para detectar vacíos y para
+    ambos límites. La usan tanto _snapshot_francos_cierre como
+    /admin/corregir-francos-cierre, para que ambos produzcan exactamente el
+    mismo conjunto sin duplicar la consulta ni la lógica de ventana.
+
+    Si `legajos` es None o está vacío, NUNCA se ejecuta una selección global:
+    se devuelve (rows=[], fecha_corte_anterior, legacy=[]) sin tocar francos
+    de ningún empleado — un cierre sin empleados no puede "arrastrar" francos
+    ajenos.
+
+    Los francos con cargado_en vacío/NULL/solo espacios ("legacy", sin dato
+    de carga) NUNCA se asignan a una ventana por comparación lexicográfica:
+    se devuelven aparte en `legacy` para revisión/tratamiento manual y no se
+    incluyen en `rows`.
+
+    Devuelve (rows, fecha_corte_anterior, legacy):
+    - rows: filas (sqlite3.Row) de francos_tomados no anulados, de los
+      `legajos` dados, con cargado_en dentro de la ventana, ordenadas por
+      legajo y fecha_desde.
+    - fecha_corte_anterior: corte normalizado del cierre anterior, o "".
+    - legacy: filas de francos_tomados no anuladas (incluye estado 'Cerrado'
+      -- pueden haber sido incluidas históricamente bajo la lógica anterior y
+      necesitar auditoría manual) de los mismos `legajos`, cuyo cargado_en
+      está vacío/NULL/solo espacios. 'Anulado' nunca aparece aquí."""
+    fecha_corte_anterior = _fecha_corte_anterior(conn, pid, departamento, fecha_corte)
+
+    legajos_norm = [str(l) for l in (legajos or [])]
+    if not legajos_norm:
+        return [], fecha_corte_anterior, []
+
+    cond_legajos = f"AND legajo IN ({','.join('?' * len(legajos_norm))})"
+    params_legajos = tuple(legajos_norm)
+
+    cond_inferior, params_inferior = "", ()
+    if fecha_corte_anterior:
+        cond_inferior = f"AND {_SQL_CARGADO_EN_NORM} > ?"
+        params_inferior = (fecha_corte_anterior,)
+
+    rows = conn.execute(f"""
+        SELECT * FROM francos_tomados
+        WHERE COALESCE(estado,'') != 'Anulado'
+          AND {_SQL_CARGADO_EN_NORM} != ''
+          AND {_SQL_CARGADO_EN_NORM} <= ?
+          {cond_inferior}
+          {cond_legajos}
+        ORDER BY CAST(legajo AS INTEGER), fecha_desde
+    """, (fecha_corte, *params_inferior, *params_legajos)).fetchall()
+
+    legacy = conn.execute(f"""
+        SELECT * FROM francos_tomados
+        WHERE COALESCE(estado,'') != 'Anulado'
+          AND {_SQL_CARGADO_EN_NORM} = ''
+          {cond_legajos}
+        ORDER BY CAST(legajo AS INTEGER), fecha_desde
+    """, params_legajos).fetchall()
+
+    return rows, fecha_corte_anterior, legacy
+
+
 def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=""):
     """Copia francos_tomados a francos_cierre_detalle y genera PDF.
-    Incluye TODO franco no anulado CARGADO en el sistema hasta fecha_corte
-    (cargado_en <= fecha_corte), sin importar la fecha tomada (fecha_desde/
-    fecha_hasta) ni el período del cierre — filtrando solo por legajos del
-    departamento para no mezclar deptos."""
+    Incluye los francos no anulados CARGADOS en el sistema dentro de la
+    ventana incremental de este cierre del departamento dado (ver
+    _seleccionar_francos_ventana_cierre). Los francos sin cargado_en
+    ("legacy") no se incluyen ni se modifican aquí — quedan señalados para
+    revisión manual vía /admin/corregir-francos-cierre. No depende de la
+    fecha tomada (fecha_desde/fecha_hasta) ni del período del cierre —
+    filtra solo por legajos del departamento para no mezclar deptos."""
     if not fecha_corte:
         return
-    legajos_norm = [str(l) for l in (legajos or [])]
-    if legajos_norm:
-        placeholders = ",".join("?" * len(legajos_norm))
-        rows = conn.execute(f"""
-            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
-                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
-            FROM francos_tomados
-            WHERE legajo IN ({placeholders})
-              AND COALESCE(estado,'') != 'Anulado'
-              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
-            ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (*legajos_norm, fecha_corte)).fetchall()
-    else:
-        rows = conn.execute("""
-            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
-                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
-            FROM francos_tomados
-            WHERE COALESCE(estado,'') != 'Anulado'
-              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
-            ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (fecha_corte,)).fetchall()
+    rows, _fecha_corte_anterior, _legacy = _seleccionar_francos_ventana_cierre(
+        conn, pid, legajos, departamento, fecha_corte)
     depto_visible = _nombre_departamento_visible(departamento) if departamento else ""
     for r in rows:
         conn.execute("""
@@ -591,14 +703,11 @@ def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=
               r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
               r["dias"], r["estado"] or "", r["fecha_emision"] or "",
               r["autorizado_por"] or "", r["observaciones"] or ""))
-    # Marcar como Cerrado en francos_tomados (solo los no-anulados del depto)
-    if legajos_norm:
-        conn.execute(f"""
-            UPDATE francos_tomados SET estado='Cerrado'
-            WHERE legajo IN ({','.join('?' * len(legajos_norm))})
-              AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')
-              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
-        """, (*legajos_norm, fecha_corte))
+        conn.execute(
+            "UPDATE francos_tomados SET estado='Cerrado' "
+            "WHERE id=? AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')",
+            (r["id"],)
+        )
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(pid, francos_list, fecha_corte)
 
@@ -693,7 +802,10 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte):
         pdf.set_text_color(0, 0, 0)
 
         Path("reportes").mkdir(exist_ok=True)
-        ts = fecha_corte.replace("-","") if fecha_corte else datetime.now().strftime("%Y%m%d")
+        # Solo dígitos: ':' (y 'T'/espacios) no son válidos en nombres de
+        # archivo en Windows -- preserva la precisión (incl. microsegundos)
+        # de fecha_corte sin separadores.
+        ts = re.sub(r"[^0-9]", "", fecha_corte) if fecha_corte else datetime.now().strftime("%Y%m%d%H%M%S%f")
         pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
     except Exception:
         pass
@@ -2567,7 +2679,11 @@ def periodo_cerrar():
     resumen = _calcular_periodo(desde, hasta, departamento)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     ahora = datetime.now().isoformat()
-    fecha_corte = ahora[:10]   # fecha real del cierre — criterio "ya estaba cargado antes del cierre"
+    # Fecha/hora real del cierre, sin truncar microsegundos -- mismo valor
+    # que se guarda en periodos.cerrado_en, para que _fecha_corte_anterior
+    # compare cortes consistentes entre cierres del mismo segundo
+    # (criterio "ya estaba cargado antes del cierre")
+    fecha_corte = _normalizar_cargado_en(ahora)
     archivo = f"periodo_{ts}.json"
 
     # Extraer rango de fechas de las semanas incluidas
@@ -3579,22 +3695,38 @@ def admin_recalcular_saldos():
 def admin_corregir_francos_cierre(pid):
     """Corrige retroactivamente el snapshot de francos de un cierre ya hecho.
 
-    Criterio: un franco entra al cierre #pid si cargado_en <= fecha_corte
-    (fecha real del cierre, periodos.cerrado_en), sin importar su fecha
-    tomada. GET = diagnóstico de solo lectura (faltantes + saldos). POST
+    Criterio: un franco entra al cierre #pid si su fecha/hora de carga
+    (cargado_en) cae dentro de la ventana
+
+        fecha_corte_anterior < cargado_en <= fecha_corte
+
+    donde fecha_corte es la fecha/hora real de este cierre
+    (periodos.cerrado_en, sin truncar) y fecha_corte_anterior es la del
+    cierre activo (no anulado) anterior del mismo departamento (sin límite
+    inferior si no existe uno) — sin importar la fecha tomada. La ventana se
+    calcula siempre respecto del cierre #pid, no del último cierre global,
+    por lo que sirve también para corregir cierres históricos. La selección
+    usa _seleccionar_francos_ventana_cierre, la misma fuente de verdad que
+    _snapshot_francos_cierre.
+
+    Los francos sin cargado_en (vacío/NULL/solo espacios — "legacy") nunca
+    se asignan a esta ventana: se reportan aparte en
+    "legacy_sin_cargado_en" para revisión/tratamiento manual.
+
+    GET = diagnóstico de solo lectura (faltantes + legacy + saldos). POST
     con ?confirmar=si = aplica la corrección (backup previo de la DB,
     agrega a francos_cierre_detalle, marca francos_tomados.estado='Cerrado',
     ajusta francos_saldo_inicial solo donde corresponda, y deja constancia
     en periodos.francos_corregido_en). No borra ni modifica registros
     existentes de francos_cierre_detalle, periodo_empleados, confirmaciones
-    ni semanas."""
+    ni semanas, y no toca los francos "legacy"."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
 
     with _get_db() as conn:
         periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
         if not periodo:
             return jsonify({"error": f"Período #{pid} no encontrado"}), 404
-        fecha_corte = (periodo["cerrado_en"] or "")[:10]
+        fecha_corte = _normalizar_cargado_en(periodo["cerrado_en"] or "")
         if not fecha_corte:
             return jsonify({"error": f"Período #{pid} no tiene fecha de cierre registrada"}), 400
 
@@ -3611,14 +3743,8 @@ def admin_corregir_francos_cierre(pid):
             "SELECT * FROM francos_cierre_detalle WHERE periodo_id=?", (pid,)
         ).fetchall()
 
-        placeholders = ",".join("?" * len(legajos))
-        correctos = conn.execute(f"""
-            SELECT * FROM francos_tomados
-            WHERE legajo IN ({placeholders})
-              AND COALESCE(estado,'') != 'Anulado'
-              AND SUBSTR(COALESCE(cargado_en,''), 1, 10) <= ?
-            ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, (*legajos, fecha_corte)).fetchall()
+        correctos, fecha_corte_anterior, legacy = _seleccionar_francos_ventana_cierre(
+            conn, pid, legajos, departamento, fecha_corte)
 
         def _clave(r):
             return (str(r["legajo"]), r["tipo"] or "", r["fecha_desde"] or "",
@@ -3655,6 +3781,7 @@ def admin_corregir_francos_cierre(pid):
             "periodo_id": pid,
             "departamento": departamento,
             "fecha_corte": fecha_corte,
+            "fecha_corte_anterior": fecha_corte_anterior,
             "ya_corregido_en": periodo["francos_corregido_en"] or "",
             "registros_actuales": len(actuales),
             "registros_correctos": len(correctos),
@@ -3666,6 +3793,12 @@ def admin_corregir_francos_cierre(pid):
                 "fechas_sueltas": r["fechas_sueltas"], "dias": r["dias"],
                 "estado": r["estado"], "cargado_en": r["cargado_en"],
             } for r in faltantes],
+            "legacy_sin_cargado_en": [{
+                "legajo": r["legajo"], "nombre": r["nombre"], "tipo": r["tipo"],
+                "fecha_desde": r["fecha_desde"], "fecha_hasta": r["fecha_hasta"],
+                "fechas_sueltas": r["fechas_sueltas"], "dias": r["dias"],
+                "estado": r["estado"], "cargado_en": r["cargado_en"],
+            } for r in legacy],
             "saldos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
         }
 
