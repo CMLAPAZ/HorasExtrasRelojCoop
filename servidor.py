@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, shutil, urllib.parse, sqlite3, unicodedata
+import os, re, shutil, urllib.parse, sqlite3
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for, send_file
 import pandas as pd
 import secrets
@@ -10,6 +10,7 @@ import socket
 from io import BytesIO
 
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
+from departamentos import clave_canonica, nombre_visible
 
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
@@ -1323,26 +1324,10 @@ def _aplicar_exclusiones_ot(empleados):
     return empleados
 
 
-def _normalizar_departamento_web(nombre):
-    texto = (nombre or "").strip()
-    base = unicodedata.normalize("NFKD", texto)
-    base = "".join(c for c in base if not unicodedata.combining(c)).lower()
-    base = re.sub(r"[^a-z0-9]+", " ", base).strip()
-    if base in ("redes", "rede", "red"):
-        return "redes"
-    if base in ("administracion", "administraciom", "administrativo", "admin"):
-        return "administracion"
-    if base == "todos":
-        return "todos"
-    return base
-
-def _nombre_departamento_visible(nombre):
-    normalizado = _normalizar_departamento_web(nombre)
-    if normalizado == "redes":
-        return "Redes"
-    if normalizado == "administracion":
-        return "Administración"
-    return nombre or ""
+# Normalización de departamentos: ver departamentos.py (compartido con
+# reporte_saldos_francos.py, que corre como proceso aparte).
+_normalizar_departamento_web = clave_canonica
+_nombre_departamento_visible = nombre_visible
 
 def _leer_archivo(fs):
     nombre = (fs.filename or "").lower()
@@ -3860,6 +3845,10 @@ def _calcular_saldos():
 def _empleados_conocidos():
     """Lista deduplicada de {legajo, nombre, departamento} ordenada por depto y legajo.
     Fuentes (menor a mayor prioridad): empleados_extra → periodo_empleados → sesion.json
+    El departamento de cada fuente se normaliza al nombre visible canónico
+    (Redes, Administración, Guardias, Internet, Telefonía) para que un mismo
+    empleado/depto no quede dividido en dos grupos por diferencias de
+    mayúsculas, tildes o espacios entre fuentes.
     """
     vistos = {}
     with _get_db() as conn:
@@ -3867,15 +3856,15 @@ def _empleados_conocidos():
         for row in conn.execute(
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1"
         ):
-            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": row["departamento"] or ""}
+            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": _nombre_departamento_visible(row["departamento"] or "")}
         # periodos cerrados (sobreescribe si coincide legajo)
         for row in conn.execute("SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"):
-            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": row["departamento"] or ""}
+            vistos[str(row["legajo"])] = {"nombre": row["nombre"], "departamento": _nombre_departamento_visible(row["departamento"] or "")}
     # sesion activa (máxima prioridad, es la más reciente)
     for d in _sesion.values():
         leg = str(d.get("legajo", ""))
         if leg:
-            vistos[leg] = {"nombre": d.get("nombre", ""), "departamento": d.get("departamento", "")}
+            vistos[leg] = {"nombre": d.get("nombre", ""), "departamento": _nombre_departamento_visible(d.get("departamento", ""))}
     return sorted(
         [{"legajo": k, "nombre": v["nombre"], "departamento": v["departamento"]} for k, v in vistos.items()],
         key=lambda e: (e["departamento"].lower(), int(e["legajo"]) if e["legajo"].isdigit() else 0)

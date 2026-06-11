@@ -19,6 +19,8 @@ from email import encoders
 from datetime import datetime
 from pathlib import Path
 
+from departamentos import clave_canonica, nombre_visible, mismo_departamento
+
 BASE_DIR     = Path(__file__).parent
 DB_FILE      = BASE_DIR / "datos" / "cierres.db"
 SESION_FILE  = BASE_DIR / "sesion.json"
@@ -173,7 +175,7 @@ def _calcular_saldos():
         resultado.append({
             "legajo":           leg,
             "nombre":           info["nombre"],
-            "departamento":     (info["departamento"] or "Sin departamento").upper(),
+            "departamento":     nombre_visible(info["departamento"] or "Sin departamento"),
             "saldo_inicial":    si,
             "generados":        gen,
             "tomados":          tom,
@@ -207,6 +209,46 @@ def _leer_supervisores():
         return result
     except Exception:
         return []
+
+
+# ──────────────────────────────────────────────────────
+# Deduplicación de envíos por dirección de email
+# ──────────────────────────────────────────────────────
+
+def _agrupar_supervisores_por_email(supervisores):
+    """Agrupa supervisores por email normalizado (strip().lower()) para
+    enviar como máximo un correo por dirección.
+
+    Si dos responsables comparten la misma casilla (ej. un email
+    configurado dos veces para distintos departamentos/personas), se envía
+    un único correo que reúne los departamentos -y por lo tanto los PDFs-
+    de todos ellos. Los departamentos se deduplican por clave_canonica()
+    (p.ej. "Administración" y "administracion" son el mismo departamento)
+    y se almacenan con su nombre_visible(), para no repetir secciones del
+    correo ni adjuntar el mismo PDF más de una vez. Los nombres se combinan
+    con " / " para el saludo. La deduplicación es por email, nunca por
+    nombre.
+    """
+    agrupados = {}
+    claves_deptos = {}
+    orden = []
+    for sup in supervisores:
+        email = (sup.get("email") or "").strip().lower()
+        if not email:
+            continue
+        if email not in agrupados:
+            agrupados[email] = {"nombre": sup["nombre"], "email": email, "deptos": []}
+            claves_deptos[email] = set()
+            orden.append(email)
+        grupo = agrupados[email]
+        if sup["nombre"] not in grupo["nombre"].split(" / "):
+            grupo["nombre"] += f" / {sup['nombre']}"
+        for dep in sup["deptos"]:
+            clave = clave_canonica(dep)
+            if clave not in claves_deptos[email]:
+                claves_deptos[email].add(clave)
+                grupo["deptos"].append(nombre_visible(dep))
+    return [agrupados[email] for email in orden]
 
 
 # ──────────────────────────────────────────────────────
@@ -364,7 +406,7 @@ def _hacer_html_email(sup_nombre, deptos, por_depto, fecha_str):
     for dep in deptos:
         emps = None
         for k, v in por_depto.items():
-            if k.lower() == dep.lower():
+            if mismo_departamento(k, dep):
                 emps = v
                 break
         if not emps:
@@ -590,7 +632,8 @@ def main():
         _notificar("No hay datos de empleados.", "Reporte Francos")
         sys.exit(0)
 
-    # Agrupar por departamento (clave original para PDF, clave lower para lookup)
+    # Agrupar por departamento (s["departamento"] ya viene normalizado a su
+    # nombre visible canónico desde _calcular_saldos -> nombre_visible())
     por_depto  = {}
     for s in saldos:
         por_depto.setdefault(s["departamento"], []).append(s)
@@ -598,22 +641,23 @@ def main():
     # Versión filtrada para envío externo (excluye no_enviar_reportes.json)
     por_depto_envio = _filtrar_no_enviar(por_depto)
 
-    pdfs_por_depto = {}   # depto_lower -> Path
+    pdfs_por_depto = {}   # clave_canonica(depto) -> Path
     errores_gen    = []
 
     for dep, emps in sorted(por_depto_envio.items()):
-        dep_limpio  = dep.replace(" ", "_").replace("/", "-")
+        dep_limpio  = clave_canonica(dep).upper().replace(" ", "_")
         nombre_pdf  = f"reporte_francos_{dep_limpio}_{fecha_arch}.pdf"
         output_path = REPORTES / nombre_pdf
         try:
             _hacer_pdf(emps, dep, output_path, fecha_str)
-            pdfs_por_depto[dep.lower()] = output_path
+            pdfs_por_depto[clave_canonica(dep)] = output_path
         except Exception as exc:
             errores_gen.append(f"{dep}: {exc}")
 
-    # Enviar emails a supervisores
+    # Enviar emails a supervisores (un único correo por dirección de email,
+    # aunque dos responsables/departamentos compartan la misma casilla)
     cfg          = _leer_email_cfg()
-    supervisores = _leer_supervisores()
+    supervisores = _agrupar_supervisores_por_email(_leer_supervisores())
     errores_mail = []
     enviados     = 0
 
@@ -621,7 +665,7 @@ def main():
         for sup in supervisores:
             adjuntos = []
             for dep in sup["deptos"]:
-                pdf = pdfs_por_depto.get(dep.lower())
+                pdf = pdfs_por_depto.get(clave_canonica(dep))
                 if pdf and pdf.exists():
                     adjuntos.append(pdf)
             if not adjuntos:
