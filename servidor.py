@@ -563,6 +563,16 @@ def _normalizar_cargado_en(valor):
     return (valor or "").replace("T", " ")
 
 
+def _fmt_fecha_corte_pdf(fecha_corte):
+    """Formatea una fecha de corte ('YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS[.ffffff]')
+    a 'DD/MM/YYYY' para mostrar en PDFs. Devuelve "" si no se puede parsear
+    (p.ej. cierre sin fecha de corte registrada)."""
+    try:
+        return datetime.strptime((fecha_corte or "")[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
 # Expresión SQL que normaliza francos_tomados.cargado_en de la misma forma
 # que _normalizar_cargado_en (separador 'T' -> espacio, sin truncar
 # microsegundos), recortando además espacios sobrantes. Se usa de forma
@@ -712,8 +722,17 @@ def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=
     _generar_pdf_francos_cierre(pid, francos_list, fecha_corte)
 
 
-def _generar_pdf_francos_cierre(pid, francos, fecha_corte):
-    """Genera PDF con detalle de francos tomados para el cierre."""
+def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, escribir_archivo=True):
+    """Genera PDF con detalle de francos tomados para el cierre.
+
+    `fecha_corte` es la fecha/hora REAL de cierre (periodos.cerrado_en) y se
+    muestra en el encabezado como "Cargados hasta el DD/MM/YYYY". Si se pasa
+    `reimpreso_el`, se agrega debajo una línea "Reimpreso el DD/MM/YYYY" —
+    la fecha actual NUNCA se usa como fecha de cierre.
+
+    Devuelve los bytes del PDF (o None si falla). Si `escribir_archivo` es
+    True (default), además lo guarda en reportes/francos_cierre_{pid}_{ts}.pdf
+    (archivo histórico del snapshot al momento del cierre)."""
     try:
         from fpdf import FPDF
         FONTS_DIR = Path("recursos/fonts")
@@ -735,7 +754,16 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte):
             def fam(self): return "DejaVu" if self._unicode else "Helvetica"
             def header(self):
                 self.set_font(self.fam(), "B", 12)
-                self.cell(0, 9, f"Francos Tomados — Cierre #{pid}   (Cargados hasta el {fecha_corte})", ln=1, align="C")
+                titulo = f"Francos Tomados — Cierre #{pid}"
+                fecha_corte_fmt = _fmt_fecha_corte_pdf(fecha_corte)
+                if fecha_corte_fmt:
+                    titulo += f"   (Cargados hasta el {fecha_corte_fmt})"
+                self.cell(0, 9, titulo, ln=1, align="C")
+                if reimpreso_el:
+                    self.set_font(self.fam(), "", 8)
+                    self.set_text_color(110, 110, 110)
+                    self.cell(0, 5, f"Reimpreso el {_fmt_fecha_corte_pdf(reimpreso_el)}", ln=1, align="C")
+                    self.set_text_color(0, 0, 0)
                 self.ln(2)
             def footer(self):
                 self.set_y(-13)
@@ -801,14 +829,16 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte):
         pdf.cell(sum(ANCHOS[5:]), 7, "", 1, 1, "C", fill=True)
         pdf.set_text_color(0, 0, 0)
 
-        Path("reportes").mkdir(exist_ok=True)
-        # Solo dígitos: ':' (y 'T'/espacios) no son válidos en nombres de
-        # archivo en Windows -- preserva la precisión (incl. microsegundos)
-        # de fecha_corte sin separadores.
-        ts = re.sub(r"[^0-9]", "", fecha_corte) if fecha_corte else datetime.now().strftime("%Y%m%d%H%M%S%f")
-        pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
+        if escribir_archivo:
+            Path("reportes").mkdir(exist_ok=True)
+            # Solo dígitos: ':' (y 'T'/espacios) no son válidos en nombres de
+            # archivo en Windows -- preserva la precisión (incl. microsegundos)
+            # de fecha_corte sin separadores.
+            ts = re.sub(r"[^0-9]", "", fecha_corte) if fecha_corte else datetime.now().strftime("%Y%m%d%H%M%S%f")
+            pdf.output(str(Path(f"reportes/francos_cierre_{pid}_{ts}.pdf")))
+        return _pdf_bytes(pdf)
     except Exception:
-        pass
+        return None
 
 
 def _parse_td(s):
@@ -3557,40 +3587,35 @@ def periodos_informe_completo(pid):
 
 @app.route("/periodos/francos_pdf/<int:pid>")
 def periodos_francos_pdf(pid):
+    """Muestra (inline, en el navegador) el detalle de francos tomados
+    snapshoteado al momento del cierre #pid (francos_cierre_detalle) — nunca
+    recalcula desde francos_tomados vivos. El encabezado muestra la fecha
+    real del cierre (periodos.cerrado_en) como "Cargados hasta el", y la
+    fecha de hoy solo como "Reimpreso el"."""
     if not _autenticado(): return _requiere_auth()
     with _get_db() as conn:
         p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
         if not p:
             return "Cierre no encontrado.", 404
-        legajos = [str(r["legajo"]) for r in conn.execute(
-            "SELECT DISTINCT legajo FROM periodo_empleados WHERE periodo_id=?", (pid,)
-        )]
-        departamento = ""
-        if legajos:
-            dep_row = conn.execute(
-                "SELECT departamento FROM periodo_empleados WHERE periodo_id=? LIMIT 1", (pid,)
-            ).fetchone()
-            departamento = dep_row["departamento"] if dep_row else ""
-        if not legajos:
-            return "Sin empleados en este cierre.", 404
-        placeholders = ",".join("?" * len(legajos))
-        francos = conn.execute(f"""
-            SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
+        francos = conn.execute("""
+            SELECT legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
                    fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
-            FROM francos_tomados
-            WHERE legajo IN ({placeholders})
-              AND COALESCE(estado,'') != 'Anulado'
+            FROM francos_cierre_detalle
+            WHERE periodo_id=?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
-        """, legajos).fetchall()
+        """, (pid,)).fetchall()
+    fecha_corte = _normalizar_cargado_en(p["cerrado_en"] or "")
     hoy = datetime.now().strftime("%Y-%m-%d")
-    francos_list = [{**dict(r), "departamento": departamento} for r in francos]
-    _generar_pdf_francos_cierre(pid, francos_list, hoy)
-    import glob as _glob
-    matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_{pid}_*.pdf"))))
-    if not matches:
+    francos_list = [dict(r) for r in francos]
+    pdf_bytes = _generar_pdf_francos_cierre(pid, francos_list, fecha_corte,
+                                             reimpreso_el=hoy, escribir_archivo=False)
+    if pdf_bytes is None:
         return "Error generando PDF.", 500
-    return send_file(matches[-1], as_attachment=True,
-                     download_name=f"francos_cierre_{pid}_{hoy}.pdf")
+    fd = (p["fecha_desde"] or "").replace("-", "")
+    fh = (p["fecha_hasta"] or "").replace("-", "")
+    nombre = f"francos_cierre_{pid}_{fd}_{fh}.pdf"
+    return send_file(BytesIO(pdf_bytes), mimetype="application/pdf",
+                     as_attachment=False, download_name=nombre)
 
 
 @app.route("/periodos/confirmaciones_pdf/<int:pid>")
