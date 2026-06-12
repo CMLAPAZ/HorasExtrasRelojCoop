@@ -208,6 +208,7 @@
                 <a class="btn btn-primary" href="/periodos/ver/{{ c.id }}">Ver informe</a>
                 <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}" target="_blank">Ver confirmaciones</a>
                 <a class="btn" href="/periodos/francos_pdf/{{ c.id }}" target="_blank">Ver francos</a>
+                <a class="btn" href="/periodos/{{ c.id }}/informe_completo" target="_blank">Ver saldos</a>
                 {% if c.estado != 'ANULADO' %}
                   <button type="button" class="btn btn-danger" onclick="anularCierre({{ c.id }})">Anular</button>
                 {% endif %}

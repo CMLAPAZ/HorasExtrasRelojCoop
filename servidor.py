@@ -3252,9 +3252,6 @@ def _generar_pdf_cierre_completo(pid):
             "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
             (pid,)
         ).fetchall()]
-        saldo_fin_map = {r["legajo"]: r["saldo"] for r in conn.execute(
-            "SELECT legajo, saldo FROM francos_saldo_inicial"
-        )}
 
     saldo_ant = {}
     try:
@@ -3451,7 +3448,7 @@ def _generar_pdf_cierre_completo(pid):
         si_ant  = ant_data.get("saldo", 0) if isinstance(ant_data, dict) else 0
         gen_per = e.get("francos", 0) or 0
         tom     = tomados_por_leg.get(leg, 0)
-        sf      = saldo_fin_map.get(leg, si_ant + gen_per - tom)
+        sf      = si_ant + gen_per - tom
         tot_sal_ant += si_ant; tot_gen += gen_per
         tot_tom     += tom;    tot_sal_fin += sf
 
