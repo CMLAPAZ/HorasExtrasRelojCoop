@@ -764,8 +764,8 @@ async function cargarSemanas() {
         <td>
           <div class="actions-cell">
             <button type="button" class="btn-outline" onclick="verLinks(${s.numero})">Ver links</button>
-            <a class="btn-imprimir" href="/semanas/${s.numero}/pdf" target="_blank" title="Informe detallado de esta semana (día a día por empleado)">&#x1F5A8; Informe sem.</a>
-            <a class="btn-imprimir" href="/semanas/acumulado/pdf?desde=1&hasta=${s.numero}&depto=${encodeURIComponent(s.departamento||'')}" target="_blank" title="Informe acumulado desde la primera semana del mes hasta esta">&#x1F5A8; Acumulado</a>
+            <a class="btn-imprimir" href="/semanas/${s.numero}/pdf" target="_blank" title="Informe detallado de esta semana (día a día por empleado)">Ver informe sem.</a>
+            <a class="btn-imprimir" href="/semanas/acumulado/pdf?desde=1&hasta=${s.numero}&depto=${encodeURIComponent(s.departamento||'')}" target="_blank" title="Informe acumulado desde la primera semana del mes hasta esta">Ver acumulado</a>
           </div>
         </td>
         <td>

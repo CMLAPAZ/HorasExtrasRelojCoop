@@ -131,7 +131,7 @@
       <input type="month" id="mes-informe" aria-label="Mes para informe combinado" style="padding:7px 10px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;background:#fff;color:#111827">
       <a id="btn-informe-mensual" href="#" onclick="descargarInformeMensual(event)"
          style="height:36px;padding:0 18px;background:#172033;color:#fff;border-radius:7px;font-size:.85rem;font-weight:700;display:inline-flex;align-items:center;text-decoration:none">
-        Descargar PDF combinado
+        Ver informe mensual combinado
       </a>
       <span style="font-size:.8rem;color:#64748b">Un PDF con los cierres de todos los departamentos del mes seleccionado.</span>
     </div>
@@ -155,6 +155,7 @@
             <th>Semanas</th>
             <th>Empleados</th>
             <th>Confirmaciones</th>
+            <th>Francos</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
@@ -184,6 +185,16 @@
               </div>
             </td>
             <td>
+              <span class="mobile-label">Francos</span>
+              <div class="badges">
+                {% if c.francos_snapshot_ok %}
+                  <span class="badge ok">Snapshot OK ({{ c.francos_count }})</span>
+                {% else %}
+                  <span class="badge pend">Snapshot vacío</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
               <span class="mobile-label">Estado</span>
               {% if c.estado == 'ANULADO' %}
                 <span class="badge off">Anulado</span>
@@ -195,7 +206,7 @@
               <span class="mobile-label">Acciones</span>
               <div class="acciones">
                 <a class="btn btn-primary" href="/periodos/ver/{{ c.id }}">Ver informe</a>
-                <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}">Confirmaciones</a>
+                <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}" target="_blank">Ver confirmaciones</a>
                 <a class="btn" href="/periodos/francos_pdf/{{ c.id }}" target="_blank">Ver francos</a>
                 {% if c.estado != 'ANULADO' %}
                   <button type="button" class="btn btn-danger" onclick="anularCierre({{ c.id }})">Anular</button>
@@ -254,7 +265,7 @@ function descargarInformeMensual(e) {
   e.preventDefault();
   const mes = document.getElementById('mes-informe').value;
   if (!mes) { alert('Seleccioná un mes primero.'); return; }
-  window.location.href = '/periodos/informe_mensual?mes=' + mes;
+  window.open('/periodos/informe_mensual?mes=' + mes, '_blank');
 }
 
 // Pre-seleccionar mes anterior
@@ -304,6 +315,8 @@ function descargarInformeMensual(e) {
           <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;text-align:left">Departamento</th>
           <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;text-align:center">Hasta</th>
           <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;text-align:center">Días</th>
+          <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;text-align:center">Registros</th>
+          <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb">Tipo</th>
           <th style="background:#f8fafc;padding:7px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb"></th>
         </tr>
       </thead>
@@ -316,8 +329,12 @@ function descargarInformeMensual(e) {
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;text-align:center">
             <span style="background:#dbeafe;color:#1e40af;border-radius:12px;padding:2px 10px;font-weight:700;font-size:.8rem">{{ cf.total_dias }}</span>
           </td>
+          <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;text-align:center">{{ cf.total_registros }}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7">
-            <a href="/francos/cierre/pdf/{{ cf.id }}" style="font-size:.78rem;font-weight:700;color:#172033;text-decoration:none;border:1px solid #172033;border-radius:6px;padding:3px 10px">📄 PDF</a>
+            <span class="badge pend" title="Cierre manual: el PDF se recalcula desde francos_tomados, no existe snapshot inmutable">Manual — sin snapshot inmutable</span>
+          </td>
+          <td style="padding:8px 12px;border-bottom:1px solid #eef2f7">
+            <a href="/francos/cierre/pdf/{{ cf.id }}" target="_blank" style="font-size:.78rem;font-weight:700;color:#172033;text-decoration:none;border:1px solid #172033;border-radius:6px;padding:3px 10px">Ver francos</a>
           </td>
         </tr>
         {% endfor %}

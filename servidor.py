@@ -2118,7 +2118,7 @@ def semana_pdf(n):
 
     nombre = f"semana_{num_depto}_{depto_label}_{fecha_desde}_{fecha_hasta}.pdf"
     return send_file(BytesIO(pdf_data), mimetype="application/pdf",
-                     as_attachment=True, download_name=nombre)
+                     as_attachment=False, download_name=nombre)
 
 
 @app.route("/semanas/acumulado/pdf")
@@ -2190,7 +2190,7 @@ def semanas_acumulado_pdf():
 
     nombre = f"acumulado_{depto_label_0}_{fd}_{fh}.pdf"
     return send_file(BytesIO(pdf_data), mimetype="application/pdf",
-                     as_attachment=True, download_name=nombre)
+                     as_attachment=False, download_name=nombre)
 
 
 @app.route("/estado")
@@ -2675,7 +2675,7 @@ def periodo_confirmaciones_pdf():
         pdf_data = _generar_pdf_confirmaciones_parcial(todos, info)
         nombre = f"confirmaciones_{departamento}_{fecha_desde}_{fecha_hasta}.pdf"
         return send_file(BytesIO(pdf_data), mimetype="application/pdf",
-                         as_attachment=True, download_name=nombre)
+                         as_attachment=False, download_name=nombre)
     except Exception as exc:
         return f"Error generando PDF: {exc}", 500
 
@@ -2924,11 +2924,17 @@ def periodos_historial():
             semanas_por_pid.setdefault(pid, set()).update(nums)
         except Exception:
             pass
+    with _get_db() as conn:
+        fcd_rows = conn.execute(
+            "SELECT periodo_id, COUNT(*) as cnt FROM francos_cierre_detalle GROUP BY periodo_id"
+        ).fetchall()
+    francos_count_por_pid = {r["periodo_id"]: r["cnt"] for r in fcd_rows}
     cierres = []
     for r in rows:
         total = r["total"] or 0
         conf  = r["confirmados"] or 0
         sems = sorted(semanas_por_pid.get(r["id"], set())) or list(range(r["semana_desde"], r["semana_hasta"]+1))
+        francos_count = francos_count_por_pid.get(r["id"], 0)
         cierres.append({
             "id":          r["id"],
             "cerrado_en":  (r["cerrado_en"] or "")[:16].replace("T", " "),
@@ -2943,6 +2949,9 @@ def periodos_historial():
             "total":       total,
             "confirmados": conf,
             "pendientes":  total - conf,
+            "francos_count": francos_count,
+            "francos_cerrados": francos_count > 0,
+            "francos_snapshot_ok": francos_count > 0,
         })
     with _get_db() as conn:
         cf_rows = conn.execute(
@@ -2951,6 +2960,23 @@ def periodos_historial():
     cierres_francos = [dict(r) for r in cf_rows]
     for c in cierres_francos:
         c["cerrado_en"] = (c["cerrado_en"] or "")[:16].replace("T", " ")
+        depto_visible = c["departamento"]
+        depto_norm = _normalizar_departamento_web(depto_visible)
+        with _get_db() as conn:
+            legajos_cf = [str(r["legajo"]) for r in conn.execute(
+                "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
+                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
+                (depto_visible.lower(), depto_norm)
+            )]
+            if legajos_cf:
+                ph = ",".join("?" * len(legajos_cf))
+                c["total_registros"] = conn.execute(
+                    f"SELECT COUNT(*) FROM francos_tomados "
+                    f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ?",
+                    (*legajos_cf, c["fecha_hasta"])
+                ).fetchone()[0]
+            else:
+                c["total_registros"] = 0
     deptos_conocidos = sorted({
         e["departamento"] for e in _empleados_conocidos() if e["departamento"]
     })
@@ -3083,7 +3109,7 @@ def francos_cierre_pdf(cid):
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_cf{cid}_*.pdf"))))
     if not matches:
         return "Error generando PDF.", 500
-    return send_file(matches[-1], as_attachment=True,
+    return send_file(matches[-1], mimetype="application/pdf", as_attachment=False,
                      download_name=f"francos_{depto_visible.lower()}_{fecha_hasta}.pdf")
 
 
@@ -3530,7 +3556,7 @@ def periodos_informe_mensual():
     out.seek(0)
     nombre = f"informe_mensual_{mes.replace('-', '_')}.pdf"
     return send_file(out, mimetype="application/pdf",
-                     as_attachment=True, download_name=nombre)
+                     as_attachment=False, download_name=nombre)
 
 
 @app.route("/periodos/<int:pid>/informe_completo")
@@ -3582,7 +3608,7 @@ def periodos_informe_completo(pid):
     fh = (p["fecha_hasta"] if p else "").replace("-","")
     nombre = f"informe_cierre_{pid}_{fd}_{fh}.pdf"
     return send_file(BytesIO(pdf_data), mimetype="application/pdf",
-                     as_attachment=True, download_name=nombre)
+                     as_attachment=False, download_name=nombre)
 
 
 @app.route("/periodos/francos_pdf/<int:pid>")
@@ -3646,7 +3672,7 @@ def periodos_confirmaciones_pdf(pid):
         return send_file(
             BytesIO(pdf_data),
             mimetype="application/pdf",
-            as_attachment=True,
+            as_attachment=False,
             download_name=nombre,
         )
     except Exception as exc:
@@ -3900,6 +3926,172 @@ def admin_corregir_francos_cierre(pid):
         "dias_agregados_total": diagnostico["dias_agregados_total"],
         "saldos_corregidos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
         "fecha_corte": fecha_corte,
+    })
+
+
+@app.route("/admin/diagnostico-francos")
+def admin_diagnostico_francos():
+    """Diagnóstico de SOLO LECTURA del estado de los snapshots de francos en
+    todos los cierres (no escribe nada en la base de datos).
+
+    - Mecanismo A (periodos / francos_cierre_detalle): para cada cierre
+      ACTIVO calcula, vía _seleccionar_francos_ventana_cierre (la misma
+      fuente de verdad que /admin/corregir-francos-cierre), cuántos
+      registros tiene el snapshot actual vs. cuántos "correctos" le
+      corresponderían — sin aplicar ninguna corrección.
+    - Mecanismo B (cierres_francos): nunca tiene snapshot inmutable; se
+      reportan conteos por departamento.
+    - Además señala, por cada cierre que requeriría corrección, los cierres
+      posteriores del mismo departamento que podrían verse afectados, y
+      legajos cuyo francos_saldo_inicial.fecha_corte no coincide con el
+      último cierre ACTIVO de su departamento."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    periodos_info = []
+    with _get_db() as conn:
+        periodos_rows = conn.execute(
+            "SELECT * FROM periodos WHERE COALESCE(estado,'ACTIVO')='ACTIVO' ORDER BY cerrado_en"
+        ).fetchall()
+        for p in periodos_rows:
+            pid = p["id"]
+            emp_rows = conn.execute(
+                "SELECT DISTINCT legajo, departamento FROM periodo_empleados WHERE periodo_id=?", (pid,)
+            ).fetchall()
+            if not emp_rows:
+                continue
+            legajos = [str(r["legajo"]) for r in emp_rows]
+            departamento = _nombre_departamento_visible(emp_rows[0]["departamento"] or "")
+            fecha_corte = _normalizar_cargado_en(p["cerrado_en"] or "")
+            actuales = conn.execute(
+                "SELECT * FROM francos_cierre_detalle WHERE periodo_id=?", (pid,)
+            ).fetchall()
+            if fecha_corte:
+                correctos, _fecha_corte_anterior, legacy = _seleccionar_francos_ventana_cierre(
+                    conn, pid, legajos, departamento, fecha_corte)
+            else:
+                correctos, legacy = [], []
+
+            def _clave(r):
+                return (str(r["legajo"]), r["tipo"] or "", r["fecha_desde"] or "",
+                        r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]", r["dias"] or 0)
+            claves_actuales = {_clave(r) for r in actuales}
+            faltantes = [r for r in correctos if _clave(r) not in claves_actuales]
+
+            periodos_info.append({
+                "periodo_id": pid,
+                "departamento": departamento,
+                "cerrado_en": fecha_corte or (p["cerrado_en"] or ""),
+                "fecha_desde": p["fecha_desde"] or "",
+                "fecha_hasta": p["fecha_hasta"] or "",
+                "legajos": legajos,
+                "registros_snapshot": len(actuales),
+                "snapshot_vacio": len(actuales) == 0,
+                "registros_correctos_estimados": len(correctos),
+                "registros_faltantes_estimados": len(faltantes),
+                "requiere_correccion": len(faltantes) > 0,
+                "legacy_sin_cargado_en": len(legacy),
+                "ya_corregido_en": p["francos_corregido_en"] or "",
+            })
+
+        cf_rows = conn.execute("SELECT * FROM cierres_francos ORDER BY id").fetchall()
+
+        emp_depto = {}
+        for r in conn.execute("SELECT DISTINCT legajo, departamento FROM periodo_empleados"):
+            emp_depto[str(r["legajo"])] = _nombre_departamento_visible(r["departamento"] or "")
+        for r in conn.execute("SELECT legajo, departamento FROM empleados_extra WHERE activo=1"):
+            emp_depto.setdefault(str(r["legajo"]), _nombre_departamento_visible(r["departamento"] or ""))
+        saldo_inicial_rows = conn.execute("SELECT * FROM francos_saldo_inicial").fetchall()
+
+    # ---- Mecanismo A: agregados por departamento ----
+    periodos_por_depto = {}
+    snapshot_ok_por_depto = {}
+    snapshot_vacio_por_depto = {}
+    legajos_por_depto = {}
+    for p in periodos_info:
+        dep = p["departamento"]
+        periodos_por_depto[dep] = periodos_por_depto.get(dep, 0) + 1
+        if p["registros_snapshot"] > 0:
+            snapshot_ok_por_depto[dep] = snapshot_ok_por_depto.get(dep, 0) + 1
+        else:
+            snapshot_vacio_por_depto[dep] = snapshot_vacio_por_depto.get(dep, 0) + 1
+        legajos_por_depto.setdefault(dep, set()).update(p["legajos"])
+
+    requieren_correccion = [p for p in periodos_info if p["requiere_correccion"]]
+    cierres_posteriores_afectados = []
+    for p in requieren_correccion:
+        posteriores = [
+            q["periodo_id"] for q in periodos_info
+            if q["departamento"] == p["departamento"] and q["cerrado_en"] > p["cerrado_en"]
+        ]
+        cierres_posteriores_afectados.append({
+            "periodo_id": p["periodo_id"],
+            "departamento": p["departamento"],
+            "cerrado_en": p["cerrado_en"],
+            "registros_faltantes_estimados": p["registros_faltantes_estimados"],
+            "periodos_posteriores_mismo_depto": posteriores,
+        })
+
+    # ---- Mecanismo B: agregados por departamento (nunca tiene snapshot inmutable) ----
+    cierres_francos_por_depto = {}
+    legajos_cf_por_depto = {}
+    for cf in cf_rows:
+        depto_visible = cf["departamento"]
+        depto_norm = _normalizar_departamento_web(depto_visible)
+        cierres_francos_por_depto[depto_visible] = cierres_francos_por_depto.get(depto_visible, 0) + 1
+        with _get_db() as conn:
+            legs = [str(r["legajo"]) for r in conn.execute(
+                "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
+                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
+                (depto_visible.lower(), depto_norm)
+            )]
+        legajos_cf_por_depto.setdefault(depto_visible, set()).update(legs)
+
+    # ---- Cadena de saldos: fecha_corte de francos_saldo_inicial vs último cierre ACTIVO del depto ----
+    ultimo_cierre_por_depto = {}
+    for p in periodos_info:
+        dep = p["departamento"]
+        actual = ultimo_cierre_por_depto.get(dep)
+        if actual is None or p["cerrado_en"] > actual["cerrado_en"]:
+            ultimo_cierre_por_depto[dep] = p
+
+    inconsistencias_saldo = []
+    for r in saldo_inicial_rows:
+        leg = str(r["legajo"])
+        dep = emp_depto.get(leg, "")
+        ultimo = ultimo_cierre_por_depto.get(dep)
+        if not ultimo:
+            continue
+        fecha_corte_saldo  = (r["fecha_corte"] or "")[:10]
+        fecha_corte_cierre = (ultimo["cerrado_en"] or "")[:10]
+        if fecha_corte_saldo and fecha_corte_cierre and fecha_corte_saldo != fecha_corte_cierre:
+            inconsistencias_saldo.append({
+                "legajo": leg,
+                "nombre": r["nombre"] or "",
+                "departamento": dep,
+                "fecha_corte_saldo_inicial": fecha_corte_saldo,
+                "ultimo_cierre_id": ultimo["periodo_id"],
+                "ultimo_cierre_cerrado_en": fecha_corte_cierre,
+            })
+
+    return jsonify({
+        "periodos": {
+            "total": len(periodos_info),
+            "por_departamento": periodos_por_depto,
+            "con_snapshot": snapshot_ok_por_depto,
+            "snapshot_vacio": snapshot_vacio_por_depto,
+            "legajos_participantes_por_departamento": {d: len(s) for d, s in legajos_por_depto.items()},
+            "requieren_correccion": requieren_correccion,
+            "detalle": periodos_info,
+        },
+        "cierres_francos_manuales": {
+            "nota": "Mecanismo B (cierres_francos) no tiene tabla de snapshot inmutable: "
+                    "el PDF se recalcula desde francos_tomados al momento de verlo.",
+            "total": len(cf_rows),
+            "por_departamento": cierres_francos_por_depto,
+            "legajos_participantes_por_departamento": {d: len(s) for d, s in legajos_cf_por_depto.items()},
+        },
+        "cierres_posteriores_afectados_por_correccion": cierres_posteriores_afectados,
+        "inconsistencias_cadena_saldos": inconsistencias_saldo,
     })
 
 
@@ -4369,7 +4561,7 @@ def francos_pdf_depto():
     if not matches:
         return "Error generando PDF.", 500
     nombre_dl = f"francos_{(depto_param or 'todos').replace(' ','_')}_{hoy}.pdf"
-    return send_file(matches[-1], as_attachment=True, download_name=nombre_dl)
+    return send_file(matches[-1], mimetype="application/pdf", as_attachment=False, download_name=nombre_dl)
 
 
 @app.route("/francos/saldos/exportar")

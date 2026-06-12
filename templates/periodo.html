@@ -187,7 +187,7 @@
     <div class="acciones">
       <button type="button" class="btn-print" onclick="window.print()">Imprimir / PDF</button>
       <button type="button" class="btn-green" onclick="descargarCSV()">Descargar CSV</button>
-      <button type="button" class="btn-green" onclick="descargarConfirmacionesPDF()">Confirmaciones PDF</button>
+      <button type="button" class="btn-green" onclick="descargarConfirmacionesPDF()">Ver confirmaciones</button>
       <button type="button" class="btn-red" onclick="cerrarPeriodo()">Cerrar período ✓</button>
     </div>
   </div>
@@ -527,7 +527,7 @@ function descargarConfirmacionesPDF() {
     fecha_desde: semDesde.fechaDesde,
     fecha_hasta: semHasta.fechaHasta,
   });
-  window.location.href = `/periodo/confirmaciones_pdf?${params.toString()}`;
+  window.open(`/periodo/confirmaciones_pdf?${params.toString()}`, '_blank');
 }
 
 async function cerrarPeriodo() {
