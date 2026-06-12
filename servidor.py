@@ -3929,6 +3929,89 @@ def admin_corregir_francos_cierre(pid):
     })
 
 
+@app.route("/admin/corregir-fecha-corte/<int:pid>", methods=["GET", "POST"])
+def admin_corregir_fecha_corte(pid):
+    """Corrige el dato histórico de francos_saldo_inicial.fecha_corte para
+    los legajos del cierre #pid.
+
+    Regla definitiva: para francos, fecha_corte debe ser la fecha/hora REAL
+    del cierre (periodos.cerrado_en), nunca fecha_hasta del período de horas
+    extras que se cerró. La actualización automática de saldo_inicial al
+    cerrar un período ya usa cerrado_en desde la commit c34f12e
+    (2026-06-11); cierres hechos con código anterior (p.ej. pid=2) quedaron
+    con fecha_corte = fecha_hasta del período de horas.
+
+    GET = diagnóstico de solo lectura: para cada legajo del cierre #pid,
+    compara el fecha_corte actual en francos_saldo_inicial contra
+    cerrado_en y reporta los cambios que correspondería aplicar. No escribe
+    nada.
+
+    POST con ?confirmar=si aplica la corrección: backup previo de la DB y
+    UPDATE de una sola columna (fecha_corte) en francos_saldo_inicial,
+    acotado a los legajos de este cierre. No toca saldo, tomados_al_corte,
+    gen_extra_al_corte, nota ni cargado_en, y no afecta legajos de otros
+    cierres."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not periodo:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        cerrado_en = _normalizar_cargado_en(periodo["cerrado_en"] or "")
+        if not cerrado_en:
+            return jsonify({"error": f"Período #{pid} no tiene fecha de cierre registrada"}), 400
+
+        legajos = [str(r["legajo"]) for r in conn.execute(
+            "SELECT DISTINCT legajo FROM periodo_empleados WHERE periodo_id=?", (pid,)
+        )]
+        if not legajos:
+            return jsonify({"error": f"Período #{pid} no tiene empleados asociados"}), 400
+
+        placeholders = ",".join("?" * len(legajos))
+        actuales = {r["legajo"]: (r["fecha_corte"] or "") for r in conn.execute(
+            f"SELECT legajo, fecha_corte FROM francos_saldo_inicial WHERE legajo IN ({placeholders})",
+            legajos
+        )}
+
+    cambios = [
+        {"legajo": leg, "fecha_corte_actual": actuales[leg], "fecha_corte_nuevo": cerrado_en}
+        for leg in legajos
+        if leg in actuales and actuales[leg] != cerrado_en
+    ]
+    sin_registro = [leg for leg in legajos if leg not in actuales]
+
+    diagnostico = {
+        "periodo_id": pid,
+        "fecha_hasta_periodo": periodo["fecha_hasta"] or "",
+        "cerrado_en": cerrado_en,
+        "legajos": legajos,
+        "cambios": cambios,
+        "legajos_sin_registro_saldo_inicial": sin_registro,
+    }
+
+    if request.method == "GET":
+        return jsonify(diagnostico)
+
+    # ---- POST: aplicar corrección (requiere confirmación explícita) ----
+    if request.args.get("confirmar") != "si":
+        return jsonify({"error": "Falta confirmar=si", "diagnostico": diagnostico}), 400
+
+    if not cambios:
+        return jsonify({"ok": True, "mensaje": "Nada para corregir.", "diagnostico": diagnostico})
+
+    DATOS_DIR.mkdir(exist_ok=True)
+    backup_path = DATOS_DIR / f"cierres_backup_pre_fecha_corte_{pid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    shutil.copy2(DB_FILE, backup_path)
+
+    with _get_db() as conn:
+        for c in cambios:
+            conn.execute("UPDATE francos_saldo_inicial SET fecha_corte=? WHERE legajo=?",
+                          (cerrado_en, c["legajo"]))
+        conn.commit()
+
+    return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
+
+
 @app.route("/admin/diagnostico-francos")
 def admin_diagnostico_francos():
     """Diagnóstico de SOLO LECTURA del estado de los snapshots de francos en
