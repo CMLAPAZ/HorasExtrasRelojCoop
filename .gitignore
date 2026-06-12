@@ -26,9 +26,10 @@ uninstall*.bat
 dejavu-fonts-ttf-*
 .server_pid
 
-# Configuración local de Claude
-.claude/settings.local.json
-.claude/worktrees/
+# Configuración local de Claude y del editor
+.claude/
+.vscode/
+.hintrc
 
 # Bases de datos y datos operativos
 datos/*.db
