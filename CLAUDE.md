@@ -274,7 +274,7 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | POST | `/periodo/cerrar` | `periodo_cerrar()` | **Cierra período**: guarda en DB, archiva confirmaciones, genera PDFs |
 | GET | `/periodos/historial` | `periodos_historial()` | Listado de todos los cierres desde DB |
 | GET | `/periodos/ver/<pid>` | `periodos_ver(pid)` | Vista detallada de un cierre |
-| GET | `/periodos/francos_pdf/<pid>` | `periodos_francos_pdf(pid)` | Descarga PDF de francos tomados del cierre |
+| GET | `/periodos/francos_pdf/<pid>` | `periodos_francos_pdf(pid)` | Ver (inline) PDF de francos tomados snapshoteados al cierre (`francos_cierre_detalle`); muestra fecha real del cierre, "Reimpreso el" para la fecha actual |
 | GET | `/periodos/confirmaciones_pdf/<pid>` | `periodos_confirmaciones_pdf(pid)` | Descarga PDF de confirmaciones archivadas del cierre |
 | POST | `/periodos/anular/<pid>` | `periodo_anular(pid)` | Anula un cierre (estado ANULADO); requiere motivo |
 | GET | `/francos` | `francos()` | Gestión de francos tomados: tabla de saldos + registrar nuevo |
