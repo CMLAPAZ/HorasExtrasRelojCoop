@@ -186,6 +186,10 @@ def _init_db():
             conn.execute("ALTER TABLE periodos ADD COLUMN francos_corregido_en TEXT DEFAULT ''")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE cierres_francos ADD COLUMN saldo_anterior TEXT DEFAULT '{}'")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_generados (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3032,6 +3036,23 @@ def francos_cierre_nuevo():
     try:
         ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         saldos = _calcular_saldos()
+
+        # Snapshot de saldo al cierre (foto): saldo_anterior + generados + tomados + saldo_final
+        snap = {}
+        for s in saldos:
+            if str(s["legajo"]) in legajos:
+                snap[str(s["legajo"])] = {
+                    "nombre":         s["nombre"],
+                    "saldo_anterior": s["saldo_inicial"],
+                    "generados":      s["generados"],
+                    "tomados":        s["tomados"],
+                    "saldo_final":    s["saldo_actual"],
+                }
+        with _get_db() as conn:
+            conn.execute("UPDATE cierres_francos SET saldo_anterior=? WHERE id=?",
+                         (json.dumps(snap, ensure_ascii=False), cid))
+            conn.commit()
+
         with _get_db() as conn:
             tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
                 f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
@@ -3078,6 +3099,91 @@ def francos_cierre_nuevo():
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
     return jsonify({"ok": True, "id": cid, "total": total})
+
+
+@app.route("/francos/cierre/informe/<int:cid>")
+def francos_cierre_informe(cid):
+    """PDF con saldo al cierre: saldo anterior + generados + tomados + saldo final."""
+    if not _autenticado(): return _requiere_auth()
+    from fpdf import FPDF
+    with _get_db() as conn:
+        cf = conn.execute("SELECT * FROM cierres_francos WHERE id=?", (cid,)).fetchone()
+    if not cf:
+        return "Cierre no encontrado.", 404
+    cf = dict(cf)
+    snap = {}
+    try:
+        snap = json.loads(cf.get("saldo_anterior") or "{}")
+    except Exception:
+        pass
+    if not snap:
+        return "Este cierre no tiene snapshot de saldo guardado.", 404
+
+    depto_visible = cf["departamento"]
+    fecha_hasta   = cf["fecha_hasta"]
+    cerrado_en    = (cf.get("cerrado_en") or "")[:16].replace("T", " ")
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_margins(10, 10, 10)
+    pdf.add_page()
+
+    try:
+        import os
+        font_dir = os.path.join(os.path.dirname(__file__), "recursos", "fonts")
+        pdf.add_font("DejaVu", "",  os.path.join(font_dir, "DejaVuSans.ttf"),        uni=True)
+        pdf.add_font("DejaVu", "B", os.path.join(font_dir, "DejaVuSans-Bold.ttf"),   uni=True)
+        fam = "DejaVu"
+    except Exception:
+        fam = "Helvetica"
+
+    # Título
+    pdf.set_font(fam, "B", 13)
+    pdf.cell(0, 8, f"SALDO DE FRANCOS AL CIERRE — {depto_visible}", ln=1, align="C")
+    pdf.set_font(fam, "", 9)
+    pdf.cell(0, 5, f"Período hasta: {fecha_hasta}   |   Cerrado: {cerrado_en}", ln=1, align="C")
+    pdf.ln(4)
+
+    # Cabecera tabla
+    COLS = ["Leg.", "Nombre", "Saldo anterior", "Generados", "Tomados", "Saldo final"]
+    ANCH = [14, 60, 32, 28, 24, 28]
+    pdf.set_fill_color(200, 215, 240)
+    pdf.set_font(fam, "B", 8)
+    for col, ancho in zip(COLS, ANCH):
+        pdf.cell(ancho, 7, col, 1, 0, "C", fill=True)
+    pdf.ln()
+
+    pdf.set_font(fam, "", 8)
+    tot_ant = tot_gen = tot_tom = tot_fin = 0
+    for leg, d in sorted(snap.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+        sf = d.get("saldo_final", 0)
+        if sf > 0:   pdf.set_fill_color(220, 252, 231)
+        elif sf < 0: pdf.set_fill_color(254, 202, 202)
+        else:        pdf.set_fill_color(241, 245, 249)
+        ant = d.get("saldo_anterior", 0)
+        gen = d.get("generados", 0)
+        tom = d.get("tomados", 0)
+        tot_ant += ant; tot_gen += gen; tot_tom += tom; tot_fin += sf
+        pdf.cell(ANCH[0], 6, leg,            1, 0, "C", True)
+        pdf.cell(ANCH[1], 6, d.get("nombre",""), 1, 0, "L", True)
+        pdf.cell(ANCH[2], 6, str(ant),       1, 0, "C", True)
+        pdf.cell(ANCH[3], 6, str(gen),       1, 0, "C", True)
+        pdf.cell(ANCH[4], 6, str(tom),       1, 0, "C", True)
+        pdf.cell(ANCH[5], 6, str(sf),        1, 1, "C", True)
+
+    pdf.set_fill_color(23, 32, 51); pdf.set_text_color(255, 255, 255)
+    pdf.set_font(fam, "B", 8)
+    pdf.cell(ANCH[0] + ANCH[1], 6, "TOTALES", 1, 0, "R", True)
+    pdf.cell(ANCH[2], 6, str(tot_ant), 1, 0, "C", True)
+    pdf.cell(ANCH[3], 6, str(tot_gen), 1, 0, "C", True)
+    pdf.cell(ANCH[4], 6, str(tot_tom), 1, 0, "C", True)
+    pdf.cell(ANCH[5], 6, str(tot_fin), 1, 1, "C", True)
+    pdf.set_text_color(0, 0, 0)
+
+    raw = pdf.output(dest="S")
+    data = raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+    from flask import Response
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename=saldo_cierre_{depto_visible}_{fecha_hasta}.pdf"})
 
 
 @app.route("/francos/cierre/pdf/<int:cid>")
@@ -3271,6 +3377,17 @@ def _generar_pdf_cierre_completo(pid):
     fd = p.get("fecha_desde", "")
     fh = p.get("fecha_hasta", "")
     legajos_cierre = {str(e["legajo"]) for e in emps_db}
+
+    # Agregar empleados del depto con saldo conocido pero sin fichadas en este cierre
+    for _emp in _empleados_conocidos():
+        if _normalizar_departamento_web(_emp.get("departamento", "")) == departamento_norm:
+            _leg = str(_emp["legajo"])
+            if _leg not in legajos_cierre and saldo_ant.get(_leg) is not None:
+                emps_db.append({"legajo": _leg, "nombre": _emp["nombre"],
+                                 "departamento": depto_visible, "francos": 0,
+                                 "ot50": "0h", "ot100": "0h", "comidas": 0,
+                                 "tardanzas": 0, "confirmado": False})
+                legajos_cierre.add(_leg)
 
     # ── Horas: recargar CSVs de semanas ───────────────────────────────────
     periodo_json_path = PERIODOS_DIR / (p.get("archivo") or "NADA")

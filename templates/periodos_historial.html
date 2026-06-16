@@ -332,10 +332,17 @@ function descargarInformeMensual(e) {
           </td>
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;text-align:center">{{ cf.total_registros }}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7">
-            <span class="badge pend" title="Cierre manual: el PDF se recalcula desde francos_tomados, no existe snapshot inmutable">Manual — sin snapshot inmutable</span>
+            {% if cf.saldo_anterior and cf.saldo_anterior != '{}' %}
+              <span class="badge ok">Snapshot OK</span>
+            {% else %}
+              <span class="badge pend">Sin snapshot</span>
+            {% endif %}
           </td>
-          <td style="padding:8px 12px;border-bottom:1px solid #eef2f7">
+          <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;display:flex;gap:6px;flex-wrap:wrap">
             <a href="/francos/cierre/pdf/{{ cf.id }}" target="_blank" style="font-size:.78rem;font-weight:700;color:#172033;text-decoration:none;border:1px solid #172033;border-radius:6px;padding:3px 10px">Ver francos</a>
+            {% if cf.saldo_anterior and cf.saldo_anterior != '{}' %}
+            <a href="/francos/cierre/informe/{{ cf.id }}" target="_blank" style="font-size:.78rem;font-weight:700;color:#0f5132;text-decoration:none;border:1px solid #0f5132;border-radius:6px;padding:3px 10px">Ver saldo al cierre</a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
