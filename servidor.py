@@ -2889,12 +2889,17 @@ def periodo_cerrar():
                     fecha_corte,
                 ))
             conn.commit()
+        actualizados = sum(1 for s in saldos_nuevos if str(s["legajo"]) in legajos_cierre_set)
+        print(f"[INFO] saldo_inicial actualizado para {actualizados} empleados del cierre #{pid} ({departamento})")
+        saldo_warning = None
     except Exception as exc_saldo:
-        # No fallar el cierre por un error en la actualización del saldo
         import traceback
-        print(f"[ADVERTENCIA] Error al actualizar saldo_inicial: {exc_saldo}\n{traceback.format_exc()}")
+        tb = traceback.format_exc()
+        saldo_warning = str(exc_saldo)
+        print(f"[ERROR] saldo_inicial NO actualizado en cierre #{pid}: {exc_saldo}\n{tb}")
 
-    return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json"})
+    return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json",
+                    **({"saldo_warning": saldo_warning} if saldo_warning else {})})
 
 
 @app.route("/periodos/historial")
