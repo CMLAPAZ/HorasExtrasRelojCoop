@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Ajuste de saldo inicial</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827}
+    .shell{max-width:1100px;margin:0 auto}
+    .topbar{background:#172033;padding:0 24px;display:flex;align-items:stretch;justify-content:space-between;gap:0;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+    .topbar-brand{display:flex;flex-direction:column;justify-content:center;padding:12px 0;text-decoration:none}
+    .topbar-title{font-size:1.05rem;font-weight:800;color:#fff;line-height:1.1}
+    .topbar-sub{font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:2px}
+    .nav{display:flex;align-items:stretch;gap:0}
+    .nav a{display:inline-flex;align-items:center;padding:0 14px;color:#cbd5e1;text-decoration:none;font-size:.83rem;font-weight:600;border-bottom:3px solid transparent;transition:color .15s,border-color .15s}
+    .nav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav-logout{display:inline-flex;align-items:center;padding:0 12px;color:#f87171;text-decoration:none;font-size:.83rem;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit}
+    .nav-admin-wrap{position:relative;display:flex;align-items:stretch}
+    .nav-admin-btn{display:inline-flex;align-items:center;gap:5px;padding:0 14px;color:#94a3b8;font-size:.83rem;font-weight:600;cursor:pointer;border:none;background:none;font-family:inherit;border-bottom:3px solid transparent}
+    .nav-admin-btn.open{color:#fff}
+    .nav-admin-btn .arrow{font-size:.6rem;transition:transform .15s}
+    .nav-admin-btn.open .arrow{transform:rotate(180deg)}
+    .nav-admin-dropdown{position:absolute;top:100%;right:0;background:#1e293b;border:1px solid #334155;border-top:none;border-radius:0 0 8px 8px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:200;display:none}
+    .nav-admin-dropdown.open{display:block}
+    .nav-admin-dropdown a{display:flex;align-items:center;padding:10px 16px;color:#cbd5e1;text-decoration:none;font-size:.82rem;font-weight:600;gap:8px;transition:background .12s;white-space:nowrap}
+    .nav-admin-dropdown a:hover{background:#334155;color:#fff}
+    .nav-admin-dropdown a.active{color:#fff;background:#334155}
+
+    .page-content{padding:22px}
+    h1{font-size:1.45rem;font-weight:750;color:#0f172a;margin-bottom:4px}
+    .eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;margin-bottom:4px}
+    .subtitle{font-size:.88rem;color:#64748b;margin-bottom:20px}
+
+    .panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:22px;box-shadow:0 1px 2px rgba(15,23,42,.04);overflow:hidden}
+    .panel-head{padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between}
+    .panel-title{font-size:.92rem;font-weight:750;color:#111827}
+    table{width:100%;border-collapse:collapse;font-size:.84rem}
+    th{background:#f8fafc;padding:8px 12px;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap}
+    td{padding:8px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:#f8fafc}
+    .leg{font-weight:700;color:#334155;font-size:.8rem}
+    .nom{color:#111827}
+    .num{text-align:center}
+    .muted{color:#94a3b8;font-size:.75rem}
+    .nota-txt{color:#475569;font-size:.78rem;max-width:260px}
+    .nota-ajuste{color:#b45309;font-size:.78rem;font-weight:600}
+
+    .btn-aj{height:28px;padding:0 10px;border-radius:6px;border:1px solid #d7dde5;background:#fff;color:#334155;font-size:.78rem;font-weight:650;cursor:pointer;font-family:inherit}
+    .btn-aj:hover{border-color:#3b82f6;color:#1d4ed8;background:#eff6ff}
+
+    /* Inline form */
+    .form-row{display:none;background:#f0f9ff;border-top:1px solid #bae6fd}
+    .form-row td{padding:12px 14px}
+    .form-row.open{display:table-row}
+    .form-inline{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+    .form-inline label{font-size:.78rem;font-weight:650;color:#334155;display:block;margin-bottom:3px}
+    .form-inline input[type=number]{width:80px;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:.83rem;font-family:inherit}
+    .form-inline textarea{width:320px;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:.83rem;font-family:inherit;resize:vertical;min-height:44px}
+    .btn-save{height:34px;padding:0 14px;border-radius:6px;border:none;background:#172033;color:#fff;font-size:.82rem;font-weight:650;cursor:pointer;font-family:inherit}
+    .btn-save:hover{background:#25314a}
+    .btn-cancel{height:34px;padding:0 10px;border-radius:6px;border:1px solid #d7dde5;background:#fff;color:#475569;font-size:.82rem;font-weight:650;cursor:pointer;font-family:inherit}
+    .msg-ok{color:#15803d;font-size:.8rem;font-weight:650;margin-top:6px}
+    .msg-err{color:#b91c1c;font-size:.8rem;font-weight:650;margin-top:6px}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="topbar-brand" href="/supervisor">
+    <div class="topbar-title">CM Horas Extras</div>
+    <div class="topbar-sub">CELP · Convenio Luz y Fuerza</div>
+  </a>
+  <div class="nav">
+    <a href="/supervisor">Inicio</a>
+    <a href="/periodo">Períodos</a>
+    <a href="/periodos/historial">Cierres</a>
+    <a href="/francos">Francos</a>
+    <div class="nav-admin-wrap">
+      <button class="nav-admin-btn" id="admin-btn" onclick="toggleAdmin()">
+        Admin <span class="arrow">&#9660;</span>
+      </button>
+      <div class="nav-admin-dropdown" id="admin-nav-dropdown">
+        <a href="/empleados/importar">&#128100; Empleados</a>
+        <a href="/configuracion/email">&#128231; Config. Email</a>
+        <a href="/admin/ajuste-saldo" class="active">&#9998; Ajuste saldo inicial</a>
+      </div>
+    </div>
+    <a href="/logout" class="nav-logout">Salir</a>
+  </div>
+</div>
+
+<div class="page-content">
+<div class="shell">
+  <div class="eyebrow">Administración</div>
+  <h1>Ajuste de saldo inicial de francos</h1>
+  <div class="subtitle">Corregí el saldo inicial de cualquier empleado. El motivo queda registrado y aparece al pie de los informes de cierre.</div>
+
+  {% for depto, emps in deptos.items() %}
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">{{ depto }}</span>
+      <span class="muted">{{ emps|length }} empleados</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Leg.</th>
+          <th>Nombre</th>
+          <th class="num">Saldo inicial</th>
+          <th class="num">Saldo actual</th>
+          <th>Nota / Motivo</th>
+          <th>Corte</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in emps %}
+        <tr id="row-{{ e.legajo }}">
+          <td class="leg">{{ e.legajo }}</td>
+          <td class="nom">{{ e.nombre }}</td>
+          <td class="num">{{ e.saldo_inicial }}</td>
+          <td class="num">{{ e.saldo_actual }}</td>
+          <td>
+            {% if e.nota.startswith('Ajuste manual') %}
+              <span class="nota-ajuste">{{ e.nota }}</span>
+            {% elif e.nota %}
+              <span class="nota-txt">{{ e.nota }}</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ e.fecha_corte or '—' }}</td>
+          <td>
+            <button class="btn-aj" onclick="abrirForm('{{ e.legajo }}', {{ e.saldo_inicial }})">Ajustar</button>
+          </td>
+        </tr>
+        <tr class="form-row" id="form-{{ e.legajo }}">
+          <td colspan="7">
+            <div class="form-inline">
+              <div>
+                <label>Nuevo saldo inicial</label>
+                <input type="number" id="saldo-{{ e.legajo }}" value="{{ e.saldo_inicial }}">
+              </div>
+              <div style="flex:1">
+                <label>Motivo del ajuste (obligatorio)</label>
+                <textarea id="motivo-{{ e.legajo }}" placeholder="Ej: Corrección por error en carga inicial de mayo 2026"></textarea>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;padding-top:18px">
+                <button class="btn-save" onclick="guardar('{{ e.legajo }}')">Guardar</button>
+                <button class="btn-cancel" onclick="cerrarForm('{{ e.legajo }}')">Cancelar</button>
+              </div>
+            </div>
+            <div id="msg-{{ e.legajo }}"></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+</div>
+
+<script>
+function toggleAdmin() {
+  const btn = document.getElementById('admin-btn');
+  const dd  = document.getElementById('admin-nav-dropdown');
+  btn.classList.toggle('open');
+  dd.classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const wrap = document.querySelector('.nav-admin-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('admin-btn').classList.remove('open');
+    document.getElementById('admin-nav-dropdown').classList.remove('open');
+  }
+});
+
+let formAbierto = null;
+
+function abrirForm(leg, saldo) {
+  if (formAbierto && formAbierto !== leg) cerrarForm(formAbierto);
+  formAbierto = leg;
+  document.getElementById('form-' + leg).classList.add('open');
+  document.getElementById('saldo-' + leg).focus();
+}
+
+function cerrarForm(leg) {
+  const f = document.getElementById('form-' + leg);
+  if (f) f.classList.remove('open');
+  const m = document.getElementById('msg-' + leg);
+  if (m) m.innerHTML = '';
+  formAbierto = null;
+}
+
+function guardar(leg) {
+  const saldo  = document.getElementById('saldo-' + leg).value.trim();
+  const motivo = document.getElementById('motivo-' + leg).value.trim();
+  const msg    = document.getElementById('msg-' + leg);
+
+  if (!motivo) { msg.innerHTML = '<span class="msg-err">El motivo es obligatorio.</span>'; return; }
+  if (saldo === '' || isNaN(parseInt(saldo))) { msg.innerHTML = '<span class="msg-err">Ingresá un saldo válido.</span>'; return; }
+
+  msg.innerHTML = '<span class="muted">Guardando…</span>';
+
+  const fd = new FormData();
+  fd.append('legajo', leg);
+  fd.append('saldo', saldo);
+  fd.append('motivo', motivo);
+
+  fetch('/admin/ajuste-saldo/guardar', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        msg.innerHTML = '<span class="msg-ok">✓ Guardado. Recargá la página para ver los valores actualizados.</span>';
+        // Actualizar nota en la fila
+        const row = document.getElementById('row-' + leg);
+        if (row) {
+          const notaCell = row.cells[4];
+          notaCell.innerHTML = '<span class="nota-ajuste">' + d.nota + '</span>';
+          row.cells[2].textContent = d.saldo;
+        }
+      } else {
+        msg.innerHTML = '<span class="msg-err">Error: ' + d.error + '</span>';
+      }
+    })
+    .catch(() => { msg.innerHTML = '<span class="msg-err">Error de conexión.</span>'; });
+}
+</script>
+</body>
+</html>

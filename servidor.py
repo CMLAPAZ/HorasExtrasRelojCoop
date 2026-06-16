@@ -3196,6 +3196,25 @@ def francos_cierre_informe(cid):
     pdf.cell(ANCH[5], 6, str(tot_fin), 1, 1, "C", True)
     pdf.set_text_color(0, 0, 0)
 
+    # Notas de ajuste manual al pie
+    legajos_snap = list(snap.keys())
+    if legajos_snap:
+        ph_n = ",".join("?" * len(legajos_snap))
+        with _get_db() as conn:
+            notas_aj = [(str(r["leg"]), snap.get(str(r["leg"]), {}).get("nombre", str(r["leg"])), r["nota"])
+                        for r in conn.execute(
+                            f"SELECT CAST(legajo AS TEXT) as leg, nota FROM francos_saldo_inicial "
+                            f"WHERE CAST(legajo AS TEXT) IN ({ph_n}) AND nota LIKE 'Ajuste manual%'",
+                            legajos_snap)]
+        if notas_aj:
+            pdf.ln(6)
+            pdf.set_font(fam, "B", 7); pdf.set_text_color(90, 90, 90)
+            pdf.cell(0, 5, "Ajustes manuales de saldo inicial:", ln=1)
+            pdf.set_font(fam, "", 7)
+            for leg_n, nom_n, nota_n in notas_aj:
+                pdf.cell(0, 4, f"  {leg_n} {nom_n}: {nota_n}", ln=1)
+            pdf.set_text_color(0, 0, 0)
+
     raw = pdf.output(dest="S")
     data = raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
     from flask import Response
@@ -3612,6 +3631,27 @@ def _generar_pdf_cierre_completo(pid):
     pdf.cell(ANCH_S[4], 6, str(tot_tom),     1, 0, "C", fill=True)
     pdf.cell(ANCH_S[5], 6, str(tot_sal_fin), 1, 1, "C", fill=True)
     pdf.set_text_color(0, 0, 0)
+
+    # Notas de ajuste manual al pie de la sección saldo
+    leg_emps_s = [str(e["legajo"]) for e in emps_db]
+    if leg_emps_s:
+        ph_ns = ",".join("?" * len(leg_emps_s))
+        with _get_db() as conn:
+            notas_ajs = [(str(r["leg"]),
+                          next((e.get("nombre","") for e in emps_db if str(e["legajo"]) == str(r["leg"])), str(r["leg"])),
+                          r["nota"])
+                         for r in conn.execute(
+                             f"SELECT CAST(legajo AS TEXT) as leg, nota FROM francos_saldo_inicial "
+                             f"WHERE CAST(legajo AS TEXT) IN ({ph_ns}) AND nota LIKE 'Ajuste manual%'",
+                             leg_emps_s)]
+        if notas_ajs:
+            pdf.ln(5)
+            pdf.set_font(fam, "B", 7); pdf.set_text_color(90, 90, 90)
+            pdf.cell(0, 5, "Ajustes manuales de saldo inicial:", ln=1)
+            pdf.set_font(fam, "", 7)
+            for leg_n, nom_n, nota_n in notas_ajs:
+                pdf.cell(0, 4, f"  {leg_n} {nom_n}: {nota_n}", ln=1)
+            pdf.set_text_color(0, 0, 0)
 
     # ══════════════════════════════════════════════════════════════════════
     # SECCIÓN 4: Detalle de francos tomados
@@ -4312,6 +4352,60 @@ def admin_diagnostico_francos():
         "cierres_posteriores_afectados_por_correccion": cierres_posteriores_afectados,
         "inconsistencias_cadena_saldos": inconsistencias_saldo,
     })
+
+
+@app.route("/admin/ajuste-saldo")
+def admin_ajuste_saldo():
+    if not _autenticado(): return _requiere_auth()
+    saldos = _calcular_saldos()
+    with _get_db() as conn:
+        fsi_rows = {str(r["legajo"]): dict(r) for r in conn.execute(
+            "SELECT legajo, nota, fecha_corte, saldo FROM francos_saldo_inicial"
+        )}
+    empleados = []
+    for s in sorted(saldos, key=lambda x: _legajo_key(x.get("legajo", ""))):
+        leg = str(s.get("legajo", ""))
+        f = fsi_rows.get(leg, {})
+        empleados.append({
+            "legajo":       leg,
+            "nombre":       s.get("nombre", ""),
+            "departamento": s.get("departamento", ""),
+            "saldo_inicial": s.get("saldo_inicial", 0),
+            "saldo_actual": s.get("saldo_actual", 0),
+            "nota":         f.get("nota", "") or "",
+            "fecha_corte":  (f.get("fecha_corte") or "")[:10],
+        })
+    deptos = {}
+    for e in empleados:
+        deptos.setdefault(e["departamento"], []).append(e)
+    return render_template("admin_ajuste_saldo.html", deptos=deptos)
+
+
+@app.route("/admin/ajuste-saldo/guardar", methods=["POST"])
+def admin_ajuste_saldo_guardar():
+    if not _autenticado(): return jsonify({"ok": False, "error": "No autorizado"}), 401
+    legajo        = request.form.get("legajo", "").strip()
+    nuevo_saldo_s = request.form.get("saldo", "").strip()
+    motivo        = request.form.get("motivo", "").strip()
+    if not legajo or not nuevo_saldo_s.lstrip("-").isdigit():
+        return jsonify({"ok": False, "error": "Datos inválidos"}), 400
+    if not motivo:
+        return jsonify({"ok": False, "error": "El motivo es obligatorio"}), 400
+    nuevo_saldo = int(nuevo_saldo_s)
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    nota_nueva = f"Ajuste manual {ahora[:10]}: {motivo}"
+    with _get_db() as conn:
+        row = conn.execute(
+            "SELECT legajo FROM francos_saldo_inicial WHERE CAST(legajo AS TEXT)=?", (legajo,)
+        ).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "Empleado no encontrado en saldo_inicial"}), 404
+        conn.execute(
+            "UPDATE francos_saldo_inicial SET saldo=?, nota=?, cargado_en=? WHERE CAST(legajo AS TEXT)=?",
+            (nuevo_saldo, nota_nueva, ahora, legajo)
+        )
+        conn.commit()
+    return jsonify({"ok": True, "nota": nota_nueva, "saldo": nuevo_saldo})
 
 
 @app.route("/admin/reset", methods=["POST"])
