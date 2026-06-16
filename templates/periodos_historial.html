@@ -169,6 +169,7 @@
               <div>
                 <div class="periodo">{% if c.fecha_desde %}{{ c.fecha_desde }} al {{ c.fecha_hasta }}{% else %}Sin fechas{% endif %}</div>
                 <div class="muted">ID {{ c.id }}</div>
+                {% if c.departamentos %}<div style="font-weight:600;color:#1e40af;font-size:.8rem;margin-top:2px">{{ c.departamentos }}</div>{% endif %}
               </div>
             </td>
             <td><span class="mobile-label">Semanas</span>{% if c.semanas %}Sem. {{ c.semanas|join(', ') }}{% else %}-{% endif %}</td>
