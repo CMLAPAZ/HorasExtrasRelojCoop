@@ -2850,6 +2850,23 @@ def periodo_cerrar():
                     saldo_ant[leg] = {"saldo": 0, "tomados_al_corte": 0,
                                       "gen_extra_al_corte": 0, "fecha_corte": "2026-05-21"}
 
+            # Capturar empleados del depto en empleados_extra (sin fichadas, ej: Karen Soto en Redes)
+            for _row in conn.execute("SELECT legajo, departamento FROM empleados_extra"):
+                if _normalizar_departamento_web(_row["departamento"] or "") == departamento:
+                    _leg = str(_row["legajo"])
+                    if _leg not in saldo_ant:
+                        _fsi = conn.execute(
+                            "SELECT saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte "
+                            "FROM francos_saldo_inicial WHERE CAST(legajo AS TEXT)=?", (_leg,)
+                        ).fetchone()
+                        saldo_ant[_leg] = {
+                            "saldo":              (_fsi["saldo"] or 0) if _fsi else 0,
+                            "tomados_al_corte":   (_fsi["tomados_al_corte"] or 0) if _fsi else 0,
+                            "gen_extra_al_corte": (_fsi["gen_extra_al_corte"] or 0) if _fsi else 0,
+                            "fecha_corte":        (_fsi["fecha_corte"] or "2026-05-21") if _fsi else "2026-05-21",
+                        }
+                        legajos_cierre_set.add(_leg)
+
             conn.execute(
                 "UPDATE periodos SET saldo_anterior=? WHERE id=?",
                 (json.dumps(saldo_ant, ensure_ascii=False), pid)
@@ -3382,7 +3399,7 @@ def _generar_pdf_cierre_completo(pid):
     for _emp in _empleados_conocidos():
         if _normalizar_departamento_web(_emp.get("departamento", "")) == departamento_norm:
             _leg = str(_emp["legajo"])
-            if _leg not in legajos_cierre and saldo_ant.get(_leg) is not None:
+            if _leg not in legajos_cierre:
                 emps_db.append({"legajo": _leg, "nombre": _emp["nombre"],
                                  "departamento": depto_visible, "francos": 0,
                                  "ot50": "0h", "ot100": "0h", "comidas": 0,
