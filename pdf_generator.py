@@ -120,7 +120,7 @@ class PDFGeneral(FPDF):
         self.set_y(-15)
         self.set_x(-70)
         self.set_font(fam, "I", 7)
-        self.cell(60, 10, "Realizado por CM_Carola", 0, 0, "R")
+        self.cell(60, 10, "Autora: Ana Carolina Martin", 0, 0, "R")
 
     # -------------------------------------------  
     # PORTADA ELEGANTE  
