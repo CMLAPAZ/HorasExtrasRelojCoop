@@ -4363,7 +4363,7 @@ def admin_ajuste_saldo():
             "SELECT legajo, nota, fecha_corte, saldo FROM francos_saldo_inicial"
         )}
     empleados = []
-    for s in sorted(saldos, key=lambda x: _legajo_key(x.get("legajo", ""))):
+    for s in sorted(saldos, key=_legajo_key):
         leg = str(s.get("legajo", ""))
         f = fsi_rows.get(leg, {})
         empleados.append({
