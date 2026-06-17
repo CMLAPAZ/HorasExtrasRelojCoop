@@ -650,7 +650,9 @@ def _seleccionar_francos_ventana_cierre(conn, pid, legajos, departamento, fecha_
     incluyen en `rows`.
 
     Devuelve (rows, fecha_corte_anterior, legacy):
-    - rows: filas (sqlite3.Row) de francos_tomados no anulados, de los
+    - rows: filas (sqlite3.Row) de francos_tomados no anulados y NO cerrados
+      todavía (un franco ya 'Cerrado' nunca se vuelve a incluir en un cierre
+      posterior, evitando duplicarlo en francos_cierre_detalle), de los
       `legajos` dados, con cargado_en dentro de la ventana, ordenadas por
       legajo y fecha_desde.
     - fecha_corte_anterior: corte normalizado del cierre anterior, o "".
@@ -674,7 +676,7 @@ def _seleccionar_francos_ventana_cierre(conn, pid, legajos, departamento, fecha_
 
     rows = conn.execute(f"""
         SELECT * FROM francos_tomados
-        WHERE COALESCE(estado,'') != 'Anulado'
+        WHERE COALESCE(estado,'') NOT IN ('Anulado', 'Cerrado')
           AND {_SQL_CARGADO_EN_NORM} != ''
           AND {_SQL_CARGADO_EN_NORM} <= ?
           {cond_inferior}
