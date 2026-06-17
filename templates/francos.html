@@ -94,30 +94,18 @@
       body.print-detalle .card-registros-f table{table-layout:fixed;width:100%;font-size:.72rem}
       body.print-detalle .card-registros-f td,
       body.print-detalle .card-registros-f th{padding:4px 5px;overflow:hidden;word-break:normal;overflow-wrap:break-word}
-      body.print-detalle .card-registros-f th:nth-child(12),
-      body.print-detalle .card-registros-f td:nth-child(12){display:none}
-      body.print-detalle .card-registros-f th:nth-child(1),
-      body.print-detalle .card-registros-f td:nth-child(1){display:none}
-      body.print-detalle .card-registros-f th:nth-child(2),
-      body.print-detalle .card-registros-f td:nth-child(2){width:5%}
-      body.print-detalle .card-registros-f th:nth-child(3),
-      body.print-detalle .card-registros-f td:nth-child(3){width:16%}
-      body.print-detalle .card-registros-f th:nth-child(4),
-      body.print-detalle .card-registros-f td:nth-child(4){width:6%}
-      body.print-detalle .card-registros-f th:nth-child(5),
-      body.print-detalle .card-registros-f td:nth-child(5){width:17%;word-break:break-all}
-      body.print-detalle .card-registros-f th:nth-child(6),
-      body.print-detalle .card-registros-f td:nth-child(6){width:5%}
-      body.print-detalle .card-registros-f th:nth-child(7),
-      body.print-detalle .card-registros-f td:nth-child(7){width:9%}
-      body.print-detalle .card-registros-f th:nth-child(8),
-      body.print-detalle .card-registros-f td:nth-child(8){width:8%}
-      body.print-detalle .card-registros-f th:nth-child(9),
-      body.print-detalle .card-registros-f td:nth-child(9){width:9%}
-      body.print-detalle .card-registros-f th:nth-child(10),
-      body.print-detalle .card-registros-f td:nth-child(10){width:16%}
-      body.print-detalle .card-registros-f th:nth-child(11),
-      body.print-detalle .card-registros-f td:nth-child(11){width:9%}
+      body.print-detalle .card-registros-f colgroup .col-print-hide{visibility:collapse}
+      body.print-detalle .card-registros-f colgroup col:nth-child(2){width:5%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(3){width:17%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(4){width:6%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(5){width:18%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(6){width:5%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(7){width:10%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(8){width:9%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(9){width:10%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(10){width:17%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(11){width:10%}
+      body.print-detalle .card-registros-f td:nth-child(5){word-break:break-all}
       body.print-detalle .card-registros-f .badge-dias,
       body.print-detalle .card-registros-f .badge-aprobado,
       body.print-detalle .card-registros-f .badge-pendiente,
@@ -498,7 +486,7 @@
   <div class="tabla-wrap">
     <table style="table-layout:fixed;width:100%;min-width:820px">
       <colgroup>
-        <col style="width:36px">
+        <col class="col-print-hide" style="width:36px">
         <col style="width:54px">
         <col style="width:140px">
         <col style="width:60px">
@@ -509,7 +497,7 @@
         <col style="width:90px">
         <col style="width:auto">
         <col style="width:76px">
-        <col style="width:90px">
+        <col class="col-print-hide" style="width:90px">
       </colgroup>
       <thead>
         <tr>
@@ -585,7 +573,7 @@
           </td>
         </tr>
         {% endfor %}
-        <tr style="background:#f0f4ff;font-weight:700;font-size:.8rem">
+        <tr class="fila-reg-f fila-subtot-reg-f" data-depto="{{ grupo.departamento }}" style="background:#f0f4ff;font-weight:700;font-size:.8rem">
           <td colspan="5" style="text-align:right;padding:4px 8px;color:#1e3a5f">
             Subtotal {{ grupo.departamento | upper }}
           </td>
@@ -790,6 +778,7 @@ function imprimirDetalleFrancos() {
   let cnt = 0, tot = 0;
   document.querySelectorAll('tr.fila-reg-f').forEach(tr => {
     if (tr.style.display === 'none') return;
+    if (tr.classList.contains('fila-subtot-reg-f')) return;
     if (tr.classList.contains('franco-cerrado') || tr.classList.contains('franco-anulado')) return;
     cnt++;
     tot += parseInt(tr.querySelector('.badge-dias')?.textContent || '0', 10) || 0;
