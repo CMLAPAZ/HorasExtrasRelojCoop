@@ -118,6 +118,10 @@
       body.print-detalle .card-registros-f td:nth-child(10){width:13%}
       body.print-detalle .card-registros-f th:nth-child(11),
       body.print-detalle .card-registros-f td:nth-child(11){width:6%}
+      body.print-detalle tr.franco-cerrado,
+      body.print-detalle tr.franco-anulado{display:none!important}
+      body.print-detalle thead{display:table-header-group}
+      body.print-detalle tr{page-break-inside:avoid}
     }
     tr.franco-anulado td { opacity:.45; text-decoration:line-through; }
     tr.franco-anulado td:last-child { text-decoration:none; }
@@ -480,10 +484,9 @@
 <div class="card card-registros-f">
   <div id="print-titulo-depto" style="display:none;font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:10px"></div>
   <div class="card-header">
-    <div class="card-title-inline">
-      Francos Registrados ({{ registros|length }})
-      {% set total_dias = registros | selectattr('estado','ne','Anulado') | selectattr('estado','ne','') | sum(attribute='dias') %}
-      &nbsp;—&nbsp;<strong>{{ registros | selectattr('estado','ne','Anulado') | sum(attribute='dias') }} días tomados</strong>
+    <div class="card-title-inline" id="titulo-registros-f">
+      Francos Registrados (<span id="cnt-registros-f">{{ registros|length }}</span>)
+      &nbsp;—&nbsp;<strong><span id="total-dias-f">{{ registros | selectattr('estado','ne','Anulado') | sum(attribute='dias') }}</span> días tomados</strong>
     </div>
     <button type="button" class="btn-print-f no-print" onclick="imprimirDetalleFrancos()">🖨 Imprimir detalle</button>
   </div>
@@ -774,9 +777,28 @@ function imprimirDetalleFrancos() {
   const dep = document.getElementById('filtro-depto-francos').value;
   const pt = document.getElementById('print-titulo-depto');
   if (pt && !pt.textContent) pt.textContent = dep && dep !== '__todos__' ? dep.toUpperCase() : 'TODOS LOS DEPARTAMENTOS';
+
+  const cntEl = document.getElementById('cnt-registros-f');
+  const totEl = document.getElementById('total-dias-f');
+  const cntOriginal = cntEl ? cntEl.textContent : null;
+  const totOriginal = totEl ? totEl.textContent : null;
+
+  let cnt = 0, tot = 0;
+  document.querySelectorAll('tr.fila-reg-f').forEach(tr => {
+    if (tr.style.display === 'none') return;
+    if (tr.classList.contains('franco-cerrado') || tr.classList.contains('franco-anulado')) return;
+    cnt++;
+    tot += parseInt(tr.querySelector('.badge-dias')?.textContent || '0', 10) || 0;
+  });
+  if (cntEl) cntEl.textContent = cnt;
+  if (totEl) totEl.textContent = tot;
+
   document.body.classList.add('print-detalle');
   window.print();
   document.body.classList.remove('print-detalle');
+
+  if (cntEl && cntOriginal !== null) cntEl.textContent = cntOriginal;
+  if (totEl && totOriginal !== null) totEl.textContent = totOriginal;
 }
 
 function imprimirSaldosFrancos() {
