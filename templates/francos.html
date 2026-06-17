@@ -545,7 +545,11 @@
           </td>
           <td><span class="badge-dias">{{ r.dias }}</span></td>
           <td>
-            {% if r.estado == 'Aprobado' %}
+            {% if r.estado == 'Cerrado' %}
+              <span class="badge-anulado" style="background:#dbeafe;color:#1e40af">Cerrado</span>
+            {% elif r.estado == 'Anulado' %}
+              <span class="badge-anulado">Anulado</span>
+            {% elif r.estado == 'Aprobado' %}
               <span class="badge-aprobado">Aprobado</span>
             {% else %}
               <span class="badge-pendiente">Pendiente</span>

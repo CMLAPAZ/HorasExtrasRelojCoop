@@ -4853,7 +4853,7 @@ def francos_pdf_depto():
                        ft.autorizado_por, ft.observaciones
                 FROM francos_tomados ft
                 WHERE ft.legajo IN ({ph})
-                  AND COALESCE(ft.estado,'') != 'Anulado'
+                  AND COALESCE(ft.estado,'') NOT IN ('Anulado', 'Cerrado')
                 ORDER BY CAST(ft.legajo AS INTEGER), ft.fecha_desde
             """, legajos).fetchall()
             depto_label = _nombre_departamento_visible(depto_norm)
@@ -4862,7 +4862,7 @@ def francos_pdf_depto():
                 SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta,
                        fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
                 FROM francos_tomados
-                WHERE COALESCE(estado,'') != 'Anulado'
+                WHERE COALESCE(estado,'') NOT IN ('Anulado', 'Cerrado')
                 ORDER BY CAST(legajo AS INTEGER), fecha_desde
             """).fetchall()
             depto_label = "Todos los departamentos"
