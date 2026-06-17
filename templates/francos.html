@@ -101,23 +101,27 @@
       body.print-detalle .card-registros-f th:nth-child(2),
       body.print-detalle .card-registros-f td:nth-child(2){width:5%}
       body.print-detalle .card-registros-f th:nth-child(3),
-      body.print-detalle .card-registros-f td:nth-child(3){width:14%}
+      body.print-detalle .card-registros-f td:nth-child(3){width:16%}
       body.print-detalle .card-registros-f th:nth-child(4),
-      body.print-detalle .card-registros-f td:nth-child(4){width:7%}
+      body.print-detalle .card-registros-f td:nth-child(4){width:6%}
       body.print-detalle .card-registros-f th:nth-child(5),
-      body.print-detalle .card-registros-f td:nth-child(5){width:24%;word-break:break-all}
+      body.print-detalle .card-registros-f td:nth-child(5){width:17%;word-break:break-all}
       body.print-detalle .card-registros-f th:nth-child(6),
-      body.print-detalle .card-registros-f td:nth-child(6){width:4%}
+      body.print-detalle .card-registros-f td:nth-child(6){width:5%}
       body.print-detalle .card-registros-f th:nth-child(7),
-      body.print-detalle .card-registros-f td:nth-child(7){width:8%}
+      body.print-detalle .card-registros-f td:nth-child(7){width:9%}
       body.print-detalle .card-registros-f th:nth-child(8),
-      body.print-detalle .card-registros-f td:nth-child(8){width:7%}
+      body.print-detalle .card-registros-f td:nth-child(8){width:8%}
       body.print-detalle .card-registros-f th:nth-child(9),
-      body.print-detalle .card-registros-f td:nth-child(9){width:8%}
+      body.print-detalle .card-registros-f td:nth-child(9){width:9%}
       body.print-detalle .card-registros-f th:nth-child(10),
-      body.print-detalle .card-registros-f td:nth-child(10){width:13%}
+      body.print-detalle .card-registros-f td:nth-child(10){width:16%}
       body.print-detalle .card-registros-f th:nth-child(11),
-      body.print-detalle .card-registros-f td:nth-child(11){width:6%}
+      body.print-detalle .card-registros-f td:nth-child(11){width:9%}
+      body.print-detalle .card-registros-f .badge-dias,
+      body.print-detalle .card-registros-f .badge-aprobado,
+      body.print-detalle .card-registros-f .badge-pendiente,
+      body.print-detalle .card-registros-f .badge-anulado{padding:1px 3px;font-size:.68rem}
       body.print-detalle tr.franco-cerrado,
       body.print-detalle tr.franco-anulado{display:none!important}
       body.print-detalle thead{display:table-header-group}
@@ -793,9 +797,15 @@ function imprimirDetalleFrancos() {
   if (cntEl) cntEl.textContent = cnt;
   if (totEl) totEl.textContent = tot;
 
+  const estiloLandscape = document.createElement('style');
+  estiloLandscape.id = 'estilo-landscape-francos';
+  estiloLandscape.textContent = '@page{size:landscape;margin:5mm}';
+  document.head.appendChild(estiloLandscape);
+
   document.body.classList.add('print-detalle');
   window.print();
   document.body.classList.remove('print-detalle');
+  estiloLandscape.remove();
 
   if (cntEl && cntOriginal !== null) cntEl.textContent = cntOriginal;
   if (totEl && totOriginal !== null) totEl.textContent = totOriginal;
