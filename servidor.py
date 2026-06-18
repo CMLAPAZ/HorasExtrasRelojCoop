@@ -1450,6 +1450,21 @@ def _cargar_excluidos_ot():
     except Exception:
         return set()
 
+def _cargar_francos_deptos_ocultos():
+    """Deptos cuyo módulo de Francos está oculto temporalmente (ver
+    recursos/francos_deptos_ocultos.json). El depto sigue existiendo en el
+    sistema (empleados, histórico); solo se excluye de pantallas, formularios
+    de carga, cierres nuevos e informes de francos."""
+    ruta = Path("recursos/francos_deptos_ocultos.json")
+    try:
+        deptos = json.loads(ruta.read_text(encoding="utf-8")).get("departamentos", [])
+        return {_normalizar_departamento_web(d) for d in deptos}
+    except Exception:
+        return set()
+
+def _depto_francos_oculto(depto):
+    return _normalizar_departamento_web(depto or "") in _cargar_francos_deptos_ocultos()
+
 _OBS_EXCLUIDO_OT = "Horas registradas para control. No se liquidan para pago."
 
 def _aplicar_exclusiones_ot(empleados):
@@ -3006,7 +3021,8 @@ def periodos_historial():
             else:
                 c["total_registros"] = 0
     deptos_conocidos = sorted({
-        e["departamento"] for e in _empleados_conocidos() if e["departamento"]
+        e["departamento"] for e in _empleados_conocidos()
+        if e["departamento"] and not _depto_francos_oculto(e["departamento"])
     })
     return render_template("periodos_historial.html", cierres=cierres,
                            cierres_francos=cierres_francos,
@@ -3020,6 +3036,8 @@ def francos_cierre_nuevo():
     fecha_hasta  = request.form.get("fecha_hasta", "").strip()
     if not departamento or not fecha_hasta:
         return jsonify({"error": "Completá departamento y fecha."}), 400
+    if _depto_francos_oculto(departamento):
+        return jsonify({"error": "Francos de este departamento está oculto temporalmente."}), 400
     depto_visible = _nombre_departamento_visible(departamento)
     ahora = datetime.now().isoformat()
     with _get_db() as conn:
@@ -4718,14 +4736,14 @@ def francos():
         dep = r["departamento"] or "Sin departamento"
         _reg_dict.setdefault(dep, []).append(r)
     registros_por_depto = sorted(
-        [{"departamento": k, "registros": v} for k, v in _reg_dict.items()],
+        [{"departamento": k, "registros": v} for k, v in _reg_dict.items() if not _depto_francos_oculto(k)],
         key=lambda x: x["departamento"].lower()
     )
     empleados_por_depto = {}
     for e in empleados_raw:
         dep = e["departamento"] or "Sin departamento"
         empleados_por_depto.setdefault(dep, []).append(e)
-    empleados_grupos = [{"departamento": k, "empleados": v} for k, v in sorted(empleados_por_depto.items())]
+    empleados_grupos = [{"departamento": k, "empleados": v} for k, v in sorted(empleados_por_depto.items()) if not _depto_francos_oculto(k)]
     saldos_raw = _calcular_saldos()
     sf_grupos = {}
     for s in saldos_raw:
@@ -4733,6 +4751,8 @@ def francos():
         sf_grupos.setdefault(dep, []).append(s)
     saldos_por_depto_f = []
     for k, v in sorted(sf_grupos.items()):
+        if _depto_francos_oculto(k):
+            continue
         saldos_por_depto_f.append({
             "departamento":    k,
             "empleados":       v,
@@ -4747,13 +4767,13 @@ def francos():
         "tomados":   sum(g["total_tomados"]   for g in saldos_por_depto_f),
         "actual":    sum(g["total_actual"]    for g in saldos_por_depto_f),
     }
-    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"]})
+    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"] and not _depto_francos_oculto(e["departamento"])})
     # Deptos manuales con valores guardados por semana/mes
     mes_actual = datetime.now().strftime("%Y-%m")
     with _get_db() as conn:
         gen_manual = [dict(r) for r in conn.execute(
             "SELECT * FROM francos_generados ORDER BY cargado_en DESC, id DESC"
-        )]
+        ) if not _depto_francos_oculto(r["departamento"])]
         emps_extra = conn.execute(
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1 ORDER BY departamento, CAST(legajo AS INTEGER)"
         ).fetchall()
@@ -4766,7 +4786,7 @@ def francos():
     deptos_manuales = {}
     for e in emps_extra:
         dep_norm = _normalizar_departamento_web(e["departamento"] or "")
-        if dep_norm in _DEPTOS_AUTO:
+        if dep_norm in _DEPTOS_AUTO or _depto_francos_oculto(e["departamento"]):
             continue
         dep = e["departamento"] or "Sin departamento"
         deptos_manuales.setdefault(dep, []).append({

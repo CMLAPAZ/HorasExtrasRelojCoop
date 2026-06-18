@@ -28,6 +28,7 @@ REPORTES     = BASE_DIR / "reportes"
 FONTS_DIR    = BASE_DIR / "recursos" / "fonts"
 EMAIL_CFG        = BASE_DIR / "config_email.json"
 NO_ENVIAR_FILE   = BASE_DIR / "recursos" / "no_enviar_reportes.json"
+DEPTOS_OCULTOS_FILE = BASE_DIR / "recursos" / "francos_deptos_ocultos.json"
 
 FONT_REG  = FONTS_DIR / "DejaVuSans.ttf"
 FONT_BOLD = FONTS_DIR / "DejaVuSans-Bold.ttf"
@@ -58,6 +59,19 @@ def _leer_no_enviar_reportes():
         return set(str(x) for x in json.loads(
             NO_ENVIAR_FILE.read_text(encoding="utf-8")
         ).get("legajos", []))
+    except Exception:
+        return set()
+
+
+def _leer_deptos_ocultos():
+    """Deptos cuyo módulo de Francos está oculto temporalmente
+    (ver recursos/francos_deptos_ocultos.json) — no se generan ni envían
+    sus reportes semanales."""
+    try:
+        deptos = json.loads(
+            DEPTOS_OCULTOS_FILE.read_text(encoding="utf-8")
+        ).get("departamentos", [])
+        return {clave_canonica(d) for d in deptos}
     except Exception:
         return set()
 
@@ -634,8 +648,11 @@ def main():
 
     # Agrupar por departamento (s["departamento"] ya viene normalizado a su
     # nombre visible canónico desde _calcular_saldos -> nombre_visible())
+    deptos_ocultos = _leer_deptos_ocultos()
     por_depto  = {}
     for s in saldos:
+        if clave_canonica(s["departamento"]) in deptos_ocultos:
+            continue
         por_depto.setdefault(s["departamento"], []).append(s)
 
     # Versión filtrada para envío externo (excluye no_enviar_reportes.json)
