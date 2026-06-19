@@ -142,7 +142,7 @@
   <!-- Encabezado para impresión -->
   <div class="print-block">
     <div>
-      <h2>INFORME DE CIERRE — Semanas {{ semanas|join(', ') }}</h2>
+      <h2>INFORME DE CIERRE — {{ departamento }} — Semanas {{ semanas|join(', ') }}</h2>
       {% if fecha_desde %}<p>Periodo: {{ fecha_desde }} al {{ fecha_hasta }}</p>{% endif %}
       <p>Cerrado: {{ cerrado_en }}</p>
     </div>
@@ -153,7 +153,7 @@
   </div>
 
   <div class="page-heading">
-    <div class="eyebrow">Cierre #{{ pid }}</div>
+    <div class="eyebrow">Cierre #{{ pid }} — {{ departamento }}</div>
     <h1>Informe de cierre</h1>
     <div class="subtitle">Semanas {{ semanas|join(', ') }} — Cerrado {{ cerrado_en }}</div>
     <div class="heading-actions">

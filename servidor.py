@@ -3366,6 +3366,8 @@ def periodos_ver(pid):
         d["confirmado"] = bool(d["confirmado"])
         empleados.append(d)
     semanas = sorted({s for e in empleados for s in e.get("semanas", [])})
+    deptos_cierre = sorted({e["departamento"] for e in empleados if e.get("departamento")})
+    departamento = deptos_cierre[0] if len(deptos_cierre) == 1 else "Todos los departamentos"
     fd = p["fecha_desde"] or ""
     fh = p["fecha_hasta"] or ""
     francos_cierre = []
@@ -3389,6 +3391,7 @@ def periodos_ver(pid):
         francos_cierre.append(d)
     return render_template("periodo_detalle.html",
                            pid=pid,
+                           departamento=departamento,
                            cerrado_en=(p["cerrado_en"] or "")[:16].replace("T", " "),
                            fecha_desde=fd,
                            fecha_hasta=fh,
