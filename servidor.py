@@ -1666,6 +1666,13 @@ def index():
     return render_template("supervisor.html")
 
 
+@app.route("/manual")
+def manual_usuario():
+    if not _autenticado(): return _requiere_auth()
+    ruta = Path(__file__).parent / "manual_usuario.html"
+    return send_file(ruta, mimetype="text/html")
+
+
 @app.route("/telefonos/upload", methods=["POST"])
 def telefonos_upload():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
