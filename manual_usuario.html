@@ -247,7 +247,7 @@ li{margin-bottom:5px;font-size:.9rem}
     <div style="margin-top:16px">
       <div class="info-pill"><strong>Dirección web</strong><span>cmhoras.pythonanywhere.com</span></div>
       <div class="info-pill"><strong>Ante dudas</strong><span>Consultar a Carola</span></div>
-      <div class="info-pill"><strong>Actualizado</strong><span>Junio 2026</span></div>
+      <div class="info-pill"><strong>Actualizado</strong><span>19 de junio de 2026</span></div>
     </div>
   </div>
 
@@ -284,9 +284,10 @@ li{margin-bottom:5px;font-size:.9rem}
       <p style="font-size:.88rem">Los francos se cargan a mano desde el formulario web.</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
         <span class="badge b-g">Guardias</span>
-        <span class="badge b-in">Internet</span>
+        <span class="badge b-in">Internet*</span>
         <span class="badge b-t">Telefonía</span>
       </div>
+      <p style="font-size:.76rem;color:var(--mut);margin-top:8px">*Internet sigue existiendo en el sistema pero su módulo de Francos está <strong>oculto temporalmente</strong> (sus francos se manejan por afuera por ahora). Ver detalle en <a href="#sin-fichadas" style="color:var(--acc)">Departamentos sin fichadas</a>.</p>
     </div>
   </div>
 </section>
@@ -402,7 +403,7 @@ li{margin-bottom:5px;font-size:.9rem}
           <div class="tl-dot d-g"></div>
           <div class="tl-lbl l-g">Viernes (automático)</div>
           <div class="tl-cnt">Reporte de saldos de francos</div>
-          <div class="tl-note">El sistema lo envía solo por email. No hace falta hacer nada.</div>
+          <div class="tl-note">Corre en el servidor en la nube y se envía solo por email. No hace falta hacer nada ni dejar ninguna PC prendida.</div>
         </div>
       </div>
     </div>
@@ -564,9 +565,9 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><strong>Supervisor</strong></td><td>Pantalla principal. Desde acá cargás fichadas y ves las semanas.</td></tr>
         <tr><td><strong>Períodos</strong></td><td>Para cerrar el mes y ver los cierres anteriores.</td></tr>
         <tr><td><strong>Francos</strong></td><td>Para registrar cuando alguien toma un franco y ver los saldos.</td></tr>
-        <tr><td><strong>Historial</strong></td><td>Lista de confirmaciones recibidas de los empleados.</td></tr>
-        <tr><td><strong>Acumulado</strong></td><td>Resumen de horas extra por empleado a lo largo del tiempo.</td></tr>
         <tr><td><strong>Cierres</strong></td><td>Historial de todos los cierres mensuales realizados.</td></tr>
+        <tr><td><strong>Historial</strong></td><td>Lista de confirmaciones recibidas de los empleados (incluye el acumulado de horas extra por empleado y semana).</td></tr>
+        <tr><td><strong>Admin ▾</strong></td><td>Menú desplegable con tareas administrativas: <strong>Empleados extra</strong> (importar empleados sin fichadas), <strong>Config. Email</strong> (SMTP y supervisores) y <strong>Ajuste saldo inicial</strong> (corrección manual de saldo, ver sección <a href="#no-tocar" style="color:var(--acc)">Qué NO tocar</a>).</td></tr>
         <tr><td><strong>Salir</strong></td><td>Cerrar sesión.</td></tr>
       </tbody>
     </table>
@@ -848,6 +849,12 @@ li{margin-bottom:5px;font-size:.9rem}
     <div class="a-body"><strong>El reporte semanal de francos se envía solo</strong>
     Todos los viernes, el sistema manda automáticamente por email un reporte de saldos de francos a los supervisores. No tenés que hacer nada para eso.</div>
   </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>No hace falta que ninguna PC esté prendida</strong>
+    Este envío corre en el servidor en la nube (PythonAnywhere), no en una computadora de la oficina. Aunque todas las PCs estén apagadas, el reporte sale igual los viernes. (Antes existía una tarea programada en una PC con Windows para esto, pero está deshabilitada desde el 29/05/2026 — ya no se usa.)</div>
+  </div>
 </section>
 
 <!-- ── DEPTOS SIN FICHADAS ── -->
@@ -868,9 +875,15 @@ li{margin-bottom:5px;font-size:.9rem}
     Guardias, Internet y Telefonía no tienen reloj biométrico. Sus francos se cargan manualmente desde el formulario web.</div>
   </div>
 
+  <div class="alert a-warn">
+    <span class="a-ico">⚠️</span>
+    <div class="a-body"><strong>Internet — módulo de Francos oculto temporalmente (desde 18/06/2026)</strong>
+    Internet calcula sus francos por horas y por ahora se complicaba seguirlo dentro del sistema, así que se maneja "por afuera" hasta que se resuelva. El departamento y sus empleados siguen existiendo en el sistema, pero <strong>no aparece</strong> en la pantalla de Francos (ni en formularios de carga, cierres nuevos de francos, o informes de saldos). Si necesitás reactivarlo, consultá a Carola — se reactiva editando <code>recursos/francos_deptos_ocultos.json</code>, sin tocar código.</div>
+  </div>
+
   <div class="card">
     <div class="card-ttl">Cómo se cargan sus francos</div>
-    <p>Para estos departamentos, los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
+    <p>Para Guardias y Telefonía, los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
     <p>Si te piden cargar datos de estos departamentos, seguí las instrucciones específicas que te dé Carola.</p>
   </div>
 
@@ -1165,6 +1178,12 @@ li{margin-bottom:5px;font-size:.9rem}
     <div class="a-body"><strong>Los cierres no se pueden modificar</strong>
     Un cierre en estado "ACTIVO" es permanente. Si hay un error grave, Carola puede anularlo, pero es un proceso especial que no debe hacerse sin revisión.</div>
   </div>
+
+  <div class="card">
+    <div class="card-ttl">Informe mensual combinado</div>
+    <p>Desde la pantalla de "Cierres" se puede generar un único PDF con los cierres de <strong>todos los departamentos de un mes</strong>, con salto de página entre cada uno.</p>
+    <p>Sirve para tener un solo archivo con todo lo cerrado ese mes, en vez de descargar el informe completo de cada departamento por separado.</p>
+  </div>
 </section>
 
 <!-- ── APP LOCAL ── -->
@@ -1317,6 +1336,7 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><strong class="txt-dan">Restaurar confirmaciones</strong></td><td>Modifica el estado interno del sistema. Solo para emergencias.</td></tr>
         <tr><td><strong class="txt-dan">Recortar semana</strong></td><td>Elimina datos de una semana. No se puede deshacer fácilmente.</td></tr>
         <tr><td><strong class="txt-dan">Anular cierre</strong></td><td>Revierte un cierre mensual. Afecta todos los saldos calculados.</td></tr>
+        <tr><td><strong class="txt-dan">Ajuste de saldo inicial (menú Admin)</strong></td><td>Fuerza manualmente el saldo de francos de un empleado, pisando el cálculo automático. Solo Carola debe usarlo, y siempre con un motivo claro.</td></tr>
         <tr><td><strong class="txt-dan">Configuración de email</strong></td><td>Si se configura mal, los reportes automáticos dejan de llegar.</td></tr>
         <tr><td><strong class="txt-dan">PythonAnywhere</strong></td><td>Es el servidor donde vive el sistema. Cualquier cambio puede tirar la app.</td></tr>
         <tr><td><strong class="txt-dan">Eliminar semana</strong></td><td>Borra todos los datos de esa semana: tokens, confirmaciones, fichadas.</td></tr>
