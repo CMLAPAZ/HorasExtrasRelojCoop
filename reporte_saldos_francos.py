@@ -100,38 +100,53 @@ def _calcular_saldos():
     """
     Devuelve lista de dicts por empleado con saldo calculado.
     Combina: periodo_empleados (DB) + francos_generados (DB) + sesion.json.
+
+    Usa el mismo netado por fecha_corte/tomados_al_corte/gen_extra_al_corte que
+    servidor.py::_calcular_saldos(), para que un franco ya 'Cerrado' (volcado a
+    saldo_inicial en un cierre anterior) no se vuelva a restar de nuevo. El
+    detalle de francos tomados que se muestra en el PDF/mail excluye los ya
+    'Cerrado' o 'Anulado': solo refleja los francos vigentes sin cerrar.
     """
     sesion = _leer_sesion()
 
     iniciales_db        = {}
-    gen_periodos        = {}
+    gen_periodos_filas   = []
     gen_manual          = {}
-    tomados_db          = {}
+    tomados_raw         = {}
     detalle_tomados_db  = {}
     emps_db             = {}
 
     if DB_FILE.exists():
         with _get_db() as conn:
-            for r in conn.execute("SELECT legajo, saldo FROM francos_saldo_inicial"):
-                iniciales_db[str(r["legajo"])] = r["saldo"]
             for r in conn.execute(
-                "SELECT pe.legajo, SUM(pe.francos) as total FROM periodo_empleados pe "
-                "JOIN periodos p ON pe.periodo_id = p.id "
-                "WHERE p.fecha_hasta > '2026-05-21' GROUP BY pe.legajo"
+                "SELECT legajo, saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte "
+                "FROM francos_saldo_inicial"
             ):
-                gen_periodos[str(r["legajo"])] = r["total"] or 0
+                iniciales_db[str(r["legajo"])] = {
+                    "saldo":              r["saldo"] or 0,
+                    "tomados_al_corte":   r["tomados_al_corte"]   or 0,
+                    "gen_extra_al_corte": r["gen_extra_al_corte"] or 0,
+                    "fecha_corte":        r["fecha_corte"] or "2026-05-21",
+                }
+            gen_periodos_filas = conn.execute(
+                "SELECT pe.legajo, pe.francos, p.fecha_hasta FROM periodo_empleados pe "
+                "JOIN periodos p ON pe.periodo_id = p.id "
+                "WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'"
+            ).fetchall()
             for r in conn.execute(
                 "SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo"
             ):
                 gen_manual[str(r["legajo"])] = r["total"] or 0
             for r in conn.execute(
-                "SELECT legajo, SUM(dias) as total FROM francos_tomados GROUP BY legajo"
+                "SELECT legajo, SUM(dias) as total FROM francos_tomados "
+                "WHERE COALESCE(estado,'') != 'Anulado' GROUP BY legajo"
             ):
-                tomados_db[str(r["legajo"])] = r["total"] or 0
-            detalle_tomados_db = {}
+                tomados_raw[str(r["legajo"])] = r["total"] or 0
             for r in conn.execute(
                 "SELECT legajo, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones "
-                "FROM francos_tomados ORDER BY fecha_desde, id"
+                "FROM francos_tomados "
+                "WHERE COALESCE(estado,'') NOT IN ('Anulado','Cerrado') "
+                "ORDER BY fecha_desde, id"
             ):
                 leg = str(r["legajo"])
                 detalle_tomados_db.setdefault(leg, []).append({k: r[k] for k in r.keys()})
@@ -166,6 +181,15 @@ def _calcular_saldos():
             except Exception:
                 pass
 
+    # Generados por períodos cerrados, filtrado por fecha_corte de cada empleado
+    # (no por una fecha fija) para no contar de nuevo lo ya volcado a saldo_inicial.
+    gen_periodos = {}
+    for row in gen_periodos_filas:
+        leg   = str(row["legajo"])
+        corte = iniciales_db.get(leg, {}).get("fecha_corte", "2026-05-21")
+        if (row["fecha_hasta"] or "") > corte:
+            gen_periodos[leg] = gen_periodos.get(leg, 0) + (row["francos"] or 0)
+
     gen_sesion = {}
     emps_ses   = {}
     for d in sesion.values():
@@ -183,9 +207,15 @@ def _calcular_saldos():
 
     resultado = []
     for leg, info in todos.items():
-        si  = iniciales_db.get(leg, 0)
-        gen = gen_periodos.get(leg, 0) + gen_manual.get(leg, 0) + gen_sesion.get(leg, 0)
-        tom = tomados_db.get(leg, 0)
+        ini      = iniciales_db.get(leg, {"saldo": 0, "tomados_al_corte": 0, "gen_extra_al_corte": 0})
+        si       = ini["saldo"]
+        t_corte  = ini["tomados_al_corte"]
+        ge_corte = ini["gen_extra_al_corte"]
+
+        gen_extra_total = gen_manual.get(leg, 0) + gen_sesion.get(leg, 0)
+        gen = gen_periodos.get(leg, 0) + max(0, gen_extra_total - ge_corte)
+        tom = max(0, tomados_raw.get(leg, 0) - t_corte)
+
         resultado.append({
             "legajo":           leg,
             "nombre":           info["nombre"],
