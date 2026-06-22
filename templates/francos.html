@@ -564,13 +564,13 @@
           <td style="font-size:.82rem;color:#64748b">{{ r.autorizado_por or '—' }}</td>
           <td style="font-size:.82rem;color:#64748b">{{ r.observaciones }}</td>
           <td style="font-size:.78rem;color:#94a3b8">{{ r.cargado_en[:10] if r.cargado_en else '' }}</td>
-          <td style="white-space:nowrap">
+          <td style="white-space:nowrap;overflow:visible;text-overflow:clip">
             {% if r.estado == 'Cerrado' %}
               <span class="badge-anulado" style="background:#dbeafe;color:#1e40af">Cerrado</span>
               <form method="post" action="/francos/anular-cerrado/{{ r.id }}" onsubmit="return confirmarAnulacionCerrado(this)" style="display:inline">
                 <input type="hidden" name="motivo" value="">
                 <input type="hidden" name="usuario" value="">
-                <button type="submit" class="btn-del" style="background:#fef3c7;border-color:#fde68a;color:#92400e">↺ Anular y devolver</button>
+                <button type="submit" class="btn-del" style="background:#fef3c7;border-color:#fde68a;color:#92400e;white-space:nowrap">↺ Anular y devolver</button>
               </form>
             {% elif r.estado == 'Anulado' %}
               <span class="badge-anulado">Anulado</span>
