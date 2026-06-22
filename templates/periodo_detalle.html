@@ -71,6 +71,7 @@
     .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-dias{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .info-box{border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;font-size:.88rem;font-weight:700;margin-bottom:12px}
     .depto-header-ft td{background:#1e3a5f;color:#e0eaf8;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:9px 10px}
     .btn-impr{height:34px;padding:0 14px;background:#0f5132;color:#fff;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer}
     .btn-impr:hover{background:#166534}
@@ -236,6 +237,46 @@
               <td style="font-size:.82rem;color:#64748b">{{ r.fecha_emision or '—' }}</td>
               <td style="font-size:.82rem;color:#64748b">{{ r.autorizado_por or '—' }}</td>
               <td style="font-size:.82rem;color:#64748b">{{ r.observaciones or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+{% if devoluciones %}
+  <div class="card" id="card-devoluciones">
+    <div class="card-header">
+      <span class="card-title">Movimientos compensatorios de este cierre</span>
+    </div>
+    <div class="info-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">
+      Devolución por anulación de francos cerrados: +{{ devoluciones | sum(attribute='dias') }}
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Legajo</th><th>Nombre</th><th>Tipo</th>
+            <th>Fechas liberadas</th><th>Días devueltos</th>
+            <th>Motivo</th><th>Anulado por</th><th>Fecha anulación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devoluciones %}
+            <tr>
+              <td>{{ d.legajo }}</td>
+              <td>{{ d.nombre }}</td>
+              <td style="font-size:.78rem;color:#64748b">{{ d.tipo }}</td>
+              <td style="font-size:.82rem">
+                {% if d.tipo == 'UNICO' %}{{ d.fecha_desde }}
+                {% elif d.tipo == 'RANGO' %}{{ d.fecha_desde }} → {{ d.fecha_hasta }}
+                {% else %}{{ d.fechas_sueltas }}{% endif %}
+              </td>
+              <td><span class="badge-dias" style="background:#dcfce7;color:#166534">+{{ d.dias }}</span></td>
+              <td style="font-size:.82rem;color:#64748b">{{ d.motivo }}</td>
+              <td style="font-size:.82rem;color:#64748b">{{ d.usuario or '—' }}</td>
+              <td style="font-size:.78rem;color:#94a3b8">{{ d.anulado_en[:16].replace('T',' ') if d.anulado_en else '' }}</td>
             </tr>
           {% endfor %}
         </tbody>

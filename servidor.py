@@ -153,6 +153,9 @@ def _init_db():
         for col in (
             "fecha_emision TEXT DEFAULT ''",
             "autorizado_por TEXT DEFAULT ''",
+            "fecha_anulacion TEXT DEFAULT ''",
+            "motivo_anulacion TEXT DEFAULT ''",
+            "usuario_anulacion TEXT DEFAULT ''",
         ):
             try:
                 conn.execute(f"ALTER TABLE francos_tomados ADD COLUMN {col}")
@@ -271,6 +274,26 @@ def _init_db():
                 fecha_hasta   TEXT NOT NULL,
                 total_dias    INTEGER DEFAULT 0,
                 estado        TEXT NOT NULL DEFAULT 'ACTIVO'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_anulaciones_cerrados (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                francos_tomados_id  INTEGER NOT NULL,
+                legajo              TEXT NOT NULL,
+                nombre              TEXT NOT NULL,
+                departamento        TEXT NOT NULL DEFAULT '',
+                tipo                TEXT NOT NULL,
+                fecha_desde         TEXT DEFAULT '',
+                fecha_hasta         TEXT DEFAULT '',
+                fechas_sueltas      TEXT DEFAULT '[]',
+                dias                INTEGER NOT NULL,
+                motivo              TEXT NOT NULL,
+                usuario             TEXT DEFAULT '',
+                anulado_en          TEXT NOT NULL,
+                periodo_origen_id   INTEGER,
+                periodo_aplicado_id INTEGER,
+                aplicado_en         TEXT DEFAULT ''
             )
         """)
         conn.commit()
@@ -726,10 +749,35 @@ def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=
             (r["id"],)
         )
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
-    _generar_pdf_francos_cierre(pid, francos_list, fecha_corte)
+
+    # Movimientos compensatorios: devoluciones por francos anulados de cierres
+    # anteriores, todavía no incluidas en ningún cierre posterior. No suman al
+    # cálculo de saldo (eso ya ocurrió al anular) -- son solo la constancia
+    # de que la devolución figura en este cierre.
+    devoluciones = []
+    legajos_norm = [str(l) for l in (legajos or [])]
+    if legajos_norm:
+        ph = ",".join("?" * len(legajos_norm))
+        devoluciones = conn.execute(f"""
+            SELECT * FROM francos_anulaciones_cerrados
+            WHERE periodo_aplicado_id IS NULL AND legajo IN ({ph})
+            ORDER BY CAST(legajo AS INTEGER), anulado_en
+        """, legajos_norm).fetchall()
+        if devoluciones:
+            ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ids = [d["id"] for d in devoluciones]
+            ph_ids = ",".join("?" * len(ids))
+            conn.execute(
+                f"UPDATE francos_anulaciones_cerrados SET periodo_aplicado_id=?, aplicado_en=? WHERE id IN ({ph_ids})",
+                (pid, ahora_str, *ids)
+            )
+    devoluciones_list = [dict(d) for d in devoluciones]
+
+    _generar_pdf_francos_cierre(pid, francos_list, fecha_corte, devoluciones=devoluciones_list)
+    return devoluciones_list
 
 
-def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, escribir_archivo=True):
+def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, escribir_archivo=True, devoluciones=None):
     """Genera PDF con detalle de francos tomados para el cierre.
 
     `fecha_corte` es la fecha/hora REAL de cierre (periodos.cerrado_en) y se
@@ -835,6 +883,40 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
         pdf.cell(ANCHOS[4], 7, str(total_dias), 1, 0, "C", fill=True)
         pdf.cell(sum(ANCHOS[5:]), 7, "", 1, 1, "C", fill=True)
         pdf.set_text_color(0, 0, 0)
+
+        if devoluciones:
+            pdf.ln(3)
+            if pdf.get_y() + 14 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+            pdf.set_font(f, "B", 9)
+            pdf.cell(0, 7, "MOVIMIENTOS COMPENSATORIOS", ln=1)
+            pdf.set_font(f, "", 8)
+            total_dev = 0
+            for d in devoluciones:
+                if pdf.get_y() + 6 > pdf.h - pdf.b_margin:
+                    pdf.add_page()
+                dias_dev = d.get("dias", 0) or 0
+                total_dev += dias_dev
+                tipo = d.get("tipo", "")
+                if tipo == "RANGO":
+                    fechas = f"{d.get('fecha_desde','')} → {d.get('fecha_hasta','')}"
+                elif tipo == "SUELTAS":
+                    try:
+                        fechas = ", ".join(json.loads(d.get("fechas_sueltas") or "[]"))
+                    except Exception:
+                        fechas = ""
+                else:
+                    fechas = d.get("fecha_desde", "")
+                pdf.set_text_color(0, 120, 0)
+                texto = (f"  {d.get('legajo','')} - {d.get('nombre','')}: "
+                         f"Devolución por anulación de franco cerrado ({fechas}) "
+                         f"+{dias_dev} — Motivo: {d.get('motivo','')}")
+                pdf.multi_cell(0, 5, texto)
+                pdf.set_text_color(0, 0, 0)
+            pdf.set_font(f, "B", 8)
+            pdf.set_text_color(0, 120, 0)
+            pdf.cell(0, 6, f"  Total devolución por anulación de francos cerrados: +{total_dev}", ln=1)
+            pdf.set_text_color(0, 0, 0)
 
         if escribir_archivo:
             Path("reportes").mkdir(exist_ok=True)
@@ -3408,6 +3490,12 @@ def periodos_ver(pid):
         else:
             d["fechas_lista"] = []
         francos_cierre.append(d)
+    with _get_db() as conn3:
+        devoluciones = [dict(r) for r in conn3.execute(
+            "SELECT * FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id=? "
+            "ORDER BY CAST(legajo AS INTEGER)",
+            (pid,)
+        ).fetchall()]
     return render_template("periodo_detalle.html",
                            pid=pid,
                            departamento=departamento,
@@ -3417,6 +3505,7 @@ def periodos_ver(pid):
                            semanas=semanas,
                            empleados=empleados,
                            francos_cierre=francos_cierre,
+                           devoluciones=devoluciones,
                            firma=FIRMA_SUPERVISOR)
 
 
@@ -3732,6 +3821,46 @@ def _generar_pdf_cierre_completo(pid):
             pdf.cell(ANCH_F[5], 6, ft.get("estado",""),             1, 0, "C")
             pdf.cell(ANCH_F[6], 6, ft.get("observaciones","") or "", 1, 1, "L")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 5: Movimientos compensatorios (devoluciones de francos cerrados
+    # anulados antes de este cierre) — no modifica cierres anteriores, solo
+    # constancia de que la devolución figura en este cierre.
+    # ══════════════════════════════════════════════════════════════════════
+    with _get_db() as conn:
+        devoluciones = [dict(r) for r in conn.execute(
+            "SELECT * FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id=? "
+            "ORDER BY CAST(legajo AS INTEGER)",
+            (pid,)
+        ).fetchall()]
+    if devoluciones:
+        pdf.ln(5)
+        titulo_seccion("MOVIMIENTOS COMPENSATORIOS")
+        pdf.set_font(fam, "", 8)
+        total_dev = 0
+        for d in devoluciones:
+            check_pag()
+            dias_dev = d.get("dias", 0) or 0
+            total_dev += dias_dev
+            tipo = d.get("tipo", "")
+            if tipo == "RANGO":
+                fechas = f"{d.get('fecha_desde','')} → {d.get('fecha_hasta','')}"
+            elif tipo == "SUELTAS":
+                try:
+                    fechas = ", ".join(json.loads(d.get("fechas_sueltas") or "[]"))
+                except Exception:
+                    fechas = ""
+            else:
+                fechas = d.get("fecha_desde", "")
+            pdf.set_text_color(0, 120, 0)
+            pdf.multi_cell(0, 5,
+                f"  {d.get('legajo','')} - {d.get('nombre','')}: Devolución por anulación de "
+                f"franco cerrado ({fechas}) +{dias_dev} — Motivo: {d.get('motivo','')}")
+            pdf.set_text_color(0, 0, 0)
+        pdf.set_font(fam, "B", 8)
+        pdf.set_text_color(0, 120, 0)
+        pdf.cell(0, 6, f"  Total devolución por anulación de francos cerrados: +{total_dev}", ln=1)
+        pdf.set_text_color(0, 0, 0)
+
     raw = pdf.output(dest="S")
     return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
 
@@ -3848,11 +3977,17 @@ def periodos_francos_pdf(pid):
             WHERE periodo_id=?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
         """, (pid,)).fetchall()
+        devoluciones = conn.execute(
+            "SELECT * FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id=? ORDER BY CAST(legajo AS INTEGER)",
+            (pid,)
+        ).fetchall()
     fecha_corte = _normalizar_cargado_en(p["cerrado_en"] or "")
     hoy = datetime.now().strftime("%Y-%m-%d")
     francos_list = [dict(r) for r in francos]
+    devoluciones_list = [dict(d) for d in devoluciones]
     pdf_bytes = _generar_pdf_francos_cierre(pid, francos_list, fecha_corte,
-                                             reimpreso_el=hoy, escribir_archivo=False)
+                                             reimpreso_el=hoy, escribir_archivo=False,
+                                             devoluciones=devoluciones_list)
     if pdf_bytes is None:
         return "Error generando PDF.", 500
     fd = (p["fecha_desde"] or "").replace("-", "")
@@ -4658,6 +4793,22 @@ def _es_guardias(conn, legajo):
     dep = (row["departamento"] or "").upper().strip()
     return dep in ("GUARDIAS", "GUARDIA")
 
+def _fechas_liberadas_por_anulacion(conn, legajo, feriados):
+    """Fechas de francos_cierre_detalle ya liberadas vía
+    /francos/anular-cerrado (francos_anulaciones_cerrados). No modifica
+    francos_cierre_detalle -- el cierre histórico queda intacto -- solo
+    cambia qué fechas cuentan como 'ocupadas' en la validación en vivo."""
+    liberadas = set()
+    for row in conn.execute(
+        "SELECT tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_anulaciones_cerrados WHERE legajo=?",
+        (str(legajo),)
+    ).fetchall():
+        liberadas |= _fechas_del_registro(
+            row["tipo"], row["fecha_desde"], row["fecha_hasta"], row["fechas_sueltas"], feriados
+        )
+    return liberadas
+
+
 def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
                           fechas_sueltas_lista, exclude_id=None):
     """
@@ -4730,13 +4881,14 @@ def _validar_franco_nuevo(conn, legajo, tipo, fecha_desde_str, fecha_hasta_str,
             return f"El empleado ya tiene franco registrado el {primera}"
 
     # También verificar contra historial de cierres (cubre francos eliminados antes del cambio a Anular)
+    liberadas = _fechas_liberadas_por_anulacion(conn, legajo, feriados)
     for row in conn.execute(
         "SELECT tipo, fecha_desde, fecha_hasta, fechas_sueltas FROM francos_cierre_detalle WHERE legajo=?",
         (str(legajo),)
     ).fetchall():
         existentes = _fechas_del_registro(
             row["tipo"], row["fecha_desde"], row["fecha_hasta"], row["fechas_sueltas"], feriados,
-        )
+        ) - liberadas
         solapadas = nuevas & existentes
         if solapadas:
             primera = min(solapadas).strftime("%d/%m/%Y")
@@ -4837,7 +4989,8 @@ def francos():
                            departamentos=departamentos,
                            gen_manual=gen_manual,
                            deptos_manuales=deptos_manuales_list,
-                           mes_actual=mes_actual)
+                           mes_actual=mes_actual,
+                           firma=FIRMA_SUPERVISOR)
 
 
 @app.route("/francos/saldos")
@@ -5071,6 +5224,24 @@ def francos_nuevo():
         conn.commit()
     return redirect(url_for("francos"))
 
+def _devolver_saldo_franco_anulado(conn, legajo, dias, fecha_franco):
+    """Si el franco anulado ya estaba contado en tomados_al_corte (es decir,
+    es anterior o igual al corte de saldo de ese empleado), devuelve los días
+    al saldo_inicial y descuenta de tomados_al_corte para no contarlos
+    también en el cálculo en vivo (_calcular_saldos). Si es posterior al
+    corte, no hace falta tocar nada: _calcular_saldos ya excluye 'Anulado' de
+    tomados_raw y el saldo sube solo."""
+    leg = str(legajo)
+    si = conn.execute(
+        "SELECT saldo, tomados_al_corte, fecha_corte FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+    ).fetchone()
+    if si and dias > 0 and (fecha_franco or "") <= (si["fecha_corte"] or ""):
+        conn.execute(
+            "UPDATE francos_saldo_inicial SET saldo=saldo+?, tomados_al_corte=MAX(0,tomados_al_corte-?) WHERE legajo=?",
+            (dias, dias, leg)
+        )
+
+
 @app.route("/francos/eliminar/<int:fid>", methods=["POST"])
 def francos_eliminar(fid):
     if not _autenticado(): return _requiere_auth()
@@ -5084,19 +5255,7 @@ def francos_eliminar(fid):
         obs_actual = franco["observaciones"] or ""
         nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
         conn.execute("UPDATE francos_tomados SET estado='Anulado', observaciones=? WHERE id=?", (nueva_obs, fid))
-
-        # Si el franco fue contado en tomados_al_corte, devolver los días al saldo
-        leg = str(franco["legajo"])
-        dias = franco["dias"] or 0
-        fecha_franco = franco["fecha_desde"] or ""
-        si = conn.execute(
-            "SELECT saldo, tomados_al_corte, fecha_corte FROM francos_saldo_inicial WHERE legajo=?", (leg,)
-        ).fetchone()
-        if si and dias > 0 and fecha_franco <= (si["fecha_corte"] or ""):
-            conn.execute(
-                "UPDATE francos_saldo_inicial SET saldo=saldo+?, tomados_al_corte=MAX(0,tomados_al_corte-?) WHERE legajo=?",
-                (dias, dias, leg)
-            )
+        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["fecha_desde"] or "")
         conn.commit()
     return redirect(url_for("francos"))
 
@@ -5107,6 +5266,58 @@ def francos_aprobar(fid):
         conn.execute("UPDATE francos_tomados SET estado='Aprobado' WHERE id=?", (fid,))
         conn.commit()
     return redirect(url_for("francos"))
+
+
+@app.route("/francos/anular-cerrado/<int:fid>", methods=["POST"])
+def francos_anular_cerrado(fid):
+    """Anula un franco ya 'Cerrado' (perteneciente a un cierre histórico) sin
+    modificar ese cierre: libera las fechas, devuelve el saldo y registra un
+    movimiento compensatorio que se mostrará en el próximo cierre mensual del
+    empleado. Ver francos_anulaciones_cerrados y _fechas_liberadas_por_anulacion."""
+    if not _autenticado(): return _requiere_auth()
+    motivo = request.form.get("motivo", "").strip()
+    if not motivo:
+        return redirect(url_for("francos") + "?error=motivo_requerido")
+    usuario = request.form.get("usuario", "").strip() or FIRMA_SUPERVISOR
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with _get_db() as conn:
+        franco = conn.execute(
+            "SELECT * FROM francos_tomados WHERE id=?", (fid,)
+        ).fetchone()
+        if not franco:
+            return redirect(url_for("francos") + "?error=franco_no_encontrado")
+        if (franco["estado"] or "") != "Cerrado":
+            return redirect(url_for("francos") + "?error=franco_no_cerrado")
+
+        conn.execute(
+            "UPDATE francos_tomados SET estado='Anulado', fecha_anulacion=?, "
+            "motivo_anulacion=?, usuario_anulacion=? WHERE id=?",
+            (ahora, motivo, usuario, fid)
+        )
+        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["fecha_desde"] or "")
+
+        # Buscar en qué cierre histórico figuraba (solo informativo, no se modifica)
+        origen = conn.execute(
+            "SELECT periodo_id, departamento FROM francos_cierre_detalle "
+            "WHERE legajo=? AND tipo=? AND fecha_desde=? AND fecha_hasta=? AND fechas_sueltas=? "
+            "ORDER BY id DESC LIMIT 1",
+            (franco["legajo"], franco["tipo"], franco["fecha_desde"] or "",
+             franco["fecha_hasta"] or "", franco["fechas_sueltas"] or "[]")
+        ).fetchone()
+
+        conn.execute("""
+            INSERT INTO francos_anulaciones_cerrados
+              (francos_tomados_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
+               fechas_sueltas, dias, motivo, usuario, anulado_en, periodo_origen_id, periodo_aplicado_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+        """, (fid, franco["legajo"], franco["nombre"],
+              (origen["departamento"] if origen else ""), franco["tipo"],
+              franco["fecha_desde"] or "", franco["fecha_hasta"] or "", franco["fechas_sueltas"] or "[]",
+              franco["dias"] or 0, motivo, usuario, ahora,
+              (origen["periodo_id"] if origen else None)))
+        conn.commit()
+    return redirect(url_for("francos") + "?ok=anulado_cerrado")
 
 
 @app.route("/francos/guardar-manual-semana", methods=["POST"])

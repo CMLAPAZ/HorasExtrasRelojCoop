@@ -114,6 +114,7 @@ def _calcular_saldos():
     gen_manual          = {}
     tomados_raw         = {}
     detalle_tomados_db  = {}
+    devoluciones_pendientes_db = {}
     emps_db             = {}
 
     if DB_FILE.exists():
@@ -150,6 +151,13 @@ def _calcular_saldos():
             ):
                 leg = str(r["legajo"])
                 detalle_tomados_db.setdefault(leg, []).append({k: r[k] for k in r.keys()})
+            for r in conn.execute(
+                "SELECT legajo, dias, motivo, tipo, fecha_desde, fecha_hasta, fechas_sueltas "
+                "FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id IS NULL "
+                "ORDER BY anulado_en"
+            ):
+                leg = str(r["legajo"])
+                devoluciones_pendientes_db.setdefault(leg, []).append({k: r[k] for k in r.keys()})
             for r in conn.execute(
                 "SELECT DISTINCT legajo, nombre, departamento FROM periodo_empleados"
             ):
@@ -225,6 +233,7 @@ def _calcular_saldos():
             "tomados":          tom,
             "saldo_actual":     si + gen - tom,
             "detalle_tomados":  detalle_tomados_db.get(leg, []),
+            "devoluciones_pendientes": devoluciones_pendientes_db.get(leg, []),
         })
 
     resultado.sort(key=lambda e: (
@@ -431,6 +440,23 @@ def _hacer_pdf(emps, departamento, output_path, fecha_str):
             pdf.set_text_color(0, 0, 0)
             pdf.ln()
 
+        # Devoluciones pendientes de aplicar en el próximo cierre mensual
+        for dev in emp.get("devoluciones_pendientes", []):
+            if pdf.get_y() + 5 > pdf.h - pdf.b_margin:
+                pdf.add_page()
+                _encabezado_cols()
+            pdf.set_font(fam, "I", 7)
+            pdf.set_text_color(0, 110, 0)
+            pdf.set_fill_color(240, 253, 244)
+            texto = (f"  Devolución por anulación de franco cerrado ({_desc_fecha_detalle(dev)})"
+                     f" — Motivo: {dev.get('motivo','')} — pendiente de figurar en el próximo cierre")
+            pdf.cell(ANCHOS[0], 5, "", "LB", 0, "C", fill=True)
+            pdf.cell(ANCHOS[1] + ANCHOS[2] + ANCHOS[3], 5, texto, "LB", 0, "L", fill=True)
+            pdf.cell(ANCHOS[4], 5, f"+{dev.get('dias','')}", "LRB", 0, "C", fill=True)
+            pdf.cell(ANCHOS[5], 5, "", "RB", 0, "C", fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln()
+
     pdf.output(str(output_path))
 
 
@@ -485,6 +511,19 @@ def _hacer_html_email(sup_nombre, deptos, por_depto, fecha_str):
                     f"{fecha_txt} &nbsp; <span style='color:#b91c1c'>{estado_txt}</span>{obs_part}"
                     f"</td>"
                     f"<td style='text-align:center;color:#b91c1c'>{det.get('dias','')}</td>"
+                    f"<td></td>"
+                    f"</tr>"
+                )
+            for dev in e.get("devoluciones_pendientes", []):
+                fecha_txt = _desc_fecha_detalle(dev)
+                filas += (
+                    f"<tr style='background:#f0fdf4;font-size:.78rem;color:#166534'>"
+                    f"<td></td>"
+                    f"<td colspan='3' style='padding-left:18px;font-style:italic'>"
+                    f"Devolución por anulación de franco cerrado: {fecha_txt} &mdash; "
+                    f"{dev.get('motivo','')} <span style='color:#92400e'>(pendiente de figurar en el próximo cierre)</span>"
+                    f"</td>"
+                    f"<td style='text-align:center;font-weight:bold'>+{dev.get('dias','')}</td>"
                     f"<td></td>"
                     f"</tr>"
                 )
