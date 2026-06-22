@@ -11,6 +11,7 @@ from io import BytesIO
 
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
 from departamentos import clave_canonica, nombre_visible
+from pdf_generator import LEGAJOS_EXCLUIR_INFORMES
 
 app = Flask(__name__)
 app.secret_key   = os.environ.get("SECRET_KEY",      "cm_horas_secret_2026")
@@ -2305,7 +2306,8 @@ def historial():
         {"valor": valor, "nombre": nombre}
         for valor, nombre in sorted(semanas_map.items(), key=lambda item: item[1])
     ]
-    items = _leer_historial(semana=semana, departamento=departamento)
+    items = [i for i in _leer_historial(semana=semana, departamento=departamento)
+              if str(i.get("legajo", "")) not in LEGAJOS_EXCLUIR_INFORMES]
     todas_fechas = [d["fecha"] for item in items for d in item.get("dias", []) if d.get("fecha")]
     fecha_desde = fecha_hasta = None
     if todas_fechas:
@@ -2367,8 +2369,10 @@ def historial_acumulado():
     semanas_set = set()
 
     for item in todos:
-        depto = _normalizar_departamento_web(item.get("departamento", "") or "Todos")
         legajo = str(item["legajo"])
+        if legajo in LEGAJOS_EXCLUIR_INFORMES:
+            continue
+        depto = _normalizar_departamento_web(item.get("departamento", "") or "Todos")
         sem = item.get("semana_depto") or item.get("semana", 0)
         semanas_set.add(sem)
 
@@ -2479,7 +2483,12 @@ def periodo():
 
 
 def _calcular_periodo(desde, hasta, departamento=None):
-    """Acumula totales del período incluyendo no confirmados."""
+    """Acumula totales del período incluyendo no confirmados.
+
+    Excluye LEGAJOS_EXCLUIR_INFORMES (Gatti y Mancioni): sus francos pasaron
+    a cargarse manualmente, igual que Guardias/Internet/Telefonía, por lo que
+    no deben generar periodo_empleados ni contar de nuevo en los informes,
+    exportaciones ni en el cierre."""
     departamento = _normalizar_departamento_web(departamento)
 
     # Mapa semana global → num_depto para mostrar el número visible al usuario
@@ -2586,6 +2595,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
             ),
         }
         for e in por_empleado.values()
+        if str(e["legajo"]) not in LEGAJOS_EXCLUIR_INFORMES
     ], key=lambda x: _legajo_key(x))
 
 
@@ -3368,6 +3378,8 @@ def periodos_ver(pid):
         ).fetchall()
     empleados = []
     for e in rows:
+        if str(e["legajo"]) in LEGAJOS_EXCLUIR_INFORMES:
+            continue
         d = dict(e)
         d["semanas"]   = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
@@ -4571,6 +4583,18 @@ def _cargar_feriados_config():
     except Exception:
         return set()
 
+def _guardar_feriados_config(feriados):
+    """Persiste la lista de feriados (strings 'YYYY-MM-DD') en config.json sin tocar otras claves."""
+    config_path = Path("config.json")
+    config = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            config = {}
+    config["feriados"] = sorted(set(feriados))
+    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+
 def _dias_habiles(fecha_desde_str, fecha_hasta_str):
     """Cuenta días hábiles (lun-vie, excluyendo feriados de config.json)."""
     desde = _parse_fecha(fecha_desde_str)
@@ -5187,6 +5211,36 @@ def supervisores_eliminar(sid):
         conn.execute("DELETE FROM supervisores WHERE id=?", (sid,))
         conn.commit()
     return redirect(url_for("configuracion_email"))
+
+
+@app.route("/configuracion/feriados", methods=["GET"])
+def configuracion_feriados():
+    if not _autenticado(): return _requiere_auth()
+    feriados = sorted(_cargar_feriados_config())
+    return render_template("configuracion_feriados.html", feriados=feriados)
+
+
+@app.route("/configuracion/feriados/nuevo", methods=["POST"])
+def feriados_nuevo():
+    if not _autenticado(): return _requiere_auth()
+    fecha = request.form.get("fecha", "").strip()
+    try:
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        return redirect(url_for("configuracion_feriados") + "?error=fecha")
+    feriados = {f.strftime("%Y-%m-%d") for f in _cargar_feriados_config()}
+    feriados.add(fecha)
+    _guardar_feriados_config(feriados)
+    return redirect(url_for("configuracion_feriados") + "?ok=agregado")
+
+
+@app.route("/configuracion/feriados/eliminar/<fecha>", methods=["POST"])
+def feriados_eliminar(fecha):
+    if not _autenticado(): return _requiere_auth()
+    feriados = {f.strftime("%Y-%m-%d") for f in _cargar_feriados_config()}
+    feriados.discard(fecha)
+    _guardar_feriados_config(feriados)
+    return redirect(url_for("configuracion_feriados") + "?ok=eliminado")
 
 
 @app.route("/configuracion/supervisores/enviar/<int:sid>", methods=["POST"])

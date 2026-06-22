@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CM Horas Extras — Configuración de Email</title>
+  <title>CM Horas Extras — Feriados</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;max-width:1100px;margin:0 auto}
@@ -38,13 +38,9 @@
     .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
     .card-title-inline{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
     label{display:block;font-weight:700;margin-bottom:5px;font-size:.86rem;color:#334155}
-    input[type=text],input[type=email],input[type=password],input[type=number],select{
-      width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;
-      font-size:.9rem;font-family:inherit;background:#fff;color:#111827}
-    input:focus,select:focus{outline:none;border-color:#6366f1}
+    input[type=date]{width:100%;padding:9px 12px;border:1px solid #d7dde5;border-radius:7px;font-size:.9rem;font-family:inherit;background:#fff;color:#111827}
+    input:focus{outline:none;border-color:#6366f1}
     .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:end}
-    .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:end}
-    .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:end}
     .btn{height:40px;padding:0 22px;background:#172033;color:#fff;border:none;border-radius:7px;font-size:.9rem;font-weight:750;cursor:pointer}
     .btn:hover{background:#25314a}
     .btn-sm{height:30px;padding:0 12px;border:none;border-radius:5px;font-size:.8rem;font-weight:700;cursor:pointer;background:#fee2e2;color:#b91c1c}
@@ -57,16 +53,7 @@
     .ok-box{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
     .error-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:14px}
     .info-box{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:14px}
-    .deptos-check{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
-    .deptos-check label{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:.86rem;cursor:pointer;
-      background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 12px}
-    .deptos-check input[type=checkbox]{width:auto;cursor:pointer}
-    .deptos-check label:has(input:checked){background:#eff6ff;border-color:#bfdbfe;color:#1e40af}
-    .badge-dep{display:inline-block;background:#eff6ff;color:#1e40af;font-size:.74rem;font-weight:700;
-      padding:2px 8px;border-radius:999px;margin:1px 2px}
     .td-accion{width:90px}
-    .hint{font-size:.78rem;color:#94a3b8;margin-top:4px}
-    .sep{height:1px;background:#e5e7eb;margin:18px 0}
   </style>
 </head>
 <body>
@@ -101,139 +88,61 @@
 
 <div class="page-content">
 
-{% if request.args.get('ok') == 'smtp' %}
-<div class="ok-box">Configuración SMTP guardada.</div>
-{% elif request.args.get('ok') == 'supervisor' %}
-<div class="ok-box">Supervisor agregado correctamente.</div>
-{% elif request.args.get('ok') == 'reporte' %}
-<div class="ok-box">Reporte enviado correctamente a {{ request.args.get('sup_nombre','') }}.</div>
+{% if request.args.get('ok') == 'agregado' %}
+<div class="ok-box">Feriado agregado correctamente.</div>
+{% elif request.args.get('ok') == 'eliminado' %}
+<div class="ok-box">Feriado eliminado correctamente.</div>
 {% endif %}
 
-{% if request.args.get('error') %}
-<div class="error-box">
-  {% if request.args.get('error') == 'sup_datos_requeridos' %}
-    Nombre, email y al menos un departamento son requeridos.
-  {% elif request.args.get('error') == 'sin_datos' %}
-    No hay datos para los departamentos de este supervisor.
-  {% elif request.args.get('error') == 'email' %}
-    Error al enviar el email. Verificá la configuración SMTP.
-  {% else %}
-    Error en el formulario.
-  {% endif %}
-</div>
+{% if request.args.get('error') == 'fecha' %}
+<div class="error-box">Fecha inválida. Usá el selector de fecha.</div>
 {% endif %}
 
 <div class="info-box">
-  Configurá la cuenta de correo y los supervisores que recibirán el reporte de francos cada viernes a las 08:00.
-  Cada supervisor recibe solo los PDFs de los departamentos asignados.
+  Los feriados cargados aquí afectan el cálculo de OT100, la validación de francos tomados
+  (no se pueden registrar en feriado, salvo GUARDIAS) y el conteo de días hábiles. Se editan
+  directamente en este servidor: si estás en producción, el cambio aplica de inmediato sin
+  necesidad de hacer push/pull.
 </div>
 
-<!-- Configuración SMTP -->
+<!-- Agregar feriado -->
 <div class="card">
-  <div class="card-title">Cuenta de correo remitente (Gmail / Outlook / cualquier SMTP)</div>
-  <form method="post" action="/configuracion/email/smtp">
-    <div class="grid-2" style="margin-bottom:14px">
+  <div class="card-title">Agregar feriado</div>
+  <form method="post" action="/configuracion/feriados/nuevo">
+    <div class="grid-2" style="margin-bottom:16px">
       <div>
-        <label for="smtp_user">Email remitente</label>
-        <input type="email" id="smtp_user" name="smtp_user" value="{{ cfg.get('smtp_user','') }}"
-               placeholder="tucuenta@gmail.com" required>
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha" name="fecha" required>
       </div>
       <div>
-        <label for="smtp_pass">Contraseña</label>
-        <input type="password" id="smtp_pass" name="smtp_pass"
-               value="{{ cfg.get('smtp_pass','') }}"
-               placeholder="Contraseña de aplicación" required>
-        <p class="hint">Si tenés verificación en 2 pasos, generá una "Contraseña de aplicación" en la configuración de tu cuenta.</p>
+        <button type="submit" class="btn">Agregar feriado</button>
       </div>
     </div>
-    <div class="grid-3" style="margin-bottom:16px">
-      <div>
-        <label for="smtp_from_name">Nombre del remitente</label>
-        <input type="text" id="smtp_from_name" name="smtp_from_name"
-               value="{{ cfg.get('smtp_from_name','CM Horas Extras') }}"
-               placeholder="CM Horas Extras">
-      </div>
-      <div>
-        <label for="smtp_host">Servidor SMTP</label>
-        <input type="text" id="smtp_host" name="smtp_host"
-               value="{{ cfg.get('smtp_host','smtp.gmail.com') }}">
-      </div>
-      <div>
-        <label for="smtp_port">Puerto</label>
-        <input type="number" id="smtp_port" name="smtp_port"
-               value="{{ cfg.get('smtp_port', 587) }}">
-      </div>
-    </div>
-    <button type="submit" class="btn">Guardar configuración SMTP</button>
   </form>
 </div>
 
-<!-- Agregar supervisor -->
-<div class="card">
-  <div class="card-title">Agregar Supervisor</div>
-  <form method="post" action="/configuracion/supervisores/nuevo">
-    <div class="grid-2" style="margin-bottom:14px">
-      <div>
-        <label for="sup_nombre">Nombre del supervisor</label>
-        <input type="text" id="sup_nombre" name="nombre" placeholder="Apellido Nombre" required>
-      </div>
-      <div>
-        <label for="sup_email">Email</label>
-        <input type="email" id="sup_email" name="email" placeholder="supervisor@ejemplo.com" required>
-      </div>
-    </div>
-    <div style="margin-bottom:16px">
-      <label>Departamentos que recibe (puede marcar varios)</label>
-      <div class="deptos-check">
-        {% for dep in departamentos %}
-        <label>
-          <input type="checkbox" name="departamentos" value="{{ dep }}">
-          {{ dep | upper }}
-        </label>
-        {% endfor %}
-      </div>
-      {% if not departamentos %}
-      <p class="hint">No hay departamentos cargados todavía. Procesá un período primero.</p>
-      {% endif %}
-    </div>
-    <button type="submit" class="btn">Agregar supervisor</button>
-  </form>
-</div>
-
-<!-- Lista de supervisores -->
+<!-- Lista de feriados -->
 <div class="card">
   <div class="card-header">
-    <div class="card-title-inline">Supervisores configurados</div>
-    <span style="font-size:.78rem;color:#94a3b8">{{ supervisores | length }} supervisor(es)</span>
+    <div class="card-title-inline">Feriados configurados</div>
+    <span style="font-size:.78rem;color:#94a3b8">{{ feriados | length }} feriado(s)</span>
   </div>
-  {% if supervisores %}
+  {% if feriados %}
   <div class="tabla-wrap">
     <table>
       <thead>
         <tr>
-          <th>Nombre</th>
-          <th>Email</th>
-          <th>Departamentos</th>
+          <th>Fecha</th>
           <th>Acción</th>
         </tr>
       </thead>
       <tbody>
-        {% for s in supervisores %}
+        {% for f in feriados %}
         <tr>
-          <td>{{ s.nombre }}</td>
-          <td style="font-size:.84rem">{{ s.email }}</td>
-          <td>
-            {% for dep in s.deptos_lista %}
-            <span class="badge-dep">{{ dep | upper }}</span>
-            {% endfor %}
-          </td>
-          <td class="td-accion" style="display:flex;gap:6px">
-            <form method="post" action="/configuracion/supervisores/enviar/{{ s.id }}"
-                  onsubmit="return confirm('¿Enviar reporte ahora a {{ s.nombre }} ({{ s.email }})?')">
-              <button type="submit" class="btn-sm" style="background:#16a34a;color:#fff">Enviar</button>
-            </form>
-            <form method="post" action="/configuracion/supervisores/eliminar/{{ s.id }}"
-                  onsubmit="return confirm('¿Eliminar este supervisor?')">
+          <td>{{ f }}</td>
+          <td class="td-accion">
+            <form method="post" action="/configuracion/feriados/eliminar/{{ f }}"
+                  onsubmit="return confirm('¿Eliminar el feriado {{ f }}?')">
               <button type="submit" class="btn-sm">Eliminar</button>
             </form>
           </td>
@@ -243,14 +152,13 @@
     </table>
   </div>
   {% else %}
-  <p style="color:#94a3b8;font-size:.88rem">No hay supervisores configurados.</p>
+  <p style="color:#94a3b8;font-size:.88rem">No hay feriados configurados.</p>
   {% endif %}
 </div>
 
 </div><!-- /page-content -->
 
 <script>
-// ── Dropdown Admin en nav ────────────────────────
 function toggleAdminDropdown() {
   document.getElementById('admin-nav-btn').classList.toggle('open');
   document.getElementById('admin-nav-dropdown').classList.toggle('open');
@@ -262,7 +170,6 @@ document.addEventListener('click', function(e) {
   }
 });
 </script>
-
 
 <footer style="text-align:center;padding:18px 0 10px;font-size:.72rem;color:#94a3b8;font-family:Inter,system-ui,sans-serif">CM HorasExtras &mdash; Autora: Ana Carolina Martin &copy; 2026</footer>
 </body>
