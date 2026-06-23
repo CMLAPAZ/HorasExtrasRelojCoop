@@ -714,12 +714,17 @@ function cambiarTipo() {
   document.getElementById('campos-sueltas').style.display= t === 'SUELTAS' ? 'block' : 'none';
 }
 
+function parseFechaLocal(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function calcularDias() {
   const d = document.getElementById('f-desde').value;
   const h = document.getElementById('f-hasta').value;
   const el = document.getElementById('preview-dias');
   if (!d || !h) { el.textContent = ''; return; }
-  const desde = new Date(d), hasta = new Date(h);
+  const desde = parseFechaLocal(d), hasta = parseFechaLocal(h);
   if (hasta < desde) { el.textContent = 'La fecha hasta debe ser igual o posterior a la fecha desde.'; return; }
   let count = 0, cur = new Date(desde);
   while (cur <= hasta) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate()+1); }
