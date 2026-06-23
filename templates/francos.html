@@ -172,6 +172,14 @@
 </div>
 {% endif %}
 
+{% if request.args.get('ok') or request.args.get('error') %}
+<script>
+if (window.history && window.history.replaceState) {
+  window.history.replaceState(null, '', window.location.pathname);
+}
+</script>
+{% endif %}
+
 <!-- Formulario alta -->
 <div class="card card-form-f">
   <div class="card-title">Registrar Franco Tomado</div>
