@@ -5224,18 +5224,30 @@ def francos_nuevo():
         conn.commit()
     return redirect(url_for("francos"))
 
-def _devolver_saldo_franco_anulado(conn, legajo, dias, fecha_franco):
-    """Si el franco anulado ya estaba contado en tomados_al_corte (es decir,
-    es anterior o igual al corte de saldo de ese empleado), devuelve los días
-    al saldo_inicial y descuenta de tomados_al_corte para no contarlos
-    también en el cálculo en vivo (_calcular_saldos). Si es posterior al
-    corte, no hace falta tocar nada: _calcular_saldos ya excluye 'Anulado' de
-    tomados_raw y el saldo sube solo."""
+def _devolver_saldo_franco_anulado(conn, legajo, dias, cargado_en):
+    """Si el franco anulado ya estaba contado en tomados_al_corte, devuelve
+    los días al saldo_inicial y descuenta de tomados_al_corte para no
+    contarlos también en el cálculo en vivo (_calcular_saldos).
+
+    tomados_al_corte se fija en cada cierre como SUM(dias) de TODO
+    francos_tomados no anulado en ese momento (sin filtrar por fecha tomada,
+    ver periodo_cerrar) — por eso lo que decide si ya estaba contado es
+    cuándo se CARGÓ el franco (cargado_en), no la fecha en que se toma
+    (fecha_desde/fecha_hasta), que puede ser futura respecto del corte.
+    Los francos legacy sin cargado_en son anteriores a que existiera esa
+    columna y por lo tanto siempre estaban ya contados en cualquier corte.
+
+    Si el franco se cargó después del corte, no hace falta tocar nada:
+    _calcular_saldos ya excluye 'Anulado' de tomados_raw y el saldo sube solo."""
     leg = str(legajo)
     si = conn.execute(
         "SELECT saldo, tomados_al_corte, fecha_corte FROM francos_saldo_inicial WHERE legajo=?", (leg,)
     ).fetchone()
-    if si and dias > 0 and (fecha_franco or "") <= (si["fecha_corte"] or ""):
+    if not si or dias <= 0:
+        return
+    cargado_norm = _normalizar_cargado_en(cargado_en or "")
+    ya_contado = (not cargado_norm) or (cargado_norm <= (si["fecha_corte"] or ""))
+    if ya_contado:
         conn.execute(
             "UPDATE francos_saldo_inicial SET saldo=saldo+?, tomados_al_corte=MAX(0,tomados_al_corte-?) WHERE legajo=?",
             (dias, dias, leg)
@@ -5248,14 +5260,14 @@ def francos_eliminar(fid):
     motivo = request.form.get("motivo", "").strip()
     with _get_db() as conn:
         franco = conn.execute(
-            "SELECT legajo, dias, fecha_desde, observaciones FROM francos_tomados WHERE id=?", (fid,)
+            "SELECT legajo, dias, cargado_en, observaciones FROM francos_tomados WHERE id=?", (fid,)
         ).fetchone()
         if not franco:
             return redirect(url_for("francos"))
         obs_actual = franco["observaciones"] or ""
         nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
         conn.execute("UPDATE francos_tomados SET estado='Anulado', observaciones=? WHERE id=?", (nueva_obs, fid))
-        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["fecha_desde"] or "")
+        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["cargado_en"] or "")
         conn.commit()
     return redirect(url_for("francos"))
 
@@ -5295,7 +5307,7 @@ def francos_anular_cerrado(fid):
             "motivo_anulacion=?, usuario_anulacion=? WHERE id=?",
             (ahora, motivo, usuario, fid)
         )
-        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["fecha_desde"] or "")
+        _devolver_saldo_franco_anulado(conn, franco["legajo"], franco["dias"] or 0, franco["cargado_en"] or "")
 
         # Buscar en qué cierre histórico figuraba (solo informativo, no se modifica)
         origen = conn.execute(
