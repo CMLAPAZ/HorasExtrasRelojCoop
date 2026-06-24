@@ -32,6 +32,10 @@ TELEFONOS_FILE = Path("recursos/telefonos.json")
 _AREA_CODES = {100: "343", 141: "3435", 151: "353"}
 _AREA_DEFAULT = "3437"
 
+# Apellidos compuestos (formato fichadas: "APELLIDO NOMBRE"). Sin esta lista,
+# el primer nombre de pila se confunde con la segunda palabra del apellido.
+_APELLIDOS_COMPUESTOS = ["RUIZ DIAZ", "SAINT PAUL"]
+
 _DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 def _dia_semana(fecha_str):
@@ -530,6 +534,16 @@ def _normalizar_valor_excel(v):
         texto = texto[:-2]
     return texto
 
+def _primer_nombre(nombre):
+    """Extrae el primer nombre de pila de 'APELLIDO NOMBRE' (formato fichadas)."""
+    nombre = nombre.strip()
+    for apellido in _APELLIDOS_COMPUESTOS:
+        if nombre.upper().startswith(apellido + " "):
+            resto = nombre[len(apellido):].split()
+            return resto[0] if resto else nombre.split()[0]
+    partes = nombre.split()
+    return partes[1] if len(partes) > 1 else partes[0]
+
 def _wa_url(legajo, nombre, url, totales=None, dias=None):
     tel = _cargar_telefonos()
     phone = re.sub(r'\D', '', str(tel.get(str(legajo), "")))
@@ -540,7 +554,7 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
         from urllib.parse import urlparse
         path = urlparse(url).path
         url  = WA_BASE_URL.rstrip("/") + path
-    nombre_corto = nombre.split()[0]
+    nombre_corto = _primer_nombre(nombre)
     if dias or totales:
         lineas = [f"Hola {nombre_corto}, tus horas extras registradas son:"]
         if dias:
