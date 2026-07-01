@@ -502,7 +502,7 @@ if (window.history && window.history.replaceState) {
   </div>
   {% if registros %}
   <div class="tabla-wrap">
-    <table style="table-layout:fixed;width:100%;min-width:820px">
+    <table style="width:100%;min-width:900px">
       <colgroup>
         <col class="col-print-hide" style="width:36px">
         <col style="width:54px">
@@ -547,15 +547,15 @@ if (window.history && window.history.replaceState) {
           <td>{{ r.legajo }}</td>
           <td>{{ r.nombre }}</td>
           <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
-          <td style="font-size:.82rem">
-            {% if r.tipo == 'UNICO' %}
-              {{ r.fecha_desde }}
-            {% elif r.tipo == 'RANGO' %}
-              {{ r.fecha_desde }} → {{ r.fecha_hasta }}
-            {% else %}
-              {{ r.fechas_lista | join(', ') }}
-            {% endif %}
+          {% if r.tipo == 'SUELTAS' %}
+          <td style="font-size:.82rem;white-space:normal;overflow:visible;vertical-align:top;line-height:1.7">
+            {% for fecha in r.fechas_lista %}{{ fecha }}{% if not loop.last %}<br>{% endif %}{% endfor %}
           </td>
+          {% elif r.tipo == 'RANGO' %}
+          <td style="font-size:.82rem;white-space:nowrap">{{ r.fecha_desde }} → {{ r.fecha_hasta }}</td>
+          {% else %}
+          <td style="font-size:.82rem">{{ r.fecha_desde }}</td>
+          {% endif %}
           <td><span class="badge-dias">{{ r.dias }}</span></td>
           <td>
             {% if r.estado == 'Cerrado' %}

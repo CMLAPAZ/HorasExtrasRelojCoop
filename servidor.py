@@ -843,7 +843,7 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
         pdf.add_page()
         f = pdf.fam()
         COLS   = ["Leg.", "Nombre", "Tipo", "Fechas", "Días", "Estado", "Autorizado por", "Obs."]
-        ANCHOS = [14,     75,       18,     70,        12,     22,       45,               31]
+        ANCHOS = [14,     70,       18,     80,        12,     22,       42,               19]  # total=277mm (A4 landscape)
 
         def cabecera():
             pdf.set_fill_color(200, 215, 240)
@@ -873,7 +873,7 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
             else:
                 try:
                     fl = json.loads(r.get("fechas_sueltas") or "[]")
-                    fechas = ", ".join(fl)
+                    fechas = "  ".join(f"{d[8:10]}/{d[5:7]}" for d in fl if len(d) >= 10)
                 except Exception:
                     fechas = r.get("fecha_desde", "")
             pdf.set_font(f, "", 8)
@@ -916,7 +916,8 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
                     fechas = f"{d.get('fecha_desde','')} → {d.get('fecha_hasta','')}"
                 elif tipo == "SUELTAS":
                     try:
-                        fechas = ", ".join(json.loads(d.get("fechas_sueltas") or "[]"))
+                        fl = json.loads(d.get("fechas_sueltas") or "[]")
+                        fechas = "  ".join(f"{x[8:10]}/{x[5:7]}" for x in fl if len(x) >= 10)
                     except Exception:
                         fechas = ""
                 else:
