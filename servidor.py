@@ -842,8 +842,11 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
         pdf = PDF()
         pdf.add_page()
         f = pdf.fam()
+        avail = round(pdf.w - pdf.l_margin - pdf.r_margin)
         COLS   = ["Leg.", "Nombre", "Tipo", "Fechas", "Días", "Estado", "Autorizado por", "Obs."]
-        ANCHOS = [14,     70,       18,     80,        12,     22,       42,               19]  # total=277mm (A4 landscape)
+        _base  = [12,    62,       15,     90,        10,     20,       38,               15]
+        ANCHOS = _base[:]
+        ANCHOS[3] += avail - sum(_base)  # Fechas absorbe el espacio disponible
 
         def cabecera():
             pdf.set_fill_color(200, 215, 240)
