@@ -436,6 +436,15 @@ function renderTabla() {
 
   let totGen50 = 0, totGen100 = 0, totGenComidas = 0, totGenFrancos = 0, totGenTardanzas = 0, totGenEmp = 0;
 
+  const deptoNorm = normalizarDepartamento(document.getElementById('departamento').value || '');
+  const todasSemanas = _semanasDisponibles
+    .filter(s => {
+      const d = normalizarDepartamento(s.departamento || 'Todos');
+      return s.numero >= _desde && s.numero <= _hasta && (d === deptoNorm || d === 'todos');
+    })
+    .map(s => s.num_depto || s.numero)
+    .sort((a, b) => a - b);
+
   let html = `<div class="tabla-wrap"><table>
     <thead><tr>
       <th>Legajo</th><th>Nombre</th>
@@ -457,6 +466,13 @@ function renderTabla() {
       subComidas   += e.comidas   || 0;
       subFrancos   += e.francos   || 0;
       subTardanzas += e.tardanzas || 0;
+      const empSemSet = new Set(e.semanas || []);
+      const semsHtml = todasSemanas.length
+        ? todasSemanas.map(n => empSemSet.has(n)
+            ? `<span style="color:#166534;font-weight:700;font-size:.78rem;margin-right:3px">S${n}✓</span>`
+            : `<span style="color:#94a3b8;font-size:.78rem;margin-right:3px">S${n}—</span>`
+          ).join('')
+        : (e.semanas || []).join(', ');
       const estado = e.confirmado ? '<span class="ok">✓</span>' : '<span class="pend">⏳</span>';
       html += `<tr>
         <td>${e.legajo}</td>
@@ -466,7 +482,7 @@ function renderTabla() {
         <td>${e.comidas   || 0}</td>
         <td>${e.francos   || 0}</td>
         <td>${e.tardanzas || 0}</td>
-        <td>${(e.semanas || []).join(', ')}</td>
+        <td style="white-space:nowrap">${semsHtml}</td>
         <td>${estado}</td>
       </tr>`;
     });
