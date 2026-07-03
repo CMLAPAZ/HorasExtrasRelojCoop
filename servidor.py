@@ -2670,7 +2670,7 @@ def _calcular_periodo(desde, hasta, departamento=None):
 
 
     excluidos  = _cargar_excluidos_ot()
-    return sorted([
+    resultado = sorted([
         {
             "legajo":      e["legajo"],
             "nombre":      e["nombre"],
@@ -2697,6 +2697,36 @@ def _calcular_periodo(desde, hasta, departamento=None):
         for e in por_empleado.values()
         if str(e["legajo"]) not in LEGAJOS_EXCLUIR_INFORMES
     ], key=lambda x: _legajo_key(x))
+
+    # Agregar empleados conocidos del depto sin actividad en el período (aparecen con ceros)
+    if departamento:
+        presentes = {e["legajo"] for e in resultado}
+        for emp in _empleados_conocidos():
+            if _normalizar_departamento_web(emp["departamento"]) != departamento:
+                continue
+            if emp["legajo"] in presentes or emp["legajo"] in LEGAJOS_EXCLUIR_INFORMES:
+                continue
+            excl = emp["legajo"] in excluidos
+            resultado.append({
+                "legajo":      emp["legajo"],
+                "nombre":      emp["nombre"],
+                "departamento": emp["departamento"],
+                "ot50":        "0h0m",
+                "ot100":       "0h0m",
+                "comidas":     0,
+                "francos":     0,
+                "tardanzas":   0,
+                "semanas":     [],
+                "confirmado":  True,
+                "pendientes":  [],
+                "dias":        [],
+                "excluido_ot": excl,
+                "liquida_ot":  not excl,
+                "observacion_liquidacion": _OBS_EXCLUIDO_OT if excl else "",
+            })
+        resultado.sort(key=lambda x: _legajo_key(x))
+
+    return resultado
 
 
 @app.route("/periodo/resumen")
