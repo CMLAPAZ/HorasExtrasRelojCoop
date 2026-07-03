@@ -97,15 +97,15 @@
       body.print-detalle .card-registros-f th{padding:4px 5px;overflow:hidden;word-break:normal;overflow-wrap:break-word}
       body.print-detalle .card-registros-f colgroup .col-print-hide{visibility:collapse}
       body.print-detalle .card-registros-f colgroup col:nth-child(2){width:5%}
-      body.print-detalle .card-registros-f colgroup col:nth-child(3){width:17%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(3){width:14%}
       body.print-detalle .card-registros-f colgroup col:nth-child(4){width:6%}
-      body.print-detalle .card-registros-f colgroup col:nth-child(5){width:18%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(5){width:24%}
       body.print-detalle .card-registros-f colgroup col:nth-child(6){width:5%}
       body.print-detalle .card-registros-f colgroup col:nth-child(7){width:10%}
       body.print-detalle .card-registros-f colgroup col:nth-child(8){width:9%}
       body.print-detalle .card-registros-f colgroup col:nth-child(9){width:10%}
-      body.print-detalle .card-registros-f colgroup col:nth-child(10){width:17%}
-      body.print-detalle .card-registros-f colgroup col:nth-child(11){width:10%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(10){width:10%}
+      body.print-detalle .card-registros-f colgroup col:nth-child(11){width:7%}
       body.print-detalle .card-registros-f td:nth-child(5){word-break:break-all}
       body.print-detalle .card-registros-f .badge-dias,
       body.print-detalle .card-registros-f .badge-aprobado,
@@ -502,20 +502,20 @@ if (window.history && window.history.replaceState) {
   </div>
   {% if registros %}
   <div class="tabla-wrap">
-    <table style="width:100%;min-width:900px">
+    <table style="table-layout:fixed;width:100%;min-width:1050px">
       <colgroup>
         <col class="col-print-hide" style="width:36px">
-        <col style="width:54px">
-        <col style="width:140px">
-        <col style="width:60px">
-        <col style="width:160px">
-        <col style="width:42px">
+        <col style="width:52px">
+        <col style="width:130px">
+        <col style="width:58px">
+        <col style="width:200px">
+        <col style="width:40px">
         <col style="width:70px">
-        <col style="width:80px">
+        <col style="width:100px">
         <col style="width:90px">
-        <col style="width:auto">
+        <col style="width:80px">
         <col style="width:76px">
-        <col class="col-print-hide" style="width:90px">
+        <col class="col-print-hide" style="width:115px">
       </colgroup>
       <thead>
         <tr>
@@ -548,7 +548,7 @@ if (window.history && window.history.replaceState) {
           <td>{{ r.nombre }}</td>
           <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
           {% if r.tipo == 'SUELTAS' %}
-          <td style="font-size:.82rem;white-space:normal;overflow:visible;vertical-align:top;line-height:1.7">
+          <td style="font-size:.82rem;white-space:normal;vertical-align:top;line-height:1.7">
             {% for fecha in r.fechas_lista %}{{ fecha }}{% if not loop.last %}<br>{% endif %}{% endfor %}
           </td>
           {% elif r.tipo == 'RANGO' %}
