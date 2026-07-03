@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CM Horas Extras — Plus Vacacional</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#111827;max-width:1240px;margin:0 auto}
+
+    /* ── Topbar / Nav ── */
+    .topbar{background:#172033;padding:0 24px;display:flex;align-items:stretch;justify-content:space-between;gap:0;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+    .topbar-brand{display:flex;flex-direction:column;justify-content:center;padding:12px 0;text-decoration:none}
+    .topbar-title{font-size:1.05rem;font-weight:800;color:#fff;line-height:1.1}
+    .topbar-sub{font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:2px}
+    .nav{display:flex;align-items:stretch;gap:0}
+    .nav a{display:inline-flex;align-items:center;padding:0 14px;color:#cbd5e1;text-decoration:none;font-size:.83rem;font-weight:600;border-bottom:3px solid transparent;transition:color .15s,border-color .15s}
+    .nav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav a.active{color:#fff;border-bottom-color:#3b82f6}
+    .nav-logout{display:inline-flex;align-items:center;padding:0 12px;color:#f87171;text-decoration:none;font-size:.83rem;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit;transition:color .15s}
+    .nav-logout:hover{color:#fca5a5;background:rgba(239,68,68,.08)}
+    .nav-admin-wrap{position:relative;display:flex;align-items:stretch}
+    .nav-admin-btn{display:inline-flex;align-items:center;gap:5px;padding:0 14px;color:#94a3b8;font-size:.83rem;font-weight:600;cursor:pointer;border:none;background:none;font-family:inherit;transition:color .15s;border-bottom:3px solid transparent}
+    .nav-admin-btn:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .nav-admin-btn .arrow{font-size:.6rem;transition:transform .15s}
+    .nav-admin-btn.open{color:#fff}
+    .nav-admin-btn.open .arrow{transform:rotate(180deg)}
+    .nav-admin-dropdown{position:absolute;top:100%;right:0;background:#1e293b;border:1px solid #334155;border-top:none;border-radius:0 0 8px 8px;min-width:185px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:200;display:none}
+    .nav-admin-dropdown.open{display:block}
+    .nav-admin-dropdown a{display:flex;align-items:center;padding:10px 16px;color:#cbd5e1;text-decoration:none;font-size:.82rem;font-weight:600;gap:8px;transition:background .12s;white-space:nowrap}
+    .nav-admin-dropdown a:hover{background:#334155;color:#fff}
+    .nav-admin-dropdown .sep{height:1px;background:#334155;margin:3px 0}
+
+    /* ── Page ── */
+    .page-content{padding:22px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:14px}
+    .card-title{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800;margin-bottom:14px}
+
+    /* ── Tabs depto ── */
+    .depto-tabs{display:flex;gap:8px;margin-bottom:18px}
+    .depto-tab{padding:8px 22px;border-radius:7px;font-size:.88rem;font-weight:700;text-decoration:none;border:2px solid #e5e7eb;color:#475569;background:#fff;transition:all .15s}
+    .depto-tab:hover{background:#f1f5f9;border-color:#94a3b8}
+    .depto-tab.active{background:#172033;color:#fff;border-color:#172033}
+
+    /* ── Tabla ── */
+    .tabla-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.86rem}
+    th{background:#1e3a5f;color:#e0eaf8;text-align:center;padding:8px 10px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+    th.th-emp{text-align:left}
+    td{padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:center;font-variant-numeric:tabular-nums}
+    td.td-emp{text-align:left;white-space:nowrap}
+    td.td-leg{color:#64748b;font-size:.82rem}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:#f8fafc}
+    .td-cero{color:#94a3b8}
+    .td-total{font-weight:800;color:#1e3a5f;background:#f0f4ff}
+    .tr-total td{background:#172033;color:#fff;font-weight:800;font-size:.88rem}
+    .tr-total td.td-emp{text-align:right;padding-right:16px}
+
+    /* ── Cabecera del informe ── */
+    .informe-header{margin-bottom:16px}
+    .informe-titulo{font-size:1.15rem;font-weight:800;color:#1e3a5f}
+    .informe-sub{font-size:.82rem;color:#64748b;margin-top:4px}
+
+    /* ── Btn imprimir ── */
+    .btn-print{height:36px;padding:0 18px;background:#1e3a5f;color:#fff;border:none;border-radius:7px;font-size:.84rem;font-weight:700;cursor:pointer}
+    .btn-print:hover{background:#172033}
+
+    /* ── Sin datos ── */
+    .sin-datos{padding:30px;text-align:center;color:#94a3b8;font-size:.9rem}
+
+    /* ── Print ── */
+    @page{size:landscape;margin:8mm}
+    @media print{
+      .topbar,.nav,.depto-tabs,.btn-print,.no-print{display:none!important}
+      body{background:#fff;max-width:100%}
+      .card{box-shadow:none;border:none;padding:0}
+      .page-content{padding:0}
+      th{background:#1e3a5f!important;color:#e0eaf8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .tr-total td{background:#172033!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .td-total{background:#f0f4ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      table{font-size:.78rem}
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/supervisor" class="topbar-brand">
+    <span class="topbar-title">CM Horas Extras</span>
+    <span class="topbar-sub">Panel del supervisor</span>
+  </a>
+  <div class="nav">
+    <a href="/supervisor">Supervisor</a>
+    <a href="/periodo">Per&#xED;odos</a>
+    <a href="/francos">Francos</a>
+    <a href="/periodos/historial">Cierres</a>
+    <a href="/historial">Historial</a>
+    <a href="/plus-vacacional" class="active">Plus Vac.</a>
+    <div class="nav-admin-wrap">
+      <button type="button" class="nav-admin-btn" id="admin-nav-btn" onclick="toggleAdminDropdown()">
+        Admin <span class="arrow">&#9660;</span>
+      </button>
+      <div class="nav-admin-dropdown" id="admin-nav-dropdown">
+        <a href="/empleados/importar">&#128100; Empleados</a>
+        <a href="/configuracion/email">&#128231; Config. Email</a>
+        <a href="/configuracion/feriados">&#128197; Feriados</a>
+        <a href="/admin/ajuste-saldo">&#9998; Ajuste saldo inicial</a>
+        <a href="/manual" target="_blank">&#128214; Manual de usuario</a>
+      </div>
+    </div>
+    <a href="/logout" class="nav-logout">Salir</a>
+  </div>
+</div>
+
+<div class="page-content">
+
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+      <div class="informe-header">
+        <div class="informe-titulo">Horas extras para Plus Vacacional</div>
+        <div class="informe-sub">Suma de OT50 + OT100 por liquidación mensual &mdash; Generado el {{ generado }}</div>
+      </div>
+      <button class="btn-print no-print" onclick="window.print()">&#128438; Imprimir / PDF</button>
+    </div>
+
+    <div class="depto-tabs no-print">
+      <a href="/plus-vacacional?depto=redes"
+         class="depto-tab {% if depto_param == 'redes' %}active{% endif %}">Redes</a>
+      <a href="/plus-vacacional?depto=administracion"
+         class="depto-tab {% if depto_param == 'administracion' %}active{% endif %}">Administraci&oacute;n</a>
+    </div>
+
+    {% if not labels %}
+    <div class="sin-datos">
+      No hay cierres registrados para <strong>{{ departamento }}</strong> todav&iacute;a.<br>
+      El informe estará disponible a partir del primer cierre mensual.
+    </div>
+
+    {% else %}
+    <div class="tabla-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="th-emp" colspan="2">{{ departamento | upper }} — últimos {{ labels|length }} cierre(s)</th>
+            {% for lbl in labels %}
+            <th>{{ lbl }}</th>
+            {% endfor %}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in empleados %}
+          <tr>
+            <td class="td-leg">{{ e.legajo }}</td>
+            <td class="td-emp">{{ e.nombre }}</td>
+            {% for h in e.horas %}
+            <td class="{% if h == '0:00' %}td-cero{% endif %}">{{ h }}</td>
+            {% endfor %}
+            <td class="td-total">{{ e.total }}</td>
+          </tr>
+          {% endfor %}
+
+          {# Fila de totales por columna #}
+          <tr class="tr-total">
+            <td class="td-emp" colspan="2">TOTAL GENERAL</td>
+            {% for lbl in labels %}
+            <td id="col-tot-{{ loop.index0 }}">—</td>
+            {% endfor %}
+            <td id="col-tot-total">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <script>
+    (function(){
+      // Calcular totales de columna en minutos
+      const rows = document.querySelectorAll('tbody tr:not(.tr-total)');
+      const ncols = {{ labels|length }};
+      const colMins = new Array(ncols).fill(0);
+      let totalMins = 0;
+
+      function hhmm2min(s){
+        const [h,m] = s.split(':').map(Number);
+        return (h||0)*60 + (m||0);
+      }
+      function min2hhmm(mins){
+        const h = Math.floor(mins/60), m = mins%60;
+        return h + ':' + String(m).padStart(2,'0');
+      }
+
+      rows.forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        // cells: [legajo, nombre, col0, col1, ..., total]
+        for(let i=0; i<ncols; i++){
+          const val = cells[2+i]?.textContent?.trim() || '0:00';
+          colMins[i] += hhmm2min(val);
+        }
+        const tot = cells[2+ncols]?.textContent?.trim() || '0:00';
+        totalMins += hhmm2min(tot);
+      });
+
+      for(let i=0; i<ncols; i++){
+        const el = document.getElementById('col-tot-'+i);
+        if(el) el.textContent = min2hhmm(colMins[i]);
+      }
+      const elTot = document.getElementById('col-tot-total');
+      if(elTot) elTot.textContent = min2hhmm(totalMins);
+    })();
+    </script>
+    {% endif %}
+  </div>
+
+  <p style="font-size:.72rem;color:#94a3b8;text-align:center;padding-bottom:12px">
+    Las horas reflejan los cierres mensuales definitivos registrados en el sistema.
+    Para empleados sin actividad en un período la celda muestra 0:00.
+  </p>
+
+</div>
+
+<script>
+function toggleAdminDropdown(){
+  document.getElementById('admin-nav-btn').classList.toggle('open');
+  document.getElementById('admin-nav-dropdown').classList.toggle('open');
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.nav-admin-wrap')){
+    document.getElementById('admin-nav-btn').classList.remove('open');
+    document.getElementById('admin-nav-dropdown').classList.remove('open');
+  }
+});
+</script>
+
+<footer style="text-align:center;padding:18px 0 10px;font-size:.72rem;color:#94a3b8">CM HorasExtras &mdash; Autora: Ana Carolina Martin &copy; 2026</footer>
+</body>
+</html>

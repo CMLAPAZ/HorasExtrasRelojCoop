@@ -971,6 +971,21 @@ def _fmt_hm(td):
     m = (total % 3600) // 60
     return f"{h}h {m:02d}m" if m else f"{h}h"
 
+def _fmt_hhcmm(td):
+    """Formatea timedelta a H:MM para informes de Contaduría (ej: 5:30)."""
+    total_min = max(0, int(td.total_seconds() // 60))
+    h, m = divmod(total_min, 60)
+    return f"{h}:{m:02d}"
+
+_MESES_ES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+
+def _label_mes(fecha_str):
+    try:
+        d = datetime.strptime((fecha_str or "")[:10], "%Y-%m-%d")
+        return f"{_MESES_ES[d.month-1]} {d.year}"
+    except Exception:
+        return (fecha_str or "")[:7]
+
 def _pdf_bytes(pdf):
     data = pdf.output(dest="S")
     if isinstance(data, str):
@@ -5661,6 +5676,69 @@ def empleados_extra_eliminar(legajo):
         conn.execute("UPDATE empleados_extra SET activo=0 WHERE legajo=?", (legajo,))
         conn.commit()
     return redirect(url_for("empleados_importar"))
+
+
+@app.route("/plus-vacacional")
+def plus_vacacional():
+    if not _autenticado(): return _requiere_auth()
+    depto_param = _normalizar_departamento_web(request.args.get("depto", "redes"))
+    if depto_param not in {"redes", "administracion"}:
+        depto_param = "redes"
+    depto_visible = _nombre_departamento_visible(depto_param)
+
+    with _get_db() as conn:
+        periodos_rows = conn.execute("""
+            SELECT id, fecha_desde, fecha_hasta, cerrado_en
+            FROM periodos
+            WHERE estado='ACTIVO' AND departamento=?
+            ORDER BY fecha_desde DESC
+            LIMIT 6
+        """, (depto_visible,)).fetchall()
+
+        if not periodos_rows:
+            return render_template("plus_vacacional.html",
+                departamento=depto_visible, depto_param=depto_param,
+                labels=[], empleados=[],
+                generado=datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+        periodos_list = list(reversed([dict(p) for p in periodos_rows]))
+        pids = [p["id"] for p in periodos_list]
+        ph   = ",".join("?" * len(pids))
+
+        rows = conn.execute(f"""
+            SELECT legajo, nombre, periodo_id, ot50, ot100
+            FROM periodo_empleados
+            WHERE periodo_id IN ({ph})
+              AND legajo NOT IN ('100','101')
+            ORDER BY CAST(legajo AS INTEGER)
+        """, pids).fetchall()
+
+    emp_map = {}
+    for r in rows:
+        leg = str(r["legajo"])
+        if leg not in emp_map:
+            emp_map[leg] = {"nombre": r["nombre"], "por_pid": {}}
+        td = _parse_hm(r["ot50"] or "0h") + _parse_hm(r["ot100"] or "0h")
+        emp_map[leg]["por_pid"][r["periodo_id"]] = emp_map[leg]["por_pid"].get(r["periodo_id"], timedelta(0)) + td
+
+    empleados = []
+    for leg, emp in sorted(emp_map.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 9999):
+        horas_td = [emp["por_pid"].get(p["id"], timedelta(0)) for p in periodos_list]
+        total_td = sum(horas_td, timedelta(0))
+        empleados.append({
+            "legajo": leg,
+            "nombre": emp["nombre"],
+            "horas":  [_fmt_hhcmm(h) for h in horas_td],
+            "total":  _fmt_hhcmm(total_td),
+            "tiene_horas": total_td.total_seconds() > 0,
+        })
+
+    labels = [_label_mes(p["fecha_desde"]) for p in periodos_list]
+
+    return render_template("plus_vacacional.html",
+        departamento=depto_visible, depto_param=depto_param,
+        labels=labels, empleados=empleados,
+        generado=datetime.now().strftime("%d/%m/%Y %H:%M"))
 
 
 # ═══════════════════════════════════════════════
