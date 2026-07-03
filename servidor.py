@@ -5688,10 +5688,12 @@ def plus_vacacional():
 
     with _get_db() as conn:
         periodos_rows = conn.execute("""
-            SELECT id, fecha_desde, fecha_hasta, cerrado_en
-            FROM periodos
-            WHERE estado='ACTIVO' AND departamento=?
-            ORDER BY fecha_desde DESC
+            SELECT DISTINCT p.id, p.fecha_desde, p.fecha_hasta, p.cerrado_en
+            FROM periodos p
+            JOIN periodo_empleados pe ON pe.periodo_id = p.id
+            WHERE COALESCE(p.estado, 'ACTIVO') = 'ACTIVO'
+              AND pe.departamento = ?
+            ORDER BY p.fecha_desde DESC
             LIMIT 6
         """, (depto_visible,)).fetchall()
 
