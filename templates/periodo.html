@@ -203,6 +203,7 @@
 <script id="semanas-data" type="application/json">{{ semanas | tojson }}</script>
 <script>
 let _desde = 1, _hasta = 1;
+let _desdeVisible = 1, _hastaVisible = 1;
 let _todosEmpleados = [];
 let _deptosActivos  = new Set();
 const _semanasDisponibles = JSON.parse(document.getElementById('semanas-data').textContent);
@@ -320,6 +321,8 @@ async function previsualizar() {
   const semHasta = semanaSeleccionada('hasta');
   _desde = semDesde.loteGlobal;
   _hasta = semHasta.loteGlobal;
+  _desdeVisible = semDesde.semanaVisible;
+  _hastaVisible = semHasta.semanaVisible;
   if (_hasta < _desde) { alert('La semana "hasta" debe ser mayor o igual a "desde".'); return false; }
 
   const params = new URLSearchParams({
@@ -558,7 +561,7 @@ async function cerrarPeriodo() {
   const departamento = document.getElementById('departamento').value;
   if (!departamento) { alert('Selecciona un departamento primero.'); return; }
   if (!confirm(
-    `¿Cerrar el período semanas ${_desde} a ${_hasta}?\n\n` +
+    `¿Cerrar el período semanas ${_desdeVisible} a ${_hastaVisible}?\n\n` +
     `• Se generará el informe de cierre para imprimir / guardar como PDF.\n` +
     `• El contador de semanas se reiniciará a 1.\n\n` +
     `Esta acción no se puede deshacer.`
@@ -581,7 +584,7 @@ async function cerrarPeriodo() {
   // Preparar encabezado de impresión con título de cierre
   const ahora = new Date().toLocaleString('es-AR');
   document.getElementById('print-titulo').textContent =
-    `INFORME DE CIERRE — Semanas ${_desde} a ${_hasta}`;
+    `INFORME DE CIERRE — Semanas ${_desdeVisible} a ${_hastaVisible}`;
   document.getElementById('print-fecha').textContent  = `Cerrado: ${ahora}`;
   document.getElementById('print-fecha-footer').textContent = `Cerrado: ${ahora}`;
 
