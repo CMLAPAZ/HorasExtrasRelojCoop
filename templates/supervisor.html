@@ -352,6 +352,9 @@ async function resetTotal() {
       <span class="card-title-inline">Links para enviar</span>
       <span id="semana-badge" class="badge-semana"></span>
     </div>
+    <div id="aviso-semana5" class="hidden" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:7px;padding:10px 14px;margin:10px 0 4px;font-size:.87rem;color:#92400e">
+      &#x26A0;&#xFE0F; <strong>Semana 5 cargada.</strong> Si el mes anterior todav&iacute;a no fue cerrado, cerralo antes de continuar para que las semanas no queden mezcladas.
+    </div>
     {% if request.host.startswith('localhost') or request.host.startswith('127.') %}
     <div class="aviso-local">&#x26A0;&#xFE0F; Servidor local &mdash; los links solo funcionan en esta PC. Para enviar WhatsApp a empleados us&#xE1; <strong>PythonAnywhere</strong>.</div>
     {% endif %}
@@ -592,6 +595,7 @@ async function procesar(force) {
 
     document.getElementById('semana-badge').textContent =
       `Semana ${data.num_depto || data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}`;
+    document.getElementById('aviso-semana5').classList.toggle('hidden', (data.num_depto || 0) < 5);
 
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
@@ -648,6 +652,7 @@ async function reprocesarSemana(n) {
       : '';
     document.getElementById('semana-badge').textContent =
       `Semana ${data.num_depto || data.semana} · ${data.departamento || ''}  ${data.fecha_desde || ''} → ${data.fecha_hasta || ''}${actualizadosMsg}`;
+    document.getElementById('aviso-semana5').classList.toggle('hidden', (data.num_depto || 0) < 5);
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
     data.empleados.sort((a, b) => parseInt(a.legajo) - parseInt(b.legajo)).forEach(e => {
