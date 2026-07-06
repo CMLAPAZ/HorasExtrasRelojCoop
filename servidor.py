@@ -2340,6 +2340,8 @@ def semanas_acumulado_pdf():
 @app.route("/estado")
 def estado():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
+    meta = _cargar_metadata()
+    semanas_activas = {s.get("numero") for s in meta.get("semanas", [])}
     resultado = [
         {"legajo": d["legajo"], "nombre": d["nombre"],
          "departamento": d.get("departamento",""),
@@ -2351,6 +2353,7 @@ def estado():
              for x in d["dias"] if x["tiene_ot"]
          ] if d["confirmado"] else []}
         for d in _sesion.values()
+        if not semanas_activas or d.get("semana") in semanas_activas
     ]
     resultado.sort(key=lambda x: (x["semana"], not x["confirmado"], x["nombre"]))
     return jsonify(resultado)
