@@ -1675,6 +1675,8 @@ def _crear_tokens(empleados, semana_n, semana_depto, base_url):
     tokens_creados = []
     links = []
     for emp in empleados:
+        if str(emp.get("legajo", "")) in LEGAJOS_EXCLUIR_INFORMES:
+            continue
         token = secrets.token_urlsafe(10)
         tokens_creados.append(token)
         dias_prep = _preparar_dias(emp["registros"])
