@@ -457,7 +457,8 @@ def _calcular_por_dia(
     asignaciones,
     dias_paro,
     config,
-    eventos_dia=None
+    eventos_dia=None,
+    excluir_sa=None
 ):
     """
     Reglas:
@@ -644,7 +645,7 @@ def _calcular_por_dia(
             total_50 += ot50
             total_100 += ot100
 
-            if es_primer_tramo and b_orig < horario_fin:
+            if es_primer_tramo and b_orig < horario_fin and str(legajo) not in (excluir_sa or set()):
                 obs.append("✌ SA")
 
             filas.append({
@@ -749,7 +750,8 @@ def procesar_fichadas(
     df: pd.DataFrame,
     feriados: set | None = None,
     inicio_variable: dict | None = None,
-    excluir_tardanza: set | None = None
+    excluir_tardanza: set | None = None,
+    excluir_sa: set | None = None
 ):
     """
     Procesa un DataFrame de fichadas y devuelve estructura por empleado.
@@ -800,7 +802,8 @@ def procesar_fichadas(
             asignaciones=asignaciones,
             dias_paro=dias_paro,
             config=config,
-            eventos_dia=eventos
+            eventos_dia=eventos,
+            excluir_sa=excluir_sa
         )
 
         resultados[key] = por_dia

@@ -1559,6 +1559,8 @@ def _preparar_dias(registros):
             dias_dict[fecha]["tramos"].append({"entrada": e[:5], "salida": s[:5] if s else "—"})
     return [dias_dict[f] for f in dias_order]
 
+_EXCLUIR_SA = {"102"}  # Legajos con licencia lactancia — no se marca SA en el PDF
+
 def _cargar_excluidos_ot():
     ruta = Path("recursos/excluidos_ot.json")
     try:
@@ -1633,7 +1635,7 @@ def _normalizar_columnas(df):
 def _procesar_empleados(df, departamentos=None):
     """Procesa DataFrame y devuelve (empleados, fecha_desde, fecha_hasta).
     departamentos: lista de nombres a incluir; None = todos."""
-    resultados = procesar_fichadas(df)
+    resultados = procesar_fichadas(df, excluir_sa=_EXCLUIR_SA)
     empleados  = aplanar_registros_por_tramo(resultados)
     if departamentos:
         empleados = [e for e in empleados if e.get("departamento","") in departamentos]
@@ -1822,7 +1824,7 @@ def detectar_departamentos():
     if "csv" not in request.files: return jsonify({"error":"No se recibió archivo"}), 400
     try:
         df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
-        resultados = procesar_fichadas(df)
+        resultados = procesar_fichadas(df, excluir_sa=_EXCLUIR_SA)
         empleados  = aplanar_registros_por_tramo(resultados)
         deptos = sorted(set(e.get("departamento","—") for e in empleados))
         return jsonify({"departamentos": deptos})

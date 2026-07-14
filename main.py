@@ -78,6 +78,10 @@ EXCLUIR_TARDANZA = {
     # "5678",  # Ing. Gatti
 }
 
+EXCLUIR_SA = {
+    "102",  # Soto Karen — licencia lactancia
+}
+
 def _cargar_excluidos_ot():
     ruta = Path(__file__).parent / "recursos" / "excluidos_ot.json"
     try:
@@ -334,8 +338,6 @@ def _accion_gestionar_feriados():
     abrir_gestor_feriados()
 
 def _accion_ver_graficos():
-    global ULTIMOS_RESULTADOS_APLANADOS, ULTIMO_PERIODO_TEXTO
-
     if not GRAFICOS_DISPONIBLE:
         messagebox.showwarning(
             "Gráficos no disponibles",
@@ -667,7 +669,7 @@ def abrir_gestor_asignaciones_especiales():
 
     edit_index = {"value": None}
 
-    # -----------------------------
+    # -----------------------------no 
     # Helpers
     # -----------------------------
     def cargar_config():
@@ -1193,8 +1195,6 @@ def _actualizar_estado(archivo="—", fecha="—", empleados="—"):
 
 
 def _accion_ver_resumen():
-    global ULTIMOS_RESULTADOS_APLANADOS, ULTIMO_PERIODO_TEXTO
-
     if ULTIMOS_RESULTADOS_APLANADOS is None:
         messagebox.showwarning(
             "Atención",
@@ -1307,7 +1307,7 @@ def cargar_archivo():
         ULTIMO_PERIODO_TEXTO = mes_completo
 
         # Procesamiento con entrada inteligente
-        resultados = procesar_fichadas(df,inicio_variable=INICIO_VARIABLE,excluir_tardanza=EXCLUIR_TARDANZA)
+        resultados = procesar_fichadas(df,inicio_variable=INICIO_VARIABLE,excluir_tardanza=EXCLUIR_TARDANZA,excluir_sa=EXCLUIR_SA)
 
         resultados_aplanados = aplanar_registros_por_tramo(resultados)
         resultados_aplanados = _aplicar_exclusiones_ot(resultados_aplanados)
