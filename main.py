@@ -78,9 +78,14 @@ EXCLUIR_TARDANZA = {
     # "5678",  # Ing. Gatti
 }
 
-EXCLUIR_SA = {
-    "102",  # Soto Karen — licencia lactancia
-}
+def _cargar_excluidos_sa():
+    ruta = Path(__file__).parent / "recursos" / "excluidos_sa.json"
+    try:
+        return set(json.load(open(ruta, encoding="utf-8")).get("legajos", []))
+    except Exception:
+        return set()
+
+EXCLUIR_SA = _cargar_excluidos_sa()
 
 def _cargar_excluidos_ot():
     ruta = Path(__file__).parent / "recursos" / "excluidos_ot.json"
