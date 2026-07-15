@@ -402,7 +402,7 @@ async function resetTotal() {
     </div>
     <div class="tabla-wrap">
       <table>
-        <thead><tr><th>Sem.</th><th>Depto.</th><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
+        <thead><tr><th>Legajo</th><th>Nombre</th><th>Estado</th><th>Descripciones</th></tr></thead>
         <tbody id="tbody-estado"></tbody>
       </table>
     </div>
@@ -952,22 +952,58 @@ async function cargarEstado() {
     if (!data.length) return;
     const tbody = document.getElementById('tbody-estado');
     tbody.innerHTML = '';
-    data.sort((a, b) => (b.confirmado ? 1 : 0) - (a.confirmado ? 1 : 0) || parseInt(a.legajo) - parseInt(b.legajo))
-      .forEach(e => {
-      const descs = (e.dias || []).map(d =>
-        `<div class="desc-dia"><span class="desc-fecha">${d.fecha}</span> — ${d.descripcion || '<em>sin descripción</em>'}</div>`
-      ).join('');
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${e.semana || '—'}</td>
-        <td>${e.departamento || '—'}</td>
-        <td>${e.legajo}</td>
-        <td>${e.nombre}</td>
-        <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>
-        <td>${descs || '—'}</td>
-      `;
-      tbody.appendChild(tr);
+
+    // Agrupar por departamento + semana
+    const grupos = {};
+    data.forEach(e => {
+      const key = `${e.departamento}__${e.semana}`;
+      if (!grupos[key]) grupos[key] = { depto: e.departamento, semana: e.semana, empleados: [] };
+      grupos[key].empleados.push(e);
     });
+
+    // Ordenar grupos: por departamento luego por semana
+    const ordenGrupos = Object.values(grupos).sort((a, b) => {
+      if (a.depto < b.depto) return -1;
+      if (a.depto > b.depto) return 1;
+      return a.semana - b.semana;
+    });
+
+    ordenGrupos.forEach(g => {
+      // Dentro del grupo: pendientes primero, luego por legajo
+      g.empleados.sort((a, b) =>
+        (a.confirmado ? 1 : 0) - (b.confirmado ? 1 : 0) || parseInt(a.legajo) - parseInt(b.legajo)
+      );
+      const conf  = g.empleados.filter(e => e.confirmado).length;
+      const total = g.empleados.length;
+      const pend  = total - conf;
+
+      // Fila encabezado de grupo
+      const trH = document.createElement('tr');
+      const pendBadge = pend
+        ? ` &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600">${pend} pendiente${pend > 1 ? 's' : ''}</span>`
+        : '';
+      trH.innerHTML = `
+        <td colspan="4" style="background:#1e293b;color:#f1f5f9;font-weight:700;padding:7px 12px;font-size:.8rem;letter-spacing:.04em">
+          ${g.depto.toUpperCase()} &mdash; Semana ${g.semana}
+          <span style="font-weight:400;font-size:.75rem;opacity:.85;margin-left:8px">${conf}/${total} confirmados${pendBadge}</span>
+        </td>`;
+      tbody.appendChild(trH);
+
+      // Filas de empleados
+      g.empleados.forEach(e => {
+        const descs = (e.dias || []).map(d =>
+          `<div class="desc-dia"><span class="desc-fecha">${d.fecha}</span> — ${d.descripcion || '<em>sin descripción</em>'}</div>`
+        ).join('');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${e.legajo}</td>
+          <td>${e.nombre}</td>
+          <td>${e.confirmado ? '<span class="ok">✓ Confirmado</span>' : '<span class="pend">⏳ Pendiente</span>'}</td>
+          <td>${descs || '—'}</td>`;
+        tbody.appendChild(tr);
+      });
+    });
+
     document.getElementById('estado-wrap').classList.remove('hidden');
   } catch(ex) { /* silencioso */ }
 }
