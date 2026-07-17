@@ -337,6 +337,13 @@ function descargarInformeMensual(e) {
           </td>
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;text-align:center">{{ cf.total_registros }}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eef2f7">
+            {% if cf.estado == 'ANULADO' %}
+              <span class="badge anul">Anulado</span>
+            {% elif cf.es_ultimo_activo %}
+              <span class="badge ok">Activo · último</span>
+            {% else %}
+              <span class="badge ok">Activo</span>
+            {% endif %}
             {% if cf.saldo_anterior and cf.saldo_anterior != '{}' %}
               <span class="badge ok">Snapshot OK</span>
             {% else %}
@@ -347,6 +354,16 @@ function descargarInformeMensual(e) {
             <a href="/francos/cierre/pdf/{{ cf.id }}" target="_blank" style="font-size:.78rem;font-weight:700;color:#172033;text-decoration:none;border:1px solid #172033;border-radius:6px;padding:3px 10px">Ver francos</a>
             {% if cf.saldo_anterior and cf.saldo_anterior != '{}' %}
             <a href="/francos/cierre/informe/{{ cf.id }}" target="_blank" style="font-size:.78rem;font-weight:700;color:#0f5132;text-decoration:none;border:1px solid #0f5132;border-radius:6px;padding:3px 10px">Ver saldo al cierre</a>
+            {% endif %}
+            {% if cf.estado != 'ANULADO' and cf.es_ultimo_activo and cf.es_reversible %}
+            <button type="button" onclick="anularCierreFrancos({{ cf.id }}, '{{ cf.departamento | e }}')"
+                    style="font-size:.78rem;font-weight:700;color:#b91c1c;background:#fff;border:1px solid #fecaca;border-radius:6px;padding:3px 10px;cursor:pointer">
+              Anular cierre
+            </button>
+            {% elif cf.estado == 'ANULADO' %}
+              <span style="font-size:.75rem;color:#64748b" title="{{ cf.motivo_anulacion }}">
+                {{ cf.fecha_anulacion }} · {{ cf.usuario_anulacion }}
+              </span>
             {% endif %}
           </td>
         </tr>
@@ -360,6 +377,20 @@ function descargarInformeMensual(e) {
 </div>
 
 <script>
+async function anularCierreFrancos(id, departamento) {
+  if (!confirm(`¿Anular el último cierre de ${departamento.toUpperCase()}?\nSe restaurará el saldo anterior y se desbloquearán solamente sus movimientos.`)) return;
+  const motivo = prompt('Motivo de la anulación:');
+  if (!motivo || !motivo.trim()) { alert('El motivo es obligatorio.'); return; }
+  const fd = new FormData();
+  fd.append('motivo', motivo.trim());
+  const res = await fetch(`/francos/cierre/anular/${id}`, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok || data.error) { alert('Error: ' + (data.error || 'No se pudo anular.')); return; }
+  const d = data.desbloqueados || {};
+  alert(`Cierre anulado.\nFrancos tomados: ${d.tomados || 0}\nGenerados: ${d.generados || 0}\nCargas semanales: ${d.semanales || 0}`);
+  location.reload();
+}
+
 async function cerrarFrancos() {
   const depto = document.getElementById('cf-depto').value;
   const fecha = document.getElementById('cf-fecha').value;

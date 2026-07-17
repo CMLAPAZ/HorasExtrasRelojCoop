@@ -242,10 +242,14 @@
           <td><span class="badge-gen">+{{ g.dias }}</span></td>
           <td class="td-fecha">{{ g.cargado_en[:10] if g.cargado_en else '—' }}</td>
           <td>
+            {% if g.cierre_francos_id %}
+              <span class="badge" style="background:#dbeafe;color:#1e40af">Cierre #{{ g.cierre_francos_id }}</span>
+            {% else %}
             <form method="post" action="/francos/generados/eliminar/{{ g.id }}"
                   onsubmit="return confirm('¿Eliminar este registro?')">
               <button type="submit" class="btn-sm">Eliminar</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

@@ -35,6 +35,13 @@ def test_telefonia_y_telefonia_sin_tilde_son_el_mismo_depto():
     assert deptos.clave_canonica("Telefonía") == deptos.clave_canonica("telefonia") == "telefonia"
 
 
+def test_ingenieros_y_aliases_son_el_mismo_depto():
+    assert deptos.mismo_departamento("Ingenieros", "ingeniero") is True
+    assert deptos.mismo_departamento("INGENIEROS", "Ingeniros") is True
+    assert deptos.clave_canonica("Ingeniros") == "ingenieros"
+    assert deptos.nombre_visible("ingeniros") == "Ingenieros"
+
+
 # ──────────────────────────────────────────────────────────────
 # Departamentos distintos -> no se consideran iguales
 # ──────────────────────────────────────────────────────────────
@@ -48,7 +55,7 @@ def test_departamentos_distintos_no_son_iguales():
 # nombre_visible: forma canónica, alias y forma visible -> mismo resultado
 # ──────────────────────────────────────────────────────────────
 
-def test_nombre_visible_es_estable_para_los_5_canonicos():
+def test_nombre_visible_es_estable_para_los_canonicos():
     for canon, visible in deptos._VISIBLES.items():
         assert deptos.nombre_visible(visible) == visible          # ya visible -> idéntico
         assert deptos.nombre_visible(canon) == visible             # clave canónica -> visible

@@ -424,10 +424,14 @@ if (window.history && window.history.replaceState) {
           <td><span class="badge-gen">+{{ g.dias }}</span></td>
           <td style="font-size:.78rem;color:#94a3b8">{{ g.cargado_en[:10] if g.cargado_en else '—' }}</td>
           <td>
+            {% if g.cierre_francos_id %}
+              <span class="badge-anulado" style="background:#dbeafe;color:#1e40af">Cierre #{{ g.cierre_francos_id }}</span>
+            {% else %}
             <form method="post" action="/francos/generados/eliminar/{{ g.id }}"
                   onsubmit="return confirm('¿Eliminar este registro?')">
               <button type="submit" class="btn-del">Eliminar</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -441,7 +445,7 @@ if (window.history && window.history.replaceState) {
 {% if deptos_manuales %}
 <div class="card no-print">
   <div class="card-header">
-    <div class="card-title-inline">Francos generados — Guardias / Internet / Telefonía</div>
+    <div class="card-title-inline">Francos generados — Guardias / Internet / Telefonía / Ingenieros</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="sel-semana-manual" title="Semana" onchange="actualizarInputsSemana()" style="padding:6px 10px;font-size:.84rem;border:1px solid #d7dde5;border-radius:7px">
         <option value="1">Semana 1</option>
@@ -479,6 +483,11 @@ if (window.history && window.history.replaceState) {
                    data-sem3="{{ e.semanas.get(3, 0) }}"
                    data-sem4="{{ e.semanas.get(4, 0) }}"
                    data-sem5="{{ e.semanas.get(5, 0) }}"
+                   data-cierre-sem1="{{ e.cierres.get(1, '') }}"
+                   data-cierre-sem2="{{ e.cierres.get(2, '') }}"
+                   data-cierre-sem3="{{ e.cierres.get(3, '') }}"
+                   data-cierre-sem4="{{ e.cierres.get(4, '') }}"
+                   data-cierre-sem5="{{ e.cierres.get(5, '') }}"
                    value="{{ e.semanas.get(1, 0) }}"
                    style="width:60px;text-align:center;padding:5px;border:1px solid #d7dde5;border-radius:6px;font-size:.9rem">
           </td>
@@ -576,11 +585,15 @@ if (window.history && window.history.replaceState) {
           <td style="white-space:nowrap;overflow:visible;text-overflow:clip">
             {% if r.estado == 'Cerrado' %}
               <span class="badge-anulado" style="background:#dbeafe;color:#1e40af">Cerrado</span>
+              {% if r.cierre_francos_id %}
+                <span class="badge-anulado" style="background:#e2e8f0;color:#334155">Cierre #{{ r.cierre_francos_id }}</span>
+              {% else %}
               <form method="post" action="/francos/anular-cerrado/{{ r.id }}" onsubmit="return confirmarAnulacionCerrado(this)" style="display:inline">
                 <input type="hidden" name="motivo" value="">
                 <input type="hidden" name="usuario" value="">
                 <button type="submit" class="btn-del" style="background:#fef3c7;border-color:#fde68a;color:#92400e;white-space:nowrap">↺ Anular y devolver</button>
               </form>
+              {% endif %}
             {% elif r.estado == 'Anulado' %}
               <span class="badge-anulado">Anulado</span>
             {% else %}
@@ -784,8 +797,13 @@ function actualizarInputsSemana() {
   const sem = parseInt(document.getElementById('sel-semana-manual').value);
   document.querySelectorAll('[data-legajo]').forEach(inp => {
     inp.value = inp.dataset['sem' + sem] || 0;
+    const cierre = inp.dataset['cierreSem' + sem] || '';
+    inp.disabled = !!cierre;
+    inp.title = cierre ? `Incluido en cierre #${cierre}` : '';
+    inp.style.background = cierre ? '#e2e8f0' : '#fff';
   });
 }
+actualizarInputsSemana();
 
 async function guardarManualSemana() {
   const sem = document.getElementById('sel-semana-manual').value;
@@ -804,7 +822,11 @@ async function guardarManualSemana() {
     document.querySelectorAll('[data-legajo]').forEach(inp => {
       inp.dataset['sem' + sem] = inp.value;
     });
-    alert(`✓ Francos semana ${sem} (${mes}) guardados.`);
+    const bloqueados = data.bloqueados || [];
+    const detalle = bloqueados.length
+      ? `\n${bloqueados.length} registro(s) no se modificaron porque ya pertenecen a un cierre.`
+      : '';
+    alert(`✓ Francos semana ${sem} (${mes}) guardados.${detalle}`);
   } catch(ex) { alert('Error de conexión.'); }
 }
 

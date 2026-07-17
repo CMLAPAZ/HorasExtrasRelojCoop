@@ -205,7 +205,11 @@ def _clasificar_franja_por_minutos(minutos_promedio):
     else:
         return time(6, 0)
 
-EXCLUIR_DE_INFERENCIA = {"100", "101"}
+# Gatti y Mancioni se gestionan exclusivamente mediante carga manual en el
+# departamento Ingenieros. Sus marcas biométricas no deben llegar a ningún
+# cálculo, semana, cuadrilla ni cierre automático.
+LEGAJOS_EXCLUIR_PROCESAMIENTO = {"100", "101"}
+EXCLUIR_DE_INFERENCIA = LEGAJOS_EXCLUIR_PROCESAMIENTO
 def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro=None, excluir_legajos=None):
     """
     Infiere cuadrilla por departamento y día usando SOLO la primera entrada real
@@ -309,6 +313,10 @@ def _df_to_registros(df: pd.DataFrame):
     tmp = tmp.dropna(subset=["FechaHora"]).copy()
 
     tmp["Legajo"] = tmp["Legajo"].astype(str).str.strip()
+    # Excel puede entregar legajos numéricos como "100.0". Se normaliza solo
+    # para comparar la exclusión, conservando el valor original de los demás.
+    legajos_comparables = tmp["Legajo"].str.replace(r"\.0+$", "", regex=True)
+    tmp = tmp[~legajos_comparables.isin(LEGAJOS_EXCLUIR_PROCESAMIENTO)].copy()
     tmp["Tipo"] = tmp["Tipo"].astype(str).str.upper().str.strip()
     tmp = tmp[tmp["Tipo"].isin(["ENTRADA", "SALIDA", "BREAK"])].copy()
 

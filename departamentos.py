@@ -20,6 +20,7 @@ _ALIASES = {
     "guardias": "guardias", "guardia": "guardias",
     "internet": "internet",
     "telefonia": "telefonia", "telefono": "telefonia", "telefonos": "telefonia",
+    "ingenieros": "ingenieros", "ingeniero": "ingenieros", "ingeniros": "ingenieros",
     "todos": "todos",
 }
 
@@ -30,6 +31,7 @@ _VISIBLES = {
     "guardias": "Guardias",
     "internet": "Internet",
     "telefonia": "Telefonía",
+    "ingenieros": "Ingenieros",
 }
 
 

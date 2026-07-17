@@ -270,6 +270,20 @@ def _init_db():
                 cargado_en    TEXT DEFAULT ''
             )
         """)
+        # Gatti y Mancioni se administran como empleados sin fichadas del
+        # departamento Ingenieros. Si ya existen (por ejemplo en producción),
+        # se corrigen sus nombres y su asignación actual según la nómina.
+        # Los registros históricos de periodo_empleados no se modifican.
+        for legajo, nombre in (("100", "MANCIONI, Martin"), ("101", "GATTI, Marcelo")):
+            conn.execute("""
+                INSERT INTO empleados_extra
+                    (legajo, nombre, departamento, activo, cargado_en)
+                VALUES (?, ?, 'Ingenieros', 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(legajo) DO UPDATE SET
+                    nombre = excluded.nombre,
+                    departamento = 'Ingenieros',
+                    activo = 1
+            """, (legajo, nombre))
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cierres_francos (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,6 +294,28 @@ def _init_db():
                 estado        TEXT NOT NULL DEFAULT 'ACTIVO'
             )
         """)
+        # Relación auditable entre cada movimiento manual y el cierre que lo
+        # incorporó. Las migraciones son idempotentes para bases existentes.
+        for tabla in ("francos_tomados", "francos_generados", "francos_semana_manual"):
+            try:
+                conn.execute(f"ALTER TABLE {tabla} ADD COLUMN cierre_francos_id INTEGER")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{tabla}_cierre_francos "
+                f"ON {tabla}(cierre_francos_id)"
+            )
+        for tabla, columna in (
+            ("francos_tomados", "estado_antes_cierre TEXT DEFAULT ''"),
+            ("cierres_francos", "base_anterior TEXT DEFAULT '{}'"),
+            ("cierres_francos", "fecha_anulacion TEXT DEFAULT ''"),
+            ("cierres_francos", "motivo_anulacion TEXT DEFAULT ''"),
+            ("cierres_francos", "usuario_anulacion TEXT DEFAULT ''"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna}")
+            except sqlite3.OperationalError:
+                pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_anulaciones_cerrados (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3175,10 +3211,18 @@ def periodos_historial():
             "SELECT * FROM cierres_francos ORDER BY id DESC"
         ).fetchall()
     cierres_francos = [dict(r) for r in cf_rows]
+    ultimos_activos_cf = {}
+    for c in cierres_francos:
+        dep = _normalizar_departamento_web(c["departamento"] or "")
+        if (c.get("estado") or "ACTIVO") != "ANULADO" and dep not in ultimos_activos_cf:
+            ultimos_activos_cf[dep] = c["id"]
     for c in cierres_francos:
         c["cerrado_en"] = (c["cerrado_en"] or "")[:16].replace("T", " ")
+        c["fecha_anulacion"] = (c.get("fecha_anulacion") or "")[:16].replace("T", " ")
         depto_visible = c["departamento"]
         depto_norm = _normalizar_departamento_web(depto_visible)
+        c["es_ultimo_activo"] = ultimos_activos_cf.get(depto_norm) == c["id"]
+        c["es_reversible"] = bool(c.get("base_anterior") and c.get("base_anterior") != "{}")
         with _get_db() as conn:
             legajos_cf = [str(r["legajo"]) for r in conn.execute(
                 "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
@@ -3201,6 +3245,62 @@ def periodos_historial():
     return render_template("periodos_historial.html", cierres=cierres,
                            cierres_francos=cierres_francos,
                            deptos_conocidos=deptos_conocidos)
+
+
+def _vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta):
+    """Asocia de forma irreversible (hasta una futura anulación controlada)
+    los movimientos manuales pendientes con el cierre del departamento.
+
+    - tomados: hasta la fecha de corte;
+    - semanas manuales: hasta el mes de la fecha de corte;
+    - generados extraordinarios: todos los pendientes cargados al cerrar.
+
+    Los movimientos ya asociados a otro cierre nunca se reasignan.
+    """
+    legajos = [str(leg) for leg in legajos if str(leg)]
+    if not legajos:
+        return {"tomados": 0, "generados": 0, "semanales": 0}
+
+    ph = ",".join("?" * len(legajos))
+    mes_hasta = (fecha_hasta or "")[:7]
+
+    cur_tom = conn.execute(
+        f"UPDATE francos_tomados "
+        f"SET cierre_francos_id=?, estado_antes_cierre=estado, estado='Cerrado' "
+        f"WHERE legajo IN ({ph}) "
+        f"AND cierre_francos_id IS NULL "
+        f"AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado') "
+        f"AND fecha_desde <= ?",
+        (cierre_id, *legajos, fecha_hasta),
+    )
+    cur_gen = conn.execute(
+        f"UPDATE francos_generados SET cierre_francos_id=? "
+        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL",
+        (cierre_id, *legajos),
+    )
+    cur_sem = conn.execute(
+        f"UPDATE francos_semana_manual SET cierre_francos_id=? "
+        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL AND mes <= ?",
+        (cierre_id, *legajos, mes_hasta),
+    )
+    return {
+        "tomados": cur_tom.rowcount,
+        "generados": cur_gen.rowcount,
+        "semanales": cur_sem.rowcount,
+    }
+
+
+def _snapshot_base_saldo_manual(conn, legajos):
+    """Foto exacta de francos_saldo_inicial antes del cierre manual."""
+    snapshot = {}
+    for legajo in (str(x) for x in legajos):
+        row = conn.execute(
+            "SELECT nombre, saldo, nota, cargado_en, tomados_al_corte, "
+            "gen_extra_al_corte, fecha_corte FROM francos_saldo_inicial "
+            "WHERE CAST(legajo AS TEXT)=?", (legajo,)
+        ).fetchone()
+        snapshot[legajo] = dict(row) if row else None
+    return snapshot
 
 
 @app.route("/francos/cierre/nuevo", methods=["POST"])
@@ -3229,18 +3329,20 @@ def francos_cierre_nuevo():
             f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ?",
             (*legajos, fecha_hasta)
         ).fetchone()[0]
-        # Marcar como Cerrado
-        conn.execute(
-            f"UPDATE francos_tomados SET estado='Cerrado' "
-            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado') AND fecha_desde <= ?",
-            (*legajos, fecha_hasta)
-        )
         # Registrar cierre
         cur = conn.execute(
             "INSERT INTO cierres_francos (cerrado_en, departamento, fecha_hasta, total_dias, estado) VALUES (?,?,?,?,?)",
             (ahora, depto_visible, fecha_hasta, total, "ACTIVO")
         )
         cid = cur.lastrowid
+        base_anterior = _snapshot_base_saldo_manual(conn, legajos)
+        conn.execute(
+            "UPDATE cierres_francos SET base_anterior=? WHERE id=?",
+            (json.dumps(base_anterior, ensure_ascii=False), cid),
+        )
+        _vincular_movimientos_cierre_francos(
+            conn, cid, legajos, fecha_hasta
+        )
         conn.commit()
 
     # Actualizar saldo_inicial con el saldo calculado al corte
@@ -3310,6 +3412,110 @@ def francos_cierre_nuevo():
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
     return jsonify({"ok": True, "id": cid, "total": total})
+
+
+@app.route("/francos/cierre/anular/<int:cid>", methods=["POST"])
+def francos_cierre_anular(cid):
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    motivo = request.form.get("motivo", "").strip()
+    if not motivo:
+        return jsonify({"error": "Indicá el motivo de la anulación."}), 400
+    usuario = session.get("usuario", "") or FIRMA_SUPERVISOR or "sistema"
+    ahora = datetime.now().isoformat()
+
+    conn = _get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cierre = conn.execute(
+            "SELECT * FROM cierres_francos WHERE id=?", (cid,)
+        ).fetchone()
+        if not cierre:
+            conn.rollback()
+            return jsonify({"error": "Cierre no encontrado."}), 404
+        if (cierre["estado"] or "ACTIVO") == "ANULADO":
+            conn.rollback()
+            return jsonify({"error": "El cierre ya estaba anulado."}), 400
+
+        ultimo = conn.execute(
+            "SELECT id FROM cierres_francos "
+            "WHERE LOWER(departamento)=LOWER(?) "
+            "AND COALESCE(estado,'ACTIVO') <> 'ANULADO' "
+            "ORDER BY cerrado_en DESC, id DESC LIMIT 1",
+            (cierre["departamento"],),
+        ).fetchone()
+        if not ultimo or ultimo["id"] != cid:
+            conn.rollback()
+            return jsonify({
+                "error": "Solo se puede anular el último cierre activo del departamento."
+            }), 409
+
+        try:
+            base_anterior = json.loads(cierre["base_anterior"] or "{}")
+        except Exception:
+            base_anterior = {}
+        if not base_anterior:
+            conn.rollback()
+            return jsonify({
+                "error": "Este cierre histórico no tiene una base reversible segura."
+            }), 409
+
+        for legajo, vals in base_anterior.items():
+            if vals is None:
+                conn.execute(
+                    "DELETE FROM francos_saldo_inicial WHERE CAST(legajo AS TEXT)=?",
+                    (str(legajo),),
+                )
+                continue
+            conn.execute("""
+                INSERT INTO francos_saldo_inicial
+                    (legajo,nombre,saldo,nota,cargado_en,tomados_al_corte,
+                     gen_extra_al_corte,fecha_corte)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(legajo) DO UPDATE SET
+                    nombre=excluded.nombre, saldo=excluded.saldo,
+                    nota=excluded.nota, cargado_en=excluded.cargado_en,
+                    tomados_al_corte=excluded.tomados_al_corte,
+                    gen_extra_al_corte=excluded.gen_extra_al_corte,
+                    fecha_corte=excluded.fecha_corte
+            """, (
+                str(legajo), vals.get("nombre", ""), vals.get("saldo", 0),
+                vals.get("nota", ""), vals.get("cargado_en", ""),
+                vals.get("tomados_al_corte", 0), vals.get("gen_extra_al_corte", 0),
+                vals.get("fecha_corte", "2026-05-21"),
+            ))
+
+        tomados = conn.execute(
+            "UPDATE francos_tomados SET "
+            "estado=COALESCE(NULLIF(estado_antes_cierre,''),'Aprobado'), "
+            "estado_antes_cierre='', cierre_francos_id=NULL "
+            "WHERE cierre_francos_id=?", (cid,)
+        ).rowcount
+        generados = conn.execute(
+            "UPDATE francos_generados SET cierre_francos_id=NULL "
+            "WHERE cierre_francos_id=?", (cid,)
+        ).rowcount
+        semanales = conn.execute(
+            "UPDATE francos_semana_manual SET cierre_francos_id=NULL "
+            "WHERE cierre_francos_id=?", (cid,)
+        ).rowcount
+        conn.execute("""
+            UPDATE cierres_francos
+            SET estado='ANULADO', fecha_anulacion=?, motivo_anulacion=?,
+                usuario_anulacion=?
+            WHERE id=?
+        """, (ahora, motivo, usuario, cid))
+        conn.commit()
+        return jsonify({
+            "ok": True,
+            "desbloqueados": {
+                "tomados": tomados, "generados": generados, "semanales": semanales,
+            },
+        })
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 @app.route("/francos/cierre/informe/<int:cid>")
@@ -3426,6 +3632,15 @@ def francos_cierre_pdf(cid):
     cf = dict(cf)
     depto_visible = cf["departamento"]
     fecha_hasta   = cf["fecha_hasta"]
+    import glob as _glob
+    matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_cf{cid}_*.pdf"))))
+    # Un cierre anulado conserva el PDF producido al cerrarlo. Nunca se
+    # regenera con los movimientos ya desbloqueados o corregidos.
+    if (cf.get("estado") or "ACTIVO") == "ANULADO":
+        if not matches:
+            return "El PDF histórico de este cierre anulado no está disponible.", 404
+        return send_file(matches[-1], mimetype="application/pdf", as_attachment=False,
+                         download_name=f"francos_{depto_visible.lower()}_{fecha_hasta}.pdf")
     departamento  = _normalizar_departamento_web(depto_visible)
     with _get_db() as conn:
         legajos = [str(r["legajo"]) for r in conn.execute(
@@ -3446,7 +3661,6 @@ def francos_cierre_pdf(cid):
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
-    import glob as _glob
     matches = sorted(_glob.glob(str(Path(f"reportes/francos_cierre_cf{cid}_*.pdf"))))
     if not matches:
         return "Error generando PDF.", 500
@@ -5039,10 +5253,14 @@ def francos():
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1 ORDER BY departamento, CAST(legajo AS INTEGER)"
         ).fetchall()
         manual_guardados = {}
+        manual_cierres = {}
         for r in conn.execute(
-            "SELECT legajo, semana_num, dias FROM francos_semana_manual WHERE mes=?", (mes_actual,)
+            "SELECT legajo, semana_num, dias, cierre_francos_id "
+            "FROM francos_semana_manual WHERE mes=?", (mes_actual,)
         ):
             manual_guardados.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["dias"]
+            if r["cierre_francos_id"] is not None:
+                manual_cierres.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["cierre_francos_id"]
     _DEPTOS_AUTO = {"redes", "administracion"}
     deptos_manuales = {}
     for e in emps_extra:
@@ -5052,7 +5270,8 @@ def francos():
         dep = e["departamento"] or "Sin departamento"
         deptos_manuales.setdefault(dep, []).append({
             "legajo": e["legajo"], "nombre": e["nombre"],
-            "semanas": manual_guardados.get(str(e["legajo"]), {})
+            "semanas": manual_guardados.get(str(e["legajo"]), {}),
+            "cierres": manual_cierres.get(str(e["legajo"]), {}),
         })
     deptos_manuales_list = [{"departamento": k, "empleados": v} for k, v in sorted(deptos_manuales.items())]
     return render_template("francos.html",
@@ -5234,6 +5453,11 @@ def francos_generados_nuevo():
 def francos_generados_eliminar(gen_id):
     if not _autenticado(): return _requiere_auth()
     with _get_db() as conn:
+        generado = conn.execute(
+            "SELECT cierre_francos_id FROM francos_generados WHERE id=?", (gen_id,)
+        ).fetchone()
+        if generado and generado["cierre_francos_id"] is not None:
+            return redirect(url_for("francos_saldos") + "?error=movimiento_cerrado")
         conn.execute("DELETE FROM francos_generados WHERE id=?", (gen_id,))
         conn.commit()
     return redirect(url_for("francos_saldos"))
@@ -5335,10 +5559,13 @@ def francos_eliminar(fid):
     motivo = request.form.get("motivo", "").strip()
     with _get_db() as conn:
         franco = conn.execute(
-            "SELECT legajo, dias, cargado_en, observaciones FROM francos_tomados WHERE id=?", (fid,)
+            "SELECT legajo, dias, cargado_en, observaciones, cierre_francos_id "
+            "FROM francos_tomados WHERE id=?", (fid,)
         ).fetchone()
         if not franco:
             return redirect(url_for("francos"))
+        if franco["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
         obs_actual = franco["observaciones"] or ""
         nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
         conn.execute("UPDATE francos_tomados SET estado='Anulado', observaciones=? WHERE id=?", (nueva_obs, fid))
@@ -5350,7 +5577,15 @@ def francos_eliminar(fid):
 def francos_aprobar(fid):
     if not _autenticado(): return _requiere_auth()
     with _get_db() as conn:
-        conn.execute("UPDATE francos_tomados SET estado='Aprobado' WHERE id=?", (fid,))
+        franco = conn.execute(
+            "SELECT cierre_francos_id FROM francos_tomados WHERE id=?", (fid,)
+        ).fetchone()
+        if franco and franco["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
+        conn.execute(
+            "UPDATE francos_tomados SET estado='Aprobado' "
+            "WHERE id=? AND cierre_francos_id IS NULL", (fid,)
+        )
         conn.commit()
     return redirect(url_for("francos"))
 
@@ -5374,6 +5609,8 @@ def francos_anular_cerrado(fid):
         ).fetchone()
         if not franco:
             return redirect(url_for("francos") + "?error=franco_no_encontrado")
+        if franco["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
         if (franco["estado"] or "") != "Cerrado":
             return redirect(url_for("francos") + "?error=franco_no_cerrado")
 
@@ -5416,6 +5653,7 @@ def francos_guardar_manual_semana():
         return jsonify({"error": "Semana y mes son requeridos"}), 400
     ahora = datetime.now().isoformat(timespec="seconds")
     guardados = 0
+    bloqueados = []
     with _get_db() as conn:
         emps = conn.execute(
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1"
@@ -5424,6 +5662,17 @@ def francos_guardar_manual_semana():
             key = f"dias_{emp['legajo']}"
             val = request.form.get(key, "").strip()
             dias = int(val) if val.isdigit() else 0
+            existente = conn.execute(
+                "SELECT cierre_francos_id FROM francos_semana_manual "
+                "WHERE legajo=? AND semana_num=? AND mes=?",
+                (emp["legajo"], semana_num, mes),
+            ).fetchone()
+            if existente and existente["cierre_francos_id"] is not None:
+                bloqueados.append({
+                    "legajo": str(emp["legajo"]),
+                    "cierre_id": existente["cierre_francos_id"],
+                })
+                continue
             conn.execute("""
                 INSERT INTO francos_semana_manual (legajo, nombre, departamento, semana_num, mes, dias, guardado_en)
                 VALUES (?,?,?,?,?,?,?)
@@ -5431,7 +5680,7 @@ def francos_guardar_manual_semana():
             """, (emp["legajo"], emp["nombre"], emp["departamento"] or "", semana_num, mes, dias, ahora))
             guardados += 1
         conn.commit()
-    return jsonify({"ok": True, "guardados": guardados})
+    return jsonify({"ok": True, "guardados": guardados, "bloqueados": bloqueados})
 
 
 # ═══════════════════════════════════════════════
