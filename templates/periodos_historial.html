@@ -290,6 +290,28 @@ function descargarInformeMensual(e) {
 <div class="panel" style="margin-top:32px">
   <div class="panel-title">Cierres de Francos por Departamento</div>
 
+  <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:9px;padding:14px 16px;margin-bottom:20px">
+    <div style="font-weight:700;color:#1e3a5f;margin-bottom:5px">Actualizar planilla mensual</div>
+    <div style="font-size:.78rem;color:#475569;margin-bottom:12px">
+      Completa únicamente <b>Franco Orig.</b> y <b>Franco Tom.</b> de Guardias e Ingenieros. Requiere el cierre activo de ambos departamentos para el mes.
+    </div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Mes</label>
+        <input type="month" id="planilla-mes" style="padding:7px 10px;border:1px solid #bfdbfe;border-radius:7px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Planilla anual (.xlsx)</label>
+        <input type="file" id="planilla-archivo" accept=".xlsx" style="font-size:.8rem">
+      </div>
+      <button type="button" id="planilla-btn" onclick="actualizarPlanillaFrancos()"
+              style="height:36px;padding:0 18px;background:#1d4ed8;color:#fff;border:none;border-radius:7px;font-size:.83rem;font-weight:700;cursor:pointer">
+        Actualizar y descargar
+      </button>
+      <span id="planilla-msg" style="font-size:.8rem;color:#475569"></span>
+    </div>
+  </div>
+
   <!-- Formulario nuevo cierre -->
   <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
     <div>
@@ -377,6 +399,41 @@ function descargarInformeMensual(e) {
 </div>
 
 <script>
+async function actualizarPlanillaFrancos() {
+  const mes = document.getElementById('planilla-mes').value;
+  const input = document.getElementById('planilla-archivo');
+  const boton = document.getElementById('planilla-btn');
+  const msg = document.getElementById('planilla-msg');
+  if (!mes || !input.files.length) { alert('Seleccioná el mes y la planilla .xlsx.'); return; }
+  const fd = new FormData();
+  fd.append('mes', mes);
+  fd.append('planilla', input.files[0]);
+  boton.disabled = true;
+  msg.textContent = 'Actualizando…';
+  try {
+    const res = await fetch('/francos/planilla/actualizar', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'No se pudo actualizar la planilla.');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = `Horas_Extras_actualizada_${mes}.xlsx`;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    URL.revokeObjectURL(url);
+    msg.textContent = '✓ Planilla descargada';
+  } catch (error) {
+    msg.textContent = '';
+    alert(error.message);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
 async function anularCierreFrancos(id, departamento) {
   if (!confirm(`¿Anular el último cierre de ${departamento.toUpperCase()}?\nSe restaurará el saldo anterior y se desbloquearán solamente sus movimientos.`)) return;
   const motivo = prompt('Motivo de la anulación:');

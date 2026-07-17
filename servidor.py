@@ -3264,6 +3264,120 @@ def periodos_historial():
                            deptos_conocidos=deptos_conocidos)
 
 
+_MESES_PLANILLA = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+}
+
+
+def _cierres_francos_del_mes(conn, mes):
+    """Último cierre activo del mes para cada departamento exportable."""
+    encontrados = {}
+    rows = conn.execute(
+        "SELECT * FROM cierres_francos "
+        "WHERE COALESCE(estado, 'ACTIVO') <> 'ANULADO' "
+        "AND substr(fecha_hasta, 1, 7)=? ORDER BY id DESC",
+        (mes,),
+    ).fetchall()
+    for row in rows:
+        departamento = _normalizar_departamento_web(row["departamento"] or "")
+        if departamento in ("guardias", "ingenieros") and departamento not in encontrados:
+            encontrados[departamento] = dict(row)
+    return encontrados
+
+
+def _actualizar_planilla_francos(contenido, mes, cierres):
+    """Actualiza exclusivamente Franco Orig. (G) y Franco Tom. (H)."""
+    from openpyxl import load_workbook
+
+    try:
+        anio, numero_mes = (int(p) for p in mes.split("-"))
+        nombre_hoja = f"{_MESES_PLANILLA[numero_mes]} {anio}"
+    except (ValueError, KeyError):
+        raise ValueError("El mes indicado no es válido.")
+    try:
+        libro = load_workbook(BytesIO(contenido), data_only=False)
+    except Exception as exc:
+        raise ValueError("No se pudo abrir la planilla. Verificá que sea un archivo .xlsx válido.") from exc
+    if nombre_hoja not in libro.sheetnames:
+        raise ValueError(f"La planilla no contiene la hoja '{nombre_hoja}'.")
+
+    hoja = libro[nombre_hoja]
+    filas_por_legajo = {}
+    for fila in range(1, hoja.max_row + 1):
+        valor = hoja.cell(fila, 1).value
+        if valor is not None:
+            legajo = str(valor).strip()
+            if legajo.endswith(".0"):
+                legajo = legajo[:-2]
+            filas_por_legajo[legajo] = fila
+
+    actualizados, faltantes = [], []
+    for departamento in ("ingenieros", "guardias"):
+        try:
+            snapshot = json.loads(cierres[departamento].get("saldo_anterior") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            snapshot = {}
+        if not snapshot:
+            raise ValueError(
+                f"El cierre de {_nombre_departamento_visible(departamento)} no tiene datos de saldo para exportar."
+            )
+        for legajo, datos in snapshot.items():
+            fila = filas_por_legajo.get(str(legajo))
+            if not fila:
+                faltantes.append(str(legajo))
+                continue
+            generados = datos.get("generados", 0) or 0
+            tomados = datos.get("tomados", 0) or 0
+            hoja.cell(fila, 7).value = generados if generados else None
+            hoja.cell(fila, 8).value = tomados if tomados else None
+            actualizados.append(str(legajo))
+
+    if faltantes:
+        raise ValueError("Faltan estos legajos en la hoja mensual: " + ", ".join(sorted(faltantes)))
+    if not actualizados:
+        raise ValueError("No se encontraron empleados para actualizar en la hoja mensual.")
+    if getattr(libro, "calculation", None):
+        libro.calculation.fullCalcOnLoad = True
+        libro.calculation.forceFullCalc = True
+    salida = BytesIO()
+    libro.save(salida)
+    salida.seek(0)
+    return salida
+
+
+@app.route("/francos/planilla/actualizar", methods=["POST"])
+def francos_planilla_actualizar():
+    if not _autenticado():
+        return jsonify({"error": "No autorizado"}), 401
+    mes = (request.form.get("mes") or "").strip()
+    archivo = request.files.get("planilla")
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
+        return jsonify({"error": "Seleccioná un mes válido."}), 400
+    if not archivo or not (archivo.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"error": "Seleccioná la planilla Excel en formato .xlsx."}), 400
+
+    with _get_db() as conn:
+        cierres = _cierres_francos_del_mes(conn, mes)
+    faltan = [_nombre_departamento_visible(dep)
+              for dep in ("ingenieros", "guardias") if dep not in cierres]
+    if faltan:
+        return jsonify({
+            "error": "No se puede actualizar: falta el cierre activo del mes para " + " y ".join(faltan) + "."
+        }), 409
+    try:
+        salida = _actualizar_planilla_francos(archivo.read(), mes, cierres)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return send_file(
+        salida, as_attachment=True,
+        download_name=f"Horas_Extras_actualizada_{mes}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        etag=False, max_age=0,
+    )
+
+
 def _vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta):
     """Asocia de forma irreversible (hasta una futura anulación controlada)
     los movimientos manuales pendientes con el cierre del departamento.
