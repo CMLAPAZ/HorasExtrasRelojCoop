@@ -13,7 +13,7 @@ y francos compensatorios del personal. Convenio Luz y Fuerza.
 - **Motor de cálculo:** `procesador.py` — lee fichadas Excel, produce totales por empleado/semana
 - **PDF:** fpdf2 (`pdf_generator.py`), fuentes DejaVu en `recursos/fonts/`
 - **Reporte email:** `reporte_saldos_francos.py` — corre cada viernes vía tarea programada en PythonAnywhere
-- **Venv:** `.venv/Scripts/python.exe` (local Windows)
+- **Venv:** `C:\PyEnvs\CM_HorasExtras\Scripts\python.exe` (local Windows, fuera de OneDrive)
 
 ---
 
@@ -50,6 +50,7 @@ o reporte que combine datos de dos departamentos distintos es un error de diseñ
 |---|---|
 | `servidor.py` | Flask: auth, carga de fichadas, confirmaciones, cierres, francos, email, API JSON |
 | `procesador.py` | Lógica pura de cálculo: bloques de trabajo, OT50/OT100, cuadrilla, tardanza |
+| `departamentos.py` | Normalización centralizada de nombres de departamento (sin deps Flask); usado por servidor.py y reporte_saldos_francos.py |
 | `pdf_generator.py` | Genera PDFs de liquidación por empleado y resumen consolidado |
 | `reporte_saldos_francos.py` | Genera PDF de saldos de francos por depto y los envía por email |
 | `main.py` | App Tkinter: carga fichadas, llama al procesador, genera PDFs, gestiona semanas |
@@ -57,6 +58,9 @@ o reporte que combine datos de dos departamentos distintos es un error de diseñ
 | `graficos_ui.py` | Panel Tkinter con gráficos estadísticos de horas extras |
 | `resumen_ui.py` | Pantalla Tkinter de resumen consolidado |
 | `horarios_paro.py` | Helpers para leer/guardar horarios de días de paro |
+| `puntualidad_db.py` | Persistencia SQLite para módulo de puntualidad (solo escritorio) |
+| `puntualidad_service.py` | Motor de cálculo de puntualidad: importa procesador.py en modo lectura |
+| `puntualidad_ui.py` | UI Tkinter independiente de puntualidad (NO integrada a main.py aún) |
 
 ---
 
@@ -98,14 +102,17 @@ reporte_saldos_francos.py → reportes/reporte_francos_{DEPTO}_{FECHA}.pdf → e
 |---|---|
 | `periodos` | Períodos cerrados: fecha_desde, fecha_hasta, semanas, departamento, estado (ACTIVO/ANULADO) |
 | `periodo_empleados` | OT50, OT100, comidas, francos, tardanzas por empleado/período |
-| `francos_tomados` | Francos tomados: legajo, tipo (UNICO/RANGO/SUELTAS), fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones |
-| `francos_saldo_inicial` | Saldo inicial cargado al 04/05/2026 (ajustado 21/05/2026 para Redes y Guardias) |
-| `francos_generados` | Francos generados manualmente para deptos sin fichadas |
-| `francos_semana_manual` | Francos semanales de Guardias/Internet/Telefonía cargados desde el formulario web |
+| `francos_tomados` | Francos tomados: legajo, tipo (UNICO/RANGO/SUELTAS), fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, observaciones, **cierre_francos_id**, **estado_antes_cierre** |
+| `francos_saldo_inicial` | Saldo inicial por legajo; columnas `+tomados_al_corte`, `+gen_extra_al_corte`, `+fecha_corte` (agregadas 03/06/2026) |
+| `francos_generados` | Francos generados manualmente para deptos sin fichadas; **+cierre_francos_id** |
+| `francos_semana_manual` | Francos semanales de Guardias/Internet/Telefonía/Ingenieros cargados desde el formulario web; **+cierre_francos_id** |
 | `francos_semana_parcial` | Snapshot del período activo guardado cada viernes (borrado al cerrar el período) |
 | `francos_cierre_detalle` | Copia de francos_tomados al momento de cada cierre (historial inmutable) |
+| `cierres_francos` | Cierres manuales (Guardias/Ingenieros): **+base_anterior** (JSON snapshot reversible), **+fecha_anulacion**, **+motivo_anulacion**, **+usuario_anulacion** |
 | `supervisores` | nombre, email, departamentos (JSON array), activo |
-| `empleados_extra` | Empleados de deptos sin fichadas: Guardias, Internet, Telefonía + Karen Soto (Redes) |
+| `empleados_extra` | Empleados de deptos sin fichadas: Guardias, Internet, Telefonía, **Ingenieros** + Karen Soto (Redes) |
+
+**Movimientos bloqueados**: cuando `cierre_francos_id IS NOT NULL` en `francos_tomados`, `francos_generados` o `francos_semana_manual`, el movimiento está cerrado y no se puede eliminar, modificar ni aprobar. Solo se desbloquea anulando el cierre.
 
 ---
 
@@ -206,14 +213,18 @@ Fuentes de "generados":
 | Guardias | No | Semanal desde formulario web | No |
 | Internet | No | Semanal desde formulario web | No |
 | Telefonía | No | Semanal desde formulario web | No |
+| **Ingenieros** | No (excluidos del biométrico) | Cierre manual mensual | No |
 
-Los deptos sin fichadas (Guardias, Internet, Telefonía) tienen empleados en
+Los deptos sin fichadas (Guardias, Internet, Telefonía, Ingenieros) tienen empleados en
 `empleados_extra` y francos generados en `francos_semana_manual` + `francos_generados`.
+
+**Legajos 100 y 101** (MANCIONI y GATTI) están **excluidos de todo procesamiento biométrico**: `procesador.py` los filtra en `_df_to_registros()` y `LEGAJOS_EXCLUIR_PROCESAMIENTO = {"100", "101"}`. Sus francos se gestionan exclusivamente como Ingenieros desde el módulo manual. `_empleados_conocidos()` da prioridad a `empleados_extra` para esos legajos, ignorando cualquier sesión biométrica que los traiga como Redes.
 
 ---
 
-## Empleados extra cargados (21/05/2026)
+## Empleados extra cargados
 
+- **INGENIEROS (2):** 100-MANCIONI MARTIN, 101-GATTI MARCELO *(incorporados julio 2026; excluidos del biométrico)*
 - **GUARDIAS (6):** 113-MAYDANA, 118-GARCILAZO, 124-FORASTIERI, 130-PLIEGO, 131-ESPINOZA, 136-URIONDO
 - **INTERNET (4):** 50-GOMEZ NESTOR, 51-SEGUI, 52-FRIZZO, 54-GRUNEVALT
 - **TELEFONÍA (3):** 16-BAROLIN FRANCA, 17-LAZARO GOMEZ, 18-CALVET SILVIA PATRICIA
@@ -282,6 +293,8 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | POST | `/francos/modificar/<fid>` | `francos_modificar(fid)` | Modifica franco existente |
 | POST | `/francos/eliminar/<fid>` | `francos_eliminar(fid)` | Elimina franco tomado |
 | GET | `/francos/saldos` | `francos_saldos()` | Saldos actuales de francos por empleado (JSON) |
+| POST | `/francos/cierre/anular/<cid>` | `francos_cierre_anular(cid)` | Anula el **último** cierre activo del depto; restaura `francos_saldo_inicial` desde `base_anterior`; desbloquea movimientos vinculados |
+| POST | `/francos/planilla/actualizar` | `francos_planilla_actualizar()` | Recibe planilla Excel + mes; escribe Franco Orig. (col G) y Franco Tom. (col H) desde los cierres activos de Ingenieros y Guardias |
 | GET | `/empleados/importar` | `empleados_importar()` | Importación de empleados sin fichadas |
 | GET | `/configuracion/email` | `configuracion_email()` | Configuración SMTP y supervisores |
 
@@ -377,7 +390,8 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 |---|---|
 | `_calcular_periodo(desde, hasta, depto)` | Acumula horas del período desde historial + sesión pendiente |
 | `_calcular_saldos()` | Saldo de francos: inicial + generados - tomados (todas las fuentes) |
-| `_empleados_conocidos()` | Lista deduplicada desde `empleados_extra` + `periodo_empleados` + sesión |
+| `_empleados_conocidos()` | Lista deduplicada desde `empleados_extra` + `periodo_empleados` + sesión; legajos 100/101 siempre vienen de empleados_extra (Ingenieros) |
+| `_departamentos_francos_disponibles(empleados, incluir_ocultos)` | Lista canónica de deptos para todos los selectores del módulo Francos; garantiza que Ingenieros aparezca aunque no tenga movimientos aún |
 | `_aplicar_exclusiones_ot(empleados)` | Marca empleados como `excluido_ot` |
 | `_es_guardias(conn, legajo)` | Verifica si el empleado pertenece a GUARDIAS |
 | `_validar_franco_nuevo(conn, leg, tipo, fd, fh, fechas_sueltas, exclude_id)` | Valida fechas hábiles y no-solapamiento |
@@ -385,6 +399,10 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `_dias_habiles(fd, fh)` | Cuenta días hábiles entre fechas excluyendo feriados |
 | `_fechas_habiles_set(desde, hasta, feriados)` | Retorna conjunto de dates hábiles |
 | `_cargar_feriados_config()` | Lee feriados desde `config.json` |
+| `_vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta)` | Setea `cierre_francos_id` en tomados/generados/semanales; marca tomados como 'Cerrado' guardando estado anterior en `estado_antes_cierre` |
+| `_snapshot_base_saldo_manual(conn, legajos)` | Foto de `francos_saldo_inicial` antes del cierre manual (guardada en `cierres_francos.base_anterior` para reversión) |
+| `_cierres_francos_del_mes(conn, mes)` | Último cierre activo del mes para Ingenieros y Guardias (para exportar a planilla Excel) |
+| `_actualizar_planilla_francos(contenido, mes, cierres)` | Escribe columnas G (Franco Orig.) y H (Franco Tom.) en la hoja mensual de la planilla Excel |
 
 ### PDFs
 
@@ -419,8 +437,10 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 
 ## Funciones `procesador.py`
 
-| Función | Qué hace |
+| Función / Constante | Qué hace |
 |---|---|
+| `LEGAJOS_EXCLUIR_PROCESAMIENTO` | `{"100", "101"}` — Mancioni y Gatti excluidos de TODO procesamiento biométrico |
+| `EXCLUIR_DE_INFERENCIA` | Alias de `LEGAJOS_EXCLUIR_PROCESAMIENTO` (usado en cuadrilla) |
 | `cargar_config()` | Lee `config.json` completo |
 | `cargar_feriados(config)` | Extrae set de dates de feriados |
 | `cargar_dias_paro(config)` | Extrae set de fechas de paro |
@@ -431,8 +451,8 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 | `resolver_hora_inicio(d, depto, inicio_grupal, config, es_paro, legajo)` | Resuelve hora de inicio aplicando prioridades |
 | `cargar_asignaciones_especiales(path)` | Lee asignaciones especiales de `config.json` |
 | `obtener_inicio_asignado(asignaciones, legajo, d)` | Busca asignación especial vigente para legajo+fecha |
-| `inferir_inicio_grupal(registros, asignaciones, feriados, dias_paro, excluir_legajos)` | **Núcleo de cuadrilla**: infiere hora de entrada grupal por depto+fecha |
-| `_df_to_registros(df)` | Convierte DataFrame a tuplas (depto, legajo, nombre, datetime, tipo) |
+| `inferir_inicio_grupal(registros, asignaciones, feriados, dias_paro, excluir_legajos)` | **Núcleo de cuadrilla**: infiere hora de entrada grupal; devuelve `{(depto, fecha, legajo): hora}` |
+| `_df_to_registros(df)` | Convierte DataFrame a tuplas; **filtra legajos 100/101 antes de convertir** |
 | `_agrupar_por_empleado(registros)` | Agrupa por (depto, legajo, nombre); ordena cronológicamente |
 | `_limpiar_y_emparejar(eventos)` | Arma pares entrada-salida; cierra tramos incompletos |
 | `_debe_imputarse_al_dia_anterior(e, s, ...)` | Detecta si tramo de madrugada pertenece al día anterior |
@@ -467,9 +487,12 @@ Legajos correctos: CLASSEN DANTE = 129, LOYTI ANDRES = 135.
 - `_autenticado()` / `_requiere_auth()` — guard de sesión en todas las rutas protegidas
 - `_get_db()` — conexión SQLite con `row_factory = sqlite3.Row`
 - `_empleados_conocidos()` — lista unificada; **siempre filtrar por depto antes de operar**
+- `_departamentos_francos_disponibles()` — usar en todos los selectores de Francos; garantiza que Ingenieros esté presente
 - Legajos siempre como `str` para comparaciones (pueden tener ceros a la izquierda)
 - Departamentos: minúsculas en `procesador.py`, mayúsculas en vistas web
 - `_normalizar_departamento_web()` antes de cualquier comparación por depto en el servidor
+- `departamentos.py` — normalización canónica independiente de Flask; usar `clave_canonica()` / `nombre_visible()` / `mismo_departamento()` en lugar de strings ad-hoc
+- Movimientos vinculados (`cierre_francos_id IS NOT NULL`) son de solo lectura — verificar antes de cualquier UPDATE/DELETE sobre francos_tomados, francos_generados, francos_semana_manual
 
 ---
 
@@ -558,15 +581,58 @@ La llamada desde `main.py` (Tkinter) sigue igual — pasa la ruta explícita.
 
 ---
 
-## Pendiente para próxima sesión
+## Implementado en sesión julio 2026
 
-### 1. Botón "Informe mensual completo" (baja prioridad)
+### Nuevo departamento: Ingenieros
 
-Un PDF que combine los cierres de todos los deptos de un mes en un solo archivo,
-con salto de página entre departamentos. Se genera desde una pantalla separada
-o desde el historial de cierres filtrando por mes.
+- Legajos 100 (MANCIONI, Martin) y 101 (GATTI, Marcelo) reasignados de Redes a Ingenieros
+- Administrados como `empleados_extra` (sin fichadas biométricas)
+- `procesador.py`: nueva constante `LEGAJOS_EXCLUIR_PROCESAMIENTO = {"100", "101"}`; `_df_to_registros()` los filtra antes de procesar
+- `_init_db()`: INSERT OR IGNORE + ON CONFLICT UPDATE para mantener nombre y departamento correctos en bases existentes
+- `_empleados_conocidos()`: prioriza `empleados_extra` para esos legajos sobre cualquier sesión biométrica
 
-### 2. Reestructuración de UI/layout (alta prioridad)
+### departamentos.py — normalización centralizada
+
+Nuevo módulo sin dependencias Flask. Expone:
+- `clave_canonica(nombre)` — lowercase sin tildes + resolución de alias
+- `nombre_visible(nombre)` — nombre oficial con tildes y capitalización
+- `mismo_departamento(a, b)` — comparación normalizada
+- Alias incluyen "ingenieros" / "ingeniero" / "ingeniros"
+
+### Cierres de francos reversibles
+
+- `cierres_francos` gana columnas: `base_anterior` (JSON snapshot de `francos_saldo_inicial`), `fecha_anulacion`, `motivo_anulacion`, `usuario_anulacion`
+- Al crear un cierre: se guarda snapshot en `base_anterior` antes de actualizar saldos
+- Nueva ruta `POST /francos/cierre/anular/<cid>`: solo anula el **último cierre activo** del departamento; restaura `francos_saldo_inicial` desde `base_anterior`; desbloquea movimientos vinculados
+- El historial muestra `es_ultimo_activo` y `es_reversible` por cierre
+
+### Vinculación de movimientos con cierre
+
+- Nuevas columnas `cierre_francos_id` en `francos_tomados`, `francos_generados`, `francos_semana_manual`
+- `francos_tomados` gana también `estado_antes_cierre` (para poder restaurar al anular)
+- `_vincular_movimientos_cierre_francos()` asocia movimientos al cerrar; los marca como 'Cerrado'
+- Movimientos con `cierre_francos_id IS NOT NULL` están bloqueados: no se pueden eliminar, modificar ni aprobar
+- Al anular cierre: `cierre_francos_id` vuelve a NULL, estado restaurado desde `estado_antes_cierre`
+
+### Actualización de planilla Excel desde cierre
+
+- Nueva ruta `POST /francos/planilla/actualizar`: recibe planilla .xlsx + mes (YYYY-MM)
+- Requiere cierre activo de Ingenieros Y Guardias en ese mes
+- Escribe columna G (Franco Orig.) y H (Franco Tom.) en la hoja del mes (ej: "Julio 2026")
+- Usa `openpyxl`; fuerza recalculación de fórmulas al guardar
+- `_cierres_francos_del_mes()`: busca el último cierre activo del mes para cada depto exportable
+
+### Estado de confirmaciones agrupado (supervisor.html)
+
+- La tabla de confirmaciones ahora agrupa por Departamento + Semana
+- Cabecera por grupo con badge de pendientes
+- Empleados ordenados: pendientes primero, luego por legajo
+
+---
+
+## Pendiente
+
+### 1. Reestructuración de UI/layout (alta prioridad)
 
 Objetivo: que la nueva persona que reemplaza a Carola pueda usar la app sola.
 Plan acordado:
@@ -578,12 +644,23 @@ Plan acordado:
 - Fusionar "Historial acumulado" dentro de "Cierre mensual" (misma tabla)
 - Mover acciones destructivas a una zona de administración separada
 
-### 3. Asignación de horario especial por empleado (Redes)
+### 2. Módulo de Control de Puntualidad (escritorio Tkinter)
 
-Extender el formulario web para que el supervisor asigne horario especial a cualquier
-empleado de Redes por rango de fechas. La lógica en `obtener_inicio_asignado()` ya
-soporta esto — falta UI y persistencia en DB (hoy solo existe para Karen Soto en
-`config.json → asignaciones_especiales`).
+- P1 (DB) y P2 (motor) completados y testeados (63 tests)
+- P3 (importador histórico), P4 (UI), P5 (integración main.py pendiente aprobación), P6 (PDF/Excel), P7-P9 pendientes
+- **Regla crítica**: nunca tocar main.py, servidor.py, procesador.py, config.json sin aprobación expresa
+- Antes de cada bloque: `git diff -- main.py procesador.py pdf_generator.py config.json servidor.py` debe estar vacío
+
+### 3. Botón "Informe mensual completo" (baja prioridad)
+
+Un PDF que combine los cierres de todos los deptos de un mes en un solo archivo,
+con salto de página entre departamentos.
+
+### 4. Asignación de horario especial por empleado (Redes)
+
+Extender el formulario web para asignar horario especial a cualquier empleado de Redes
+por rango de fechas. La lógica en `obtener_inicio_asignado()` ya soporta esto — falta
+UI y persistencia en DB.
 
 ---
 
