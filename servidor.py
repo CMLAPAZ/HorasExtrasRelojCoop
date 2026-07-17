@@ -1624,6 +1624,26 @@ def _cargar_francos_deptos_ocultos():
 def _depto_francos_oculto(depto):
     return _normalizar_departamento_web(depto or "") in _cargar_francos_deptos_ocultos()
 
+
+_DEPARTAMENTOS_FRANCOS_BASE = {"Ingenieros"}
+
+
+def _departamentos_francos_disponibles(empleados=None, incluir_ocultos=False):
+    """Lista canónica para todos los selectores del módulo Francos.
+
+    Ingenieros debe estar disponible incluso antes de registrar movimientos;
+    los demás departamentos se incorporan desde el catálogo de empleados.
+    """
+    empleados = empleados if empleados is not None else _empleados_conocidos()
+    departamentos = set(_DEPARTAMENTOS_FRANCOS_BASE)
+    departamentos.update(
+        _nombre_departamento_visible(e.get("departamento", ""))
+        for e in empleados if e.get("departamento")
+    )
+    if not incluir_ocultos:
+        departamentos = {d for d in departamentos if not _depto_francos_oculto(d)}
+    return sorted(departamentos, key=lambda d: d.lower())
+
 _OBS_EXCLUIDO_OT = "Horas registradas para control. No se liquidan para pago."
 
 def _aplicar_exclusiones_ot(empleados):
@@ -3238,10 +3258,7 @@ def periodos_historial():
                 ).fetchone()[0]
             else:
                 c["total_registros"] = 0
-    deptos_conocidos = sorted({
-        e["departamento"] for e in _empleados_conocidos()
-        if e["departamento"] and not _depto_francos_oculto(e["departamento"])
-    })
+    deptos_conocidos = _departamentos_francos_disponibles()
     return render_template("periodos_historial.html", cierres=cierres,
                            cierres_francos=cierres_francos,
                            deptos_conocidos=deptos_conocidos)
@@ -5254,7 +5271,7 @@ def francos():
         "tomados":   sum(g["total_tomados"]   for g in saldos_por_depto_f),
         "actual":    sum(g["total_actual"]    for g in saldos_por_depto_f),
     }
-    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"] and not _depto_francos_oculto(e["departamento"])})
+    departamentos = _departamentos_francos_disponibles(empleados_raw)
     # Deptos manuales con valores guardados por semana/mes
     mes_actual = datetime.now().strftime("%Y-%m")
     with _get_db() as conn:
@@ -5313,7 +5330,7 @@ def francos_saldos():
         dep = e["departamento"] or "Sin departamento"
         por_depto.setdefault(dep, []).append(e)
     empleados_grupos = [{"departamento": dep, "empleados": emps} for dep, emps in sorted(por_depto.items())]
-    departamentos = sorted({e["departamento"] for e in empleados_raw if e["departamento"]})
+    departamentos = _departamentos_francos_disponibles(empleados_raw, incluir_ocultos=True)
     # Agrupar saldos por departamento
     saldos_raw = _calcular_saldos()
     saldos_grupos = {}
@@ -5725,7 +5742,7 @@ def configuracion_email():
             s["deptos_lista"] = json.loads(s["departamentos"])
         except Exception:
             s["deptos_lista"] = []
-    departamentos = sorted({e["departamento"] for e in _empleados_conocidos() if e["departamento"]})
+    departamentos = _departamentos_francos_disponibles(incluir_ocultos=True)
     return render_template("configuracion_email.html",
                            cfg=cfg,
                            supervisores=supervisores,

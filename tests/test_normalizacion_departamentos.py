@@ -158,6 +158,10 @@ def test_francos_prioriza_ingenieros_sobre_sesion_vieja(db_temporal, monkeypatch
     }
 
 
+def test_ingenieros_esta_disponible_en_francos_sin_movimientos():
+    assert servidor._departamentos_francos_disponibles([]) == ["Ingenieros"]
+
+
 # ──────────────────────────────────────────────────────────────
 # 8. /francos y /francos/saldos: un único grupo por depto canónico
 # ──────────────────────────────────────────────────────────────

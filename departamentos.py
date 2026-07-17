@@ -5,7 +5,7 @@ Normalización centralizada de nombres de departamento.
 Sin dependencias de Flask ni del resto del proyecto: lo usan tanto
 servidor.py (app web) como reporte_saldos_francos.py (proceso independiente,
 ejecutado mediante una tarea programada) para que un mismo departamento
-(Redes, Administración, Guardias, Internet, Telefonía) se agrupe y compare
+(Redes, Administración, Guardias, Internet, Telefonía, Ingenieros) se agrupe y compare
 igual sin importar mayúsculas, tildes, espacios o alias usados en cada
 fuente de datos.
 """
