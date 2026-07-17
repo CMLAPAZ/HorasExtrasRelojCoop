@@ -4994,6 +4994,18 @@ def _empleados_conocidos():
         leg = str(d.get("legajo", ""))
         if leg:
             vistos[leg] = {"nombre": d.get("nombre", ""), "departamento": _nombre_departamento_visible(d.get("departamento", ""))}
+    # En el módulo Francos, 100 y 101 pertenecen exclusivamente a
+    # Ingenieros. Una sesión biométrica anterior puede conservarlos como
+    # Redes, pero no debe sobreescribir la fuente manual empleados_extra.
+    with _get_db() as conn:
+        for row in conn.execute(
+            "SELECT legajo, nombre, departamento FROM empleados_extra "
+            "WHERE activo=1 AND legajo IN ('100','101')"
+        ):
+            vistos[str(row["legajo"])] = {
+                "nombre": row["nombre"],
+                "departamento": _nombre_departamento_visible(row["departamento"] or ""),
+            }
     return sorted(
         [{"legajo": k, "nombre": v["nombre"], "departamento": v["departamento"]} for k, v in vistos.items()],
         key=lambda e: (e["departamento"].lower(), int(e["legajo"]) if e["legajo"].isdigit() else 0)

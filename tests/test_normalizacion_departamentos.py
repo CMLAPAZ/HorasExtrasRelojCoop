@@ -142,6 +142,22 @@ def test_empleados_conocidos_sin_regresion_otros_deptos(db_temporal, monkeypatch
     assert deptos["16"] == "Telefonía"
 
 
+def test_francos_prioriza_ingenieros_sobre_sesion_vieja(db_temporal, monkeypatch):
+    monkeypatch.setattr(servidor, "_sesion", {
+        "tok_100": {"legajo": "100", "nombre": "MANCIONI MARTIN", "departamento": "redes"},
+        "tok_101": {"legajo": "101", "nombre": "GATTI MARCELO", "departamento": "Redes"},
+    })
+
+    empleados = {e["legajo"]: e for e in servidor._empleados_conocidos()}
+
+    assert empleados["100"] == {
+        "legajo": "100", "nombre": "MANCIONI, Martin", "departamento": "Ingenieros",
+    }
+    assert empleados["101"] == {
+        "legajo": "101", "nombre": "GATTI, Marcelo", "departamento": "Ingenieros",
+    }
+
+
 # ──────────────────────────────────────────────────────────────
 # 8. /francos y /francos/saldos: un único grupo por depto canónico
 # ──────────────────────────────────────────────────────────────
