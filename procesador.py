@@ -362,10 +362,14 @@ def _agrupar_por_empleado(registros):
 
 def _limpiar_y_emparejar(eventos):
     """
-    Normaliza eventos y arma pares (entrada, salida).
+    Normaliza eventos y arma pares (entrada, salida, motivo_incompleto).
     Si hay entrada repetida sin salida intermedia,
     se cierra el tramo anterior en la nueva entrada.
     Si queda una entrada abierta al final, se marca incompleta.
+    motivo_incompleto es None para tramos completos; para tramos
+    incompletos identifica la causa para poder explicarla en el reporte
+    (por ejemplo dos ENTRADA seguidas sin SALIDA, típico de una fichada
+    mal tipeada en el biométrico).
     """
     if not eventos:
         return []
@@ -382,19 +386,19 @@ def _limpiar_y_emparejar(eventos):
                 current_in = dt
             else:
                 # tramo incompleto: cerramos con la nueva entrada
-                pares.append((current_in, current_in))
+                pares.append((current_in, current_in, "ENTRADA_DUPLICADA"))
                 current_in = dt
 
         elif tipo in ("SALIDA", "BREAK"):
             if current_in is not None:
-                pares.append((current_in, dt))
+                pares.append((current_in, dt, None))
                 current_in = None
             else:
                 # salida sin entrada previa
-                pares.append((dt, dt))
+                pares.append((dt, dt, "SALIDA_SIN_ENTRADA"))
 
     if current_in is not None:
-        pares.append((current_in, current_in))
+        pares.append((current_in, current_in, "ENTRADA_SIN_SALIDA"))
 
     return pares
 
@@ -486,7 +490,7 @@ def _calcular_por_dia(
     """
 
     por_dia = defaultdict(list)
-    for e, s in pares:
+    for e, s, motivo in pares:
         fecha_destino = e.date()
 
         if _debe_imputarse_al_dia_anterior(
@@ -502,14 +506,14 @@ def _calcular_por_dia(
         ):
             fecha_destino = e.date() - timedelta(days=1)
 
-        por_dia[fecha_destino].append((e, s))
+        por_dia[fecha_destino].append((e, s, motivo))
 
     # Derivar primeras entradas desde por_dia, que ya tiene la imputación
     # de madrugada al día anterior aplicada.  Si usáramos eventos_dia crudos,
     # una entrada de 00:04 del 05/03 seguiría apareciendo bajo esa fecha aunque
     # el tramo ya fue movido al 04/03, desacoplando la lógica de tardanza.
     primeras_entradas = {
-        fecha: min(e for e, s in tramos)
+        fecha: min(e for e, s, m in tramos)
         for fecha, tramos in por_dia.items()
         if tramos
     }
@@ -517,7 +521,7 @@ def _calcular_por_dia(
     excluir_tardanza = excluir_tardanza or set()
 
     for d in sorted(por_dia):
-        tramos = [(a, b) for a, b in por_dia[d]]
+        tramos = [(a, b, m) for a, b, m in por_dia[d]]
         fecha_str = d.strftime("%Y-%m-%d")
 
         es_paro = fecha_str in dias_paro
@@ -587,7 +591,7 @@ def _calcular_por_dia(
         # =====================================================
         # MOTOR POR TRAMO
         # =====================================================
-        for a_orig, b_orig in tramos:
+        for a_orig, b_orig, motivo_incompleto in tramos:
             obs = []
 
             if es_feriado:
@@ -603,11 +607,18 @@ def _calcular_por_dia(
             if inicio_asignado and not es_especial and not es_paro:
                 obs.insert(0, "ASIG")
 
-            es_primer_tramo = (a_orig, b_orig) == primer_tramo
+            es_primer_tramo = (a_orig, b_orig, motivo_incompleto) == primer_tramo
 
             # Tramo incompleto
             if a_orig == b_orig:
-                obs.append("△ INC")
+                if motivo_incompleto == "ENTRADA_DUPLICADA":
+                    obs.append("△ INC (2 ENTRADAS seguidas sin SALIDA — revisar tipo de fichada)")
+                elif motivo_incompleto == "SALIDA_SIN_ENTRADA":
+                    obs.append("△ INC (SALIDA sin ENTRADA previa)")
+                elif motivo_incompleto == "ENTRADA_SIN_SALIDA":
+                    obs.append("△ INC (ENTRADA sin SALIDA)")
+                else:
+                    obs.append("△ INC")
                 filas.append({
                     "entrada": a_orig,
                     "salida": b_orig,
@@ -669,13 +680,13 @@ def _calcular_por_dia(
         # COMIDAS
         # =====================================================
         if es_especial:
-            total_trabajado = sum((b - a for a, b in tramos if b > a), timedelta(0))
+            total_trabajado = sum((b - a for a, b, _m in tramos if b > a), timedelta(0))
             if total_trabajado >= UMBRAL_2_COMIDA:
                 total_comida = 2
             elif total_trabajado >= UMBRAL_1_COMIDA:
                 total_comida = 1
         else:
-            for a, b in tramos:
+            for a, b, _m in tramos:
                 if b <= a:
                     continue
 
@@ -873,7 +884,7 @@ def aplanar_registros_por_tramo(resultados):
                     "Tarde": tarde_dia if primera else 0,
                     "FRANCO": franco_dia if primera else 0,
                     "COMIDA": comida_dia if primera else 0,
-                    "Observaciones": fila.get("obs", "") if primera else ""
+                    "Observaciones": fila.get("obs", "")
                 })
 
         salida.append({

@@ -376,8 +376,28 @@ def _cargar_semana_csv(n):
     return pd.read_csv(f, encoding="utf-8") if f.exists() else None
 
 def _archivos_confirmacion():
+    """Confirmaciones activas + archivadas, excluyendo las de cierres ANULADOS.
+
+    Sin este filtro, una confirmación archivada de un período anulado puede
+    ser "readoptada" por _resolver_semana_confirmacion (que empareja por
+    fecha cuando no encuentra el número de semana exacto) en el próximo
+    cierre que caiga en el mismo rango de fechas, resucitando totales viejos
+    en vez de usar los datos frescos del reproceso."""
     CONFIRM_DIR.mkdir(exist_ok=True)
-    return sorted(CONFIRM_DIR.rglob("*.json"), reverse=True)
+    archivos = sorted(CONFIRM_DIR.rglob("*.json"), reverse=True)
+    try:
+        with _get_db() as conn:
+            carpetas_anuladas = {
+                Path(row["archivo"]).stem
+                for row in conn.execute(
+                    "SELECT archivo FROM periodos WHERE COALESCE(estado,'ACTIVO')='ANULADO' AND archivo IS NOT NULL"
+                )
+            }
+    except Exception:
+        carpetas_anuladas = set()
+    if not carpetas_anuladas:
+        return archivos
+    return [f for f in archivos if f.parent.name not in carpetas_anuladas]
 
 def _parse_fecha(s):
     if not s:
@@ -2818,6 +2838,139 @@ def _calcular_periodo(desde, hasta, departamento=None):
         resultado.sort(key=lambda x: _legajo_key(x))
 
     return resultado
+
+
+def _recalcular_horas_periodo(pid):
+    """Recalcula OT50/OT100/comidas/francos/tardanzas de un cierre ya hecho,
+    directo desde los CSV de las semanas incluidas (igual que la sección de
+    detalle día a día de _generar_pdf_cierre_completo), sin pasar por
+    confirmaciones/historial.
+
+    Sirve para diagnosticar y corregir un cierre cuyo resumen quedó con
+    datos viejos — por ejemplo si una confirmación archivada de un período
+    ANULADO fue "readoptada" por fecha (_resolver_semana_confirmacion) antes
+    de que existiera el filtro de _archivos_confirmacion que excluye
+    períodos anulados. Los tokens del cierre ya no existen en sesión.json
+    (se borran al cerrar), así que ésta es la única fuente confiable una vez
+    cerrado. Retorna None si no hay CSV disponibles para ninguna semana."""
+    with _get_db() as conn:
+        periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not periodo:
+            return None
+        emp_rows = conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=?", (pid,)
+        ).fetchall()
+    if not emp_rows:
+        return None
+    legajos_cierre = {str(r["legajo"]) for r in emp_rows}
+
+    periodo_json_path = PERIODOS_DIR / (periodo["archivo"] or "NADA")
+    semanas_numeros = []
+    if periodo_json_path.exists():
+        try:
+            pdata = json.loads(periodo_json_path.read_text(encoding="utf-8"))
+            semanas_numeros = pdata.get("semanas", [])
+        except Exception:
+            pass
+    if not semanas_numeros:
+        semanas_numeros = list(range(periodo["semana_desde"] or 1, (periodo["semana_hasta"] or 1) + 1))
+
+    totales = {}
+    huno_csv = False
+    for n_sem in semanas_numeros:
+        df_sem = _cargar_semana_csv(n_sem)
+        if df_sem is None:
+            continue
+        huno_csv = True
+        try:
+            emps_proc, _, _ = _procesar_empleados(_normalizar_columnas(df_sem))
+        except Exception:
+            continue
+        for emp in emps_proc:
+            leg = str(emp["legajo"])
+            if leg not in legajos_cierre:
+                continue
+            dias_prep = _preparar_dias(emp["registros"])
+            t = totales.setdefault(leg, {
+                "nombre": emp["nombre"], "ot50": timedelta(0), "ot100": timedelta(0),
+                "comidas": 0, "francos": 0, "tardanzas": 0,
+            })
+            for d in dias_prep:
+                t["ot50"]      += _parse_td(d["ot50"])
+                t["ot100"]     += _parse_td(d["ot100"])
+                t["comidas"]   += int(d.get("comida", 0))
+                t["francos"]   += int(d.get("franco", 0))
+                t["tardanzas"] += int(d.get("tarde", 0))
+    if not huno_csv:
+        return None
+    return totales
+
+
+@app.route("/admin/recalcular-horas-cierre/<int:pid>", methods=["GET", "POST"])
+def admin_recalcular_horas_cierre(pid):
+    """Recalcula las horas de un cierre directo desde los CSV de sus
+    semanas y las compara contra lo guardado en periodo_empleados.
+
+    GET = diagnóstico de solo lectura (diferencias por legajo, nada se
+    escribe). POST con ?confirmar=si = aplica: UPDATE de periodo_empleados
+    (ot50, ot100, comidas, francos, tardanzas) con los valores recalculados
+    para los legajos con diferencia. No toca francos_cierre_detalle,
+    confirmaciones, semanas ni francos_saldo_inicial."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not periodo:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        emp_rows = conn.execute(
+            "SELECT * FROM periodo_empleados WHERE periodo_id=?", (pid,)
+        ).fetchall()
+    if not emp_rows:
+        return jsonify({"error": f"Período #{pid} no tiene empleados asociados"}), 400
+
+    frescos = _recalcular_horas_periodo(pid)
+    if frescos is None:
+        return jsonify({"error": "No se pudo recalcular: no hay CSV de semanas disponibles para este cierre."}), 400
+
+    diffs = []
+    for r in emp_rows:
+        leg = str(r["legajo"])
+        fresco = frescos.get(leg)
+        if fresco is None:
+            continue
+        ot50_actual  = _parse_hm(r["ot50"] or "0h")
+        ot100_actual = _parse_hm(r["ot100"] or "0h")
+        if (ot50_actual != fresco["ot50"] or ot100_actual != fresco["ot100"]
+                or (r["comidas"] or 0) != fresco["comidas"]
+                or (r["francos"] or 0) != fresco["francos"]
+                or (r["tardanzas"] or 0) != fresco["tardanzas"]):
+            diffs.append({
+                "legajo": leg, "nombre": r["nombre"],
+                "ot50_actual": r["ot50"], "ot50_correcto": _fmt_hm(fresco["ot50"]),
+                "ot100_actual": r["ot100"], "ot100_correcto": _fmt_hm(fresco["ot100"]),
+                "comidas_actual": r["comidas"] or 0, "comidas_correcto": fresco["comidas"],
+                "francos_actual": r["francos"] or 0, "francos_correcto": fresco["francos"],
+                "tardanzas_actual": r["tardanzas"] or 0, "tardanzas_correcto": fresco["tardanzas"],
+            })
+
+    if request.method == "GET" or request.args.get("confirmar") != "si":
+        return jsonify({"periodo_id": pid, "requiere_correccion": bool(diffs), "diferencias": diffs})
+
+    if not diffs:
+        return jsonify({"ok": True, "mensaje": "No había diferencias, no se modificó nada."})
+
+    with _get_db() as conn:
+        for d in diffs:
+            fresco = frescos[d["legajo"]]
+            conn.execute(
+                "UPDATE periodo_empleados SET ot50=?, ot100=?, comidas=?, francos=?, tardanzas=? "
+                "WHERE periodo_id=? AND legajo=?",
+                (_fmt_hm(fresco["ot50"]), _fmt_hm(fresco["ot100"]), fresco["comidas"],
+                 fresco["francos"], fresco["tardanzas"], pid, d["legajo"])
+            )
+        conn.commit()
+
+    return jsonify({"ok": True, "corregidos": diffs})
 
 
 @app.route("/periodo/resumen")
