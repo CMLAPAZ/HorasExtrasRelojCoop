@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import socket
 from io import BytesIO
+from collections import Counter
 
 from procesador import procesar_fichadas, aplanar_registros_por_tramo
 from departamentos import clave_canonica, nombre_visible
@@ -1709,11 +1710,18 @@ def _procesar_empleados(df, departamentos=None):
     return empleados, fecha_desde, fecha_hasta
 
 def _rango_lunes_domingo(fechas):
+    """Ventana lunes-domingo que contiene la mayor cantidad de fechas.
+    No usa "el primer lunes que aparezca": si el lunes real fue feriado (poca
+    o ninguna fichada) puede no estar en los datos, y anclar por ese criterio
+    elige la semana equivocada cuando el archivo incluye días sueltos de la
+    semana siguiente."""
     fechas_dt = sorted(f for f in (_parse_fecha(x) for x in fechas) if f)
     if not fechas_dt:
         return "", ""
-    primer_lunes = next((f for f in fechas_dt if f.weekday() == 0), None)
-    inicio = primer_lunes or (fechas_dt[0] - timedelta(days=fechas_dt[0].weekday()))
+    inicios = [f - timedelta(days=f.weekday()) for f in fechas_dt]
+    conteo = Counter(inicios)
+    max_count = max(conteo.values())
+    inicio = min(i for i, c in conteo.items() if c == max_count)
     fin = inicio + timedelta(days=6)
     return inicio.isoformat(), fin.isoformat()
 
