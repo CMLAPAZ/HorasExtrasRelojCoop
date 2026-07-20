@@ -4729,14 +4729,26 @@ def admin_corregir_francos_cierre(pid):
     se asignan a esta ventana: se reportan aparte en
     "legacy_sin_cargado_en" para revisión/tratamiento manual.
 
-    GET = diagnóstico de solo lectura (faltantes + legacy + saldos). POST
-    con ?confirmar=si = aplica la corrección (backup previo de la DB,
-    agrega a francos_cierre_detalle, marca francos_tomados.estado='Cerrado',
-    ajusta francos_saldo_inicial solo donde corresponda, y deja constancia
-    en periodos.francos_corregido_en). No borra ni modifica registros
-    existentes de francos_cierre_detalle, periodo_empleados, confirmaciones
-    ni semanas, y no toca los francos "legacy"."""
+    ?confirmar=si aplica la corrección (backup previo de la DB, agrega a
+    francos_cierre_detalle, marca francos_tomados.estado='Cerrado', ajusta
+    francos_saldo_inicial solo donde corresponda, y deja constancia en
+    periodos.francos_corregido_en). Sin ese parámetro es solo diagnóstico
+    de lectura (faltantes + legacy + saldos), sin importar el método. No
+    borra ni modifica registros existentes de francos_cierre_detalle,
+    periodo_empleados, confirmaciones ni semanas, y no toca los francos
+    "legacy".
+
+    ?excluir_legajos=13,14 (opcional): esos legajos quedan afuera del ajuste
+    de saldo/tomados_al_corte (útil cuando "correcto" para ese legajo no
+    refleja bien su historial acumulado de cierres anteriores — el cálculo
+    de la ventana de este cierre puntual puede no coincidir con el
+    acumulado real si el legajo ya tenía tomados contados en un cierre
+    previo). Los francos que le faltan a ese legajo en francos_cierre_detalle
+    igual se agregan normalmente; solo se saltea el ajuste de saldo_inicial."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    excluir_legajos = {
+        s.strip() for s in request.args.get("excluir_legajos", "").split(",") if s.strip()
+    }
 
     with _get_db() as conn:
         periodo = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
@@ -4791,6 +4803,7 @@ def admin_corregir_francos_cierre(pid):
                 "diferencia_dias": diferencia,
                 "saldo_actual": saldo_actual,
                 "saldo_corregido": saldo_actual - diferencia,
+                "excluido_del_ajuste_saldo": leg in excluir_legajos,
             })
 
         diagnostico = {
@@ -4818,12 +4831,8 @@ def admin_corregir_francos_cierre(pid):
             "saldos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
         }
 
-    if request.method == "GET":
-        return jsonify(diagnostico)
-
-    # ---- POST: aplicar corrección (requiere confirmación explícita) ----
     if request.args.get("confirmar") != "si":
-        return jsonify({"error": "Falta confirmar=si", "diagnostico": diagnostico}), 400
+        return jsonify(diagnostico)
 
     ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -4856,6 +4865,8 @@ def admin_corregir_francos_cierre(pid):
 
         for s in saldos_diff:
             leg = s["legajo"]
+            if leg in excluir_legajos:
+                continue
             si = saldos_iniciales.get(leg)
             if s["diferencia_dias"] != 0:
                 conn.execute("""
