@@ -576,17 +576,19 @@ async function procesar(force) {
       dupEl.innerHTML = `⚠ ${data.msg}
         <div style="margin-top:10px;font-size:.9rem">
           <label style="display:block;margin-bottom:4px;font-weight:600">
-            ¿Corregir solo algunos legajos? (opcional — dejá vacío para actualizar todos)
+            Legajos a actualizar con el botón "Corregir" de abajo (opcional — vacío = actualiza todos los legajos de la semana ya existente)
           </label>
           <input id="dup-legajos" type="text" placeholder="Ej: 141, 145"
             style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:220px;font-size:.9rem">
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button type="button" class="btn-warn" onclick="reprocesarSemana(${data.semana_existente})">
-            Corregir semana ${data.num_depto_existente || data.semana_existente}
+          <button type="button" class="btn-warn" onclick="reprocesarSemana(${data.semana_existente})"
+            title="Actualiza los legajos indicados arriba (o todos, si el campo está vacío) dentro de la Semana ${data.num_depto_existente || data.semana_existente} ya existente.">
+            Corregir semana ${data.num_depto_existente || data.semana_existente} con los legajos de arriba
           </button>
-          <button type="button" class="btn-outline" onclick="procesar(true)">
-            Procesar de todos modos (nueva semana)
+          <button type="button" class="btn-outline" onclick="procesar(true)"
+            title="Ignora la semana existente y crea una semana NUEVA y separada con este archivo (no usa el campo de legajos).">
+            Procesar de todos modos (crea una semana NUEVA duplicada)
           </button>
         </div>`;
       dupEl.classList.remove('hidden');
