@@ -790,6 +790,36 @@ def _seleccionar_francos_ventana_cierre(conn, pid, legajos, departamento, fecha_
     return rows, fecha_corte_anterior, legacy
 
 
+def _revertir_estado_francos_cierre(conn, pid):
+    """Revierte a su estado original los francos_tomados que el cierre #pid
+    marcó como 'Cerrado' al cerrarse (ver _snapshot_francos_cierre), usando
+    el estado guardado en francos_cierre_detalle (capturado antes de
+    cerrar, vía la fila de la SELECT previa al UPDATE).
+
+    Sin esto, anular un cierre deja esos francos con estado='Cerrado' para
+    siempre: _seleccionar_francos_ventana_cierre los excluye de por vida
+    (WHERE estado NOT IN ('Anulado','Cerrado')), aunque el cierre que los
+    "cerró" ya no exista. Solo toca filas que siguen en 'Cerrado' — no pisa
+    cambios manuales posteriores (por ejemplo si alguien ya lo anuló a mano
+    por otro motivo). Idempotente: llamarlo de nuevo sobre filas ya
+    revertidas no hace nada (el WHERE exige estado='Cerrado')."""
+    detalle = conn.execute(
+        "SELECT * FROM francos_cierre_detalle WHERE periodo_id=?", (pid,)
+    ).fetchall()
+    revertidos = 0
+    for d in detalle:
+        cur = conn.execute("""
+            UPDATE francos_tomados
+            SET estado = ?
+            WHERE legajo=? AND tipo=? AND fecha_desde=? AND fecha_hasta=?
+              AND fechas_sueltas=? AND dias=? AND estado='Cerrado'
+        """, (d["estado"] or "Aprobado", d["legajo"], d["tipo"] or "",
+              d["fecha_desde"] or "", d["fecha_hasta"] or "",
+              d["fechas_sueltas"] or "[]", d["dias"] or 0))
+        revertidos += cur.rowcount
+    return revertidos
+
+
 def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=""):
     """Copia francos_tomados a francos_cierre_detalle y genera PDF.
     Incluye los francos no anulados CARGADOS en el sistema dentro de la
@@ -3982,6 +4012,7 @@ def periodo_anular(pid):
                 usuario_anulacion=?
             WHERE id=?
         """, (ahora, motivo, usuario, pid))
+        _revertir_estado_francos_cierre(conn, pid)
         conn.commit()
 
     archivo = p["archivo"]
@@ -4861,6 +4892,55 @@ def admin_corregir_francos_cierre(pid):
         "saldos_corregidos": [s for s in saldos_diff if s["diferencia_dias"] != 0],
         "fecha_corte": fecha_corte,
     })
+
+
+@app.route("/admin/revertir-francos-cierre-anulado/<int:pid>", methods=["GET", "POST"])
+def admin_revertir_francos_cierre_anulado(pid):
+    """Aplica retroactivamente lo que ahora hace periodo_anular automáticamente:
+    revierte a su estado original los francos_tomados que el cierre #pid dejó
+    en estado='Cerrado' antes de que existiera el fix. Solo funciona sobre
+    períodos con estado ANULADO (si no, es más seguro anularlo primero y que
+    la reversión ocurra sola). Ver _revertir_estado_francos_cierre.
+
+    GET = diagnóstico de solo lectura: lista los francos de
+    francos_cierre_detalle del cierre #pid junto al estado actual del
+    francos_tomados correspondiente. POST con ?confirmar=si = aplica la
+    reversión (solo toca filas todavía en 'Cerrado')."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        if (p["estado"] or "ACTIVO") != "ANULADO":
+            return jsonify({"error": f"Período #{pid} no está anulado — esta acción es solo para períodos anulados."}), 400
+
+        detalle = conn.execute(
+            "SELECT * FROM francos_cierre_detalle WHERE periodo_id=?", (pid,)
+        ).fetchall()
+        candidatos = []
+        for d in detalle:
+            row = conn.execute("""
+                SELECT id, estado FROM francos_tomados
+                WHERE legajo=? AND tipo=? AND fecha_desde=? AND fecha_hasta=?
+                  AND fechas_sueltas=? AND dias=?
+            """, (d["legajo"], d["tipo"] or "", d["fecha_desde"] or "",
+                  d["fecha_hasta"] or "", d["fechas_sueltas"] or "[]", d["dias"] or 0)).fetchone()
+            candidatos.append({
+                "legajo": d["legajo"], "nombre": d["nombre"],
+                "fecha_desde": d["fecha_desde"], "fecha_hasta": d["fecha_hasta"],
+                "dias": d["dias"],
+                "estado_en_snapshot": d["estado"],
+                "estado_actual_francos_tomados": row["estado"] if row else "(no encontrado)",
+            })
+
+        if request.method == "GET" or request.args.get("confirmar") != "si":
+            return jsonify({"periodo_id": pid, "candidatos": candidatos})
+
+        revertidos = _revertir_estado_francos_cierre(conn, pid)
+        conn.commit()
+
+    return jsonify({"ok": True, "revertidos": revertidos, "candidatos": candidatos})
 
 
 @app.route("/admin/corregir-fecha-corte/<int:pid>", methods=["GET", "POST"])
