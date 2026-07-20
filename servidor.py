@@ -2983,7 +2983,7 @@ def admin_recalcular_horas_cierre(pid):
                 "tardanzas_actual": r["tardanzas"] or 0, "tardanzas_correcto": fresco["tardanzas"],
             })
 
-    if request.method == "GET" or request.args.get("confirmar") != "si":
+    if request.args.get("confirmar") != "si":
         return jsonify({"periodo_id": pid, "requiere_correccion": bool(diffs), "diferencias": diffs})
 
     if not diffs:
@@ -4934,7 +4934,7 @@ def admin_revertir_francos_cierre_anulado(pid):
                 "estado_actual_francos_tomados": row["estado"] if row else "(no encontrado)",
             })
 
-        if request.method == "GET" or request.args.get("confirmar") != "si":
+        if request.args.get("confirmar") != "si":
             return jsonify({"periodo_id": pid, "candidatos": candidatos})
 
         revertidos = _revertir_estado_francos_cierre(conn, pid)
