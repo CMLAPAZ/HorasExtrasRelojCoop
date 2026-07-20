@@ -153,15 +153,23 @@
     </div>
     <div class="field">
       <label for="desde">Desde semana</label>
-      <select id="desde" disabled>
+      <select id="desde" disabled onchange="actualizarVisiblesPorDefecto()">
         <option value="">Primero seleccioná departamento</option>
       </select>
     </div>
     <div class="field">
       <label for="hasta">Hasta semana</label>
-      <select id="hasta" disabled>
+      <select id="hasta" disabled onchange="actualizarVisiblesPorDefecto()">
         <option value="">Primero seleccioná departamento</option>
       </select>
+    </div>
+    <div class="field" style="max-width:110px">
+      <label for="visible-desde-input" title="Número de semana a mostrar en el informe/PDF de este cierre. Por defecto es el número interno, pero se puede cambiar (por ejemplo al recuperar semanas de un mes anterior).">Mostrar como Nº</label>
+      <input id="visible-desde-input" type="number" min="1" style="width:100%">
+    </div>
+    <div class="field" style="max-width:110px">
+      <label for="visible-hasta-input" title="Número de semana final a mostrar en el informe/PDF de este cierre.">... hasta Nº</label>
+      <input id="visible-hasta-input" type="number" min="1" style="width:100%">
     </div>
     <button type="button" class="btn" onclick="previsualizar()">Ver resumen</button>
   </div>
@@ -277,14 +285,27 @@ function cargarOpcionesSemana(selectEl, semanas, seleccionarUltima) {
 
 function semanaSeleccionada(id) {
   const opt = document.getElementById(id).selectedOptions[0];
+  const overrideEl = document.getElementById(id === 'desde' ? 'visible-desde-input' : 'visible-hasta-input');
+  const overrideVal = overrideEl && overrideEl.value !== '' ? parseInt(overrideEl.value) : null;
   return {
     loteGlobal: parseInt(opt.dataset.loteGlobal || opt.value),
     fechaDesde: opt.dataset.fd || '',
     fechaHasta: opt.dataset.fh || '',
-    semanaVisible: parseInt(opt.dataset.semanaVisible || opt.value),
+    semanaVisible: overrideVal !== null && !isNaN(overrideVal) ? overrideVal : parseInt(opt.dataset.semanaVisible || opt.value),
     departamento: opt.dataset.departamento || '',
     label: opt.dataset.label || opt.textContent || '',
   };
+}
+
+function actualizarVisiblesPorDefecto() {
+  const desdeEl = document.getElementById('desde');
+  const hastaEl = document.getElementById('hasta');
+  if (!desdeEl.disabled && desdeEl.selectedOptions[0]) {
+    document.getElementById('visible-desde-input').value = desdeEl.selectedOptions[0].dataset.semanaVisible || '';
+  }
+  if (!hastaEl.disabled && hastaEl.selectedOptions[0]) {
+    document.getElementById('visible-hasta-input').value = hastaEl.selectedOptions[0].dataset.semanaVisible || '';
+  }
 }
 
 function filtrarSemanasPorDepartamento() {
@@ -306,6 +327,7 @@ function filtrarSemanasPorDepartamento() {
     .sort((a, b) => a.numero - b.numero);
   cargarOpcionesSemana(desdeEl, semanas, false);
   cargarOpcionesSemana(hastaEl, semanas, true);
+  actualizarVisiblesPorDefecto();
 }
 
 normalizarSelectDepartamento();
