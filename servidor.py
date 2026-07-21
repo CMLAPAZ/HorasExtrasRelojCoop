@@ -4905,6 +4905,72 @@ def admin_corregir_francos_cierre(pid):
     })
 
 
+@app.route("/admin/restaurar-saldo-desde-periodo/<int:pid>", methods=["GET", "POST"])
+def admin_restaurar_saldo_desde_periodo(pid):
+    """Restaura filas puntuales de francos_saldo_inicial usando
+    periodos.saldo_anterior del cierre #pid (el snapshot guardado antes de
+    que ESE cierre corriera su propia actualización automática de saldo),
+    para los `legajos` indicados (coma-separado).
+
+    Sirve para corregir un legajo cuyo saldo quedó mal después de que la
+    actualización automática de un cierre le sumara algo que no
+    correspondía a ese período (por ejemplo un "parcial" de una semana en
+    curso de OTRO mes que se coló en el cálculo). No requiere anular el
+    cierre ni afecta a otros legajos.
+
+    GET = diagnóstico de solo lectura (valores actuales vs. los del
+    saldo_anterior de este cierre). ?confirmar=si aplica."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajos = [s.strip() for s in request.args.get("legajos", "").split(",") if s.strip()]
+    if not legajos:
+        return jsonify({"error": "Falta el parámetro 'legajos' (coma-separado)."}), 400
+
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        try:
+            saldo_ant = json.loads(p["saldo_anterior"] or "{}")
+        except Exception:
+            saldo_ant = {}
+        saldo_ant = {k: v for k, v in saldo_ant.items() if k in legajos}
+
+        actuales = {
+            r["legajo"]: dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM francos_saldo_inicial WHERE legajo IN ({','.join('?'*len(legajos))})",
+                legajos
+            ).fetchall()
+        }
+
+        comparacion = [{"legajo": leg, "en_saldo_anterior": saldo_ant.get(leg), "actual": actuales.get(leg)}
+                       for leg in legajos]
+
+        if request.args.get("confirmar") != "si":
+            return jsonify({"periodo_id": pid, "comparacion": comparacion})
+
+        restaurados = []
+        ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for leg in legajos:
+            vals = saldo_ant.get(leg)
+            if not vals:
+                continue
+            actual = actuales.get(leg, {})
+            conn.execute("""
+                UPDATE francos_saldo_inicial
+                SET saldo=?, tomados_al_corte=?, gen_extra_al_corte=?, fecha_corte=?,
+                    nota=?, cargado_en=?
+                WHERE legajo=?
+            """, (vals.get("saldo", 0), vals.get("tomados_al_corte", 0),
+                  vals.get("gen_extra_al_corte", 0), vals.get("fecha_corte", ""),
+                  f"Restaurado desde saldo_anterior del cierre #{pid}",
+                  ahora_str, leg))
+            restaurados.append(leg)
+        conn.commit()
+
+    return jsonify({"ok": True, "restaurados": restaurados, "comparacion": comparacion})
+
+
 @app.route("/admin/restaurar-saldo-desde-backup", methods=["GET", "POST"])
 def admin_restaurar_saldo_desde_backup():
     """Restaura filas puntuales de francos_saldo_inicial desde un backup
