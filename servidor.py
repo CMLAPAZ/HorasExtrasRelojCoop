@@ -5116,6 +5116,44 @@ def admin_corregir_fecha_corte(pid):
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
 
 
+@app.route("/admin/inspeccionar-saldo-anterior/<int:pid>")
+def admin_inspeccionar_saldo_anterior(pid):
+    """Solo lectura: muestra periodos.saldo_anterior (el snapshot de
+    francos_saldo_inicial guardado justo ANTES de que ese cierre corriera
+    su actualización automática de saldo — lo que periodo_anular usa para
+    restaurar) para el/los legajo(s) indicados, junto al valor actual en
+    vivo de francos_saldo_inicial. Sirve para rastrear de dónde salió un
+    saldo actual que no coincide con lo esperado."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajos = [s.strip() for s in request.args.get("legajos", "").split(",") if s.strip()]
+
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+        saldo_ant = {}
+        try:
+            saldo_ant = json.loads(p["saldo_anterior"] or "{}")
+        except Exception:
+            pass
+        actuales = {
+            r["legajo"]: dict(r)
+            for r in conn.execute("SELECT * FROM francos_saldo_inicial").fetchall()
+        }
+
+    if legajos:
+        saldo_ant = {k: v for k, v in saldo_ant.items() if k in legajos}
+        actuales = {k: v for k, v in actuales.items() if k in legajos}
+
+    return jsonify({
+        "periodo_id": pid,
+        "estado": p["estado"] or "ACTIVO",
+        "cerrado_en": p["cerrado_en"],
+        "saldo_anterior_guardado_en_este_cierre": saldo_ant,
+        "saldo_actual_en_vivo": actuales,
+    })
+
+
 @app.route("/admin/diagnostico-francos")
 def admin_diagnostico_francos():
     """Diagnóstico de SOLO LECTURA del estado de los snapshots de francos en
