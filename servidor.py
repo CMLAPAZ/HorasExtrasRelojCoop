@@ -2936,6 +2936,77 @@ def _recalcular_horas_periodo(pid):
     return totales
 
 
+@app.route("/admin/semanas-de-periodo/<int:pid>")
+def admin_semanas_de_periodo(pid):
+    """Solo lectura: lista los números de semana GLOBALES (los que usa
+    semanas/semana_N.csv en disco) que componen el cierre #pid, con sus
+    fechas, leídos del respaldo JSON del período. Sirve para saber qué
+    archivo semana_N.csv hay que reemplazar con /admin/reemplazar-csv-semana
+    para corregir un dato de origen en un cierre ya cerrado (las semanas ya
+    no figuran "activas" en el panel una vez cerrado el período, pero el
+    CSV sigue en disco y _recalcular_horas_periodo lo sigue leyendo por
+    número)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": f"Período #{pid} no encontrado"}), 404
+    semanas_numeros = []
+    periodo_json_path = PERIODOS_DIR / (p["archivo"] or "NADA")
+    if periodo_json_path.exists():
+        try:
+            pdata = json.loads(periodo_json_path.read_text(encoding="utf-8"))
+            semanas_numeros = pdata.get("semanas", [])
+        except Exception:
+            pass
+    if not semanas_numeros:
+        semanas_numeros = list(range(p["semana_desde"] or 1, (p["semana_hasta"] or 1) + 1))
+
+    semanas = []
+    for n in semanas_numeros:
+        existe_csv = (SEMANAS_DIR / f"semana_{n}.csv").exists()
+        semanas.append({"numero": n, "csv_en_disco": existe_csv})
+    return jsonify({"periodo_id": pid, "fecha_desde": p["fecha_desde"], "fecha_hasta": p["fecha_hasta"], "semanas": semanas})
+
+
+@app.route("/admin/reemplazar-csv-semana/<int:n>", methods=["GET", "POST"])
+def admin_reemplazar_csv_semana(n):
+    """Reemplaza semanas/semana_N.csv (el CSV interno que el sistema ya
+    guardó al procesar esa semana) con un Excel/CSV corregido, sin importar
+    si esa semana sigue "activa" en el panel. Sirve para corregir un dato de
+    fichadas de una semana que ya forma parte de un cierre cerrado: después
+    de subir el archivo corregido acá, hay que volver a correr
+    /admin/recalcular-horas-cierre/<pid>?confirmar=si del cierre que
+    incluye esta semana para que tome el dato nuevo.
+
+    GET muestra un formulario simple de carga. POST recibe el archivo
+    (campo "csv") y sobreescribe semana_N.csv. No toca metadata.json,
+    periodo_empleados, francos_cierre_detalle ni ninguna otra tabla —
+    solo el CSV en disco."""
+    if not _autenticado(): return _requiere_auth()
+    if request.method == "GET":
+        return f"""
+        <html><body style="font-family:sans-serif;max-width:480px;margin:40px auto">
+        <h3>Reemplazar semana_{n}.csv</h3>
+        <p>Sube el Excel/CSV corregido de esta semana. Va a sobreescribir
+        <code>semanas/semana_{n}.csv</code> tal cual. No cierra nada ni toca
+        ningún cierre por sí solo.</p>
+        <form method="post" enctype="multipart/form-data">
+          <input type="file" name="csv" required>
+          <button type="submit">Reemplazar</button>
+        </form>
+        </body></html>
+        """
+    if "csv" not in request.files:
+        return jsonify({"error": "No se recibió archivo"}), 400
+    try:
+        df = _normalizar_columnas(_leer_archivo(request.files["csv"]))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    _guardar_semana_csv(n, df)
+    return jsonify({"ok": True, "semana": n, "filas": len(df)})
+
+
 @app.route("/admin/recalcular-horas-cierre/<int:pid>", methods=["GET", "POST"])
 def admin_recalcular_horas_cierre(pid):
     """Recalcula las horas de un cierre directo desde los CSV de sus
