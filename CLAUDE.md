@@ -664,6 +664,55 @@ UI y persistencia en DB.
 
 ---
 
+## Implementado en sesión 21/07/2026 — rediseño de cierre/anulación de francos
+
+A raíz de recuperar un cierre de Administración (fichada mal tipeada, anular
+y volver a cerrar) se encontraron y arreglaron 3 bugs reales del mecanismo
+`periodos` / `periodo_cerrar` / `periodo_anular` (departamentos **con**
+fichadas: Redes, Administración — no confundir con el mecanismo separado
+`cierres_francos` de deptos sin fichadas, que no se tocó):
+
+1. **`_snapshot_francos_cierre`** marcaba `francos_tomados.estado='Cerrado'`
+   al capturar un franco; `periodo_anular` no lo revertía → francos
+   huérfanos excluidos para siempre de cierres futuros. Se agregó
+   `_revertir_estado_francos_cierre()`, llamada desde `periodo_anular`.
+2. **`/admin/corregir-francos-cierre/<pid>`** calculaba "tomados correcto"
+   solo con la ventana de ese cierre puntual, ignorando el acumulado de
+   cierres anteriores activos — podía dar saldo de más a un legajo con
+   historial previo. Ahora usa una suma acumulada acotada por `fecha_corte`.
+   Acepta `?excluir_legajos=` como válvula de escape manual.
+3. **La actualización automática de saldo al cerrar** (dentro de
+   `periodo_cerrar`) usaba `_calcular_saldos()` — la función de saldo "en
+   vivo" para pantalla, que también suma `francos_semana_parcial` de
+   cualquier semana/depto en curso sin cerrar — como si fuera el delta
+   propio del cierre. Un parcial de otro mes se coló y rompió la cadena de
+   saldos. Ahora usa `_delta_francos_cierre(conn, pid, legajos)` (nueva
+   función, solo lee `periodo_empleados.francos` y
+   `francos_cierre_detalle` de ESE `pid`).
+
+**Regla de oro:** el saldo grabado por un cierre de `periodos` debe poder
+recalcularse exactamente igual usando solo `periodo_empleados.francos` +
+`francos_cierre_detalle` de ese mismo `periodo_id`. Si algo usa
+`_calcular_saldos()` para **grabar** (no para mostrar en pantalla) un saldo,
+es un bug.
+
+También se agregó:
+
+- Columna `francos_cierre_detalle.francos_tomados_id` — revertir por id en
+  vez de por tupla de campos (legajo/tipo/fechas/días), sin ambigüedad ante
+  duplicados exactos.
+- `francos_eliminar`/`francos_aprobar` ahora bloquean también francos con
+  `estado='Cerrado'` (antes solo chequeaban `cierre_francos_id`, el
+  mecanismo hermano).
+- `GET /admin/verificar-cadena-saldos-francos` (solo lectura): recorre los
+  cierres activos por depto y compara el saldo final recalculado de cada
+  uno contra el `saldo_anterior` del siguiente.
+- Herramientas manuales de emergencia (`/admin/restaurar-saldo-desde-periodo`,
+  `/admin/restaurar-saldo-desde-backup`, `/admin/revertir-francos-cierre-anulado`,
+  `/admin/recalcular-horas-cierre`, `/admin/reemplazar-csv-semana`,
+  `/admin/semanas-de-periodo`) para corregir un cierre puntual sin anularlo.
+- Tests: `tests/test_ciclo_cierre_anular_recerrar_francos.py`.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

@@ -238,9 +238,18 @@ def _init_db():
                 estado        TEXT DEFAULT '',
                 fecha_emision TEXT DEFAULT '',
                 autorizado_por TEXT DEFAULT '',
-                observaciones TEXT DEFAULT ''
+                observaciones TEXT DEFAULT '',
+                francos_tomados_id INTEGER
             )
         """)
+        # Referencia al francos_tomados.id de origen, para poder revertir el
+        # estado 'Cerrado' sin ambigüedad al anular un cierre (ver
+        # _revertir_estado_francos_cierre). NULL en filas históricas previas
+        # a esta columna -- se usa un fallback por tupla de campos para esas.
+        try:
+            conn.execute("ALTER TABLE francos_cierre_detalle ADD COLUMN francos_tomados_id INTEGER")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_semana_parcial (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -808,16 +817,47 @@ def _revertir_estado_francos_cierre(conn, pid):
     ).fetchall()
     revertidos = 0
     for d in detalle:
-        cur = conn.execute("""
-            UPDATE francos_tomados
-            SET estado = ?
-            WHERE legajo=? AND tipo=? AND fecha_desde=? AND fecha_hasta=?
-              AND fechas_sueltas=? AND dias=? AND estado='Cerrado'
-        """, (d["estado"] or "Aprobado", d["legajo"], d["tipo"] or "",
-              d["fecha_desde"] or "", d["fecha_hasta"] or "",
-              d["fechas_sueltas"] or "[]", d["dias"] or 0))
+        francos_tomados_id = d["francos_tomados_id"] if "francos_tomados_id" in d.keys() else None
+        if francos_tomados_id is not None:
+            # Sin ambigüedad: apunta al francos_tomados de origen exacto.
+            cur = conn.execute(
+                "UPDATE francos_tomados SET estado=? WHERE id=? AND estado='Cerrado'",
+                (d["estado"] or "Aprobado", francos_tomados_id)
+            )
+        else:
+            # Filas históricas de antes de agregar la columna: fallback por
+            # tupla de campos (puede no matchear si el franco fue editado
+            # después de cerrarse, o dejar sin revertir en caso de duplicado
+            # exacto -- ver plan de rediseño de cierre de francos).
+            cur = conn.execute("""
+                UPDATE francos_tomados
+                SET estado = ?
+                WHERE legajo=? AND tipo=? AND fecha_desde=? AND fecha_hasta=?
+                  AND fechas_sueltas=? AND dias=? AND estado='Cerrado'
+            """, (d["estado"] or "Aprobado", d["legajo"], d["tipo"] or "",
+                  d["fecha_desde"] or "", d["fecha_hasta"] or "",
+                  d["fechas_sueltas"] or "[]", d["dias"] or 0))
         revertidos += cur.rowcount
     return revertidos
+
+
+def _delta_francos_cierre(conn, pid, legajos_cierre):
+    """Generados y tomados que APORTA específicamente el cierre #pid, por legajo.
+
+    A diferencia de _calcular_saldos() (saldo global "en vivo" para pantalla,
+    que además suma francos_semana_parcial de semanas en curso de cualquier
+    depto/mes no cerrado todavía), esto NUNCA mezcla datos de otro
+    período/depto/semana en curso: solo lee lo que ya quedó grabado bajo
+    este pid en periodo_empleados y francos_cierre_detalle. Se usa para
+    actualizar francos_saldo_inicial al cerrar un período, para que el saldo
+    grabado no dependa de qué otro parcial esté pendiente en ese momento."""
+    generados = {str(r["legajo"]): (r["francos"] or 0) for r in conn.execute(
+        "SELECT legajo, francos FROM periodo_empleados WHERE periodo_id=?", (pid,))}
+    tomados = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+        "SELECT legajo, SUM(dias) as total FROM francos_cierre_detalle "
+        "WHERE periodo_id=? GROUP BY legajo", (pid,))}
+    return {leg: {"generados_periodo": generados.get(leg, 0),
+                  "tomados_periodo": tomados.get(leg, 0)} for leg in legajos_cierre}
 
 
 def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=""):
@@ -838,12 +878,13 @@ def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=
         conn.execute("""
             INSERT INTO francos_cierre_detalle
               (periodo_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
-               fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones,
+               francos_tomados_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (pid, r["legajo"], r["nombre"], depto_visible, r["tipo"],
               r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
               r["dias"], r["estado"] or "", r["fecha_emision"] or "",
-              r["autorizado_por"] or "", r["observaciones"] or ""))
+              r["autorizado_por"] or "", r["observaciones"] or "", r["id"]))
         conn.execute(
             "UPDATE francos_tomados SET estado='Cerrado' "
             "WHERE id=? AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')",
@@ -2969,6 +3010,77 @@ def admin_semanas_de_periodo(pid):
     return jsonify({"periodo_id": pid, "fecha_desde": p["fecha_desde"], "fecha_hasta": p["fecha_hasta"], "semanas": semanas})
 
 
+@app.route("/admin/verificar-cadena-saldos-francos")
+def admin_verificar_cadena_saldos_francos():
+    """Solo lectura: para cada departamento, recorre los cierres de periodos
+    ACTIVOS (no anulados) ordenados por cerrado_en y, para cada legajo
+    presente en dos cierres consecutivos del mismo depto, recalcula el
+    "saldo final" que ese cierre debería haber dejado (usando SOLO datos
+    guardados de forma histórica e inmutable: periodos.saldo_anterior del
+    cierre y su propio _delta_francos_cierre) y lo compara contra el
+    saldo_anterior guardado del cierre siguiente.
+
+    No depende del estado actual/en vivo de francos_generados ni de
+    francos_semana_parcial -- por eso puede detectar si algún cierre
+    histórico rompió la cadena, sin que un ajuste posterior lo enmascare.
+    Reporta cada desajuste encontrado; lista vacía significa que la cadena
+    está sana en todos los cierres activos."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT p.id, p.cerrado_en, p.saldo_anterior, pe.departamento
+            FROM periodos p
+            JOIN periodo_empleados pe ON pe.periodo_id = p.id
+            WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'
+        """).fetchall()
+
+        por_depto = {}
+        for r in rows:
+            depto = _normalizar_departamento_web(r["departamento"] or "")
+            por_depto.setdefault(depto, {})[r["id"]] = {
+                "cerrado_en": r["cerrado_en"] or "",
+                "saldo_anterior": json.loads(r["saldo_anterior"] or "{}"),
+            }
+
+        desajustes = []
+        cierres_revisados = 0
+        for depto, cierres in por_depto.items():
+            orden = sorted(cierres.keys(), key=lambda pid: cierres[pid]["cerrado_en"])
+            for i in range(len(orden) - 1):
+                pid_actual, pid_sig = orden[i], orden[i + 1]
+                sa_actual = cierres[pid_actual]["saldo_anterior"]
+                sa_sig    = cierres[pid_sig]["saldo_anterior"]
+                legajos_comunes = set(sa_actual.keys()) & set(sa_sig.keys())
+                if not legajos_comunes:
+                    continue
+                cierres_revisados += 1
+                deltas = _delta_francos_cierre(conn, pid_actual, legajos_comunes)
+                for leg in sorted(legajos_comunes):
+                    base = sa_actual[leg]
+                    despues = sa_sig[leg]
+                    d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
+                    gen_extra_delta = despues.get("gen_extra_al_corte", 0) - base.get("gen_extra_al_corte", 0)
+                    saldo_final_recalculado = (
+                        base.get("saldo", 0) + d["generados_periodo"] + gen_extra_delta - d["tomados_periodo"]
+                    )
+                    if saldo_final_recalculado != despues.get("saldo", 0):
+                        desajustes.append({
+                            "departamento": depto,
+                            "legajo": leg,
+                            "cierre_anterior_id": pid_actual,
+                            "cierre_siguiente_id": pid_sig,
+                            "saldo_final_recalculado": saldo_final_recalculado,
+                            "saldo_anterior_declarado_en_siguiente": despues.get("saldo", 0),
+                        })
+
+    return jsonify({
+        "cierres_consecutivos_revisados": cierres_revisados,
+        "cadena_sana": not desajustes,
+        "desajustes": desajustes,
+    })
+
+
 @app.route("/admin/reemplazar-csv-semana/<int:n>", methods=["GET", "POST"])
 def admin_reemplazar_csv_semana(n):
     """Reemplaza semanas/semana_N.csv (el CSV interno que el sistema ya
@@ -3288,8 +3400,19 @@ def periodo_cerrar():
                  json.dumps(sorted(semanas_visibles_mapa.values())),
                  1 if e.get("confirmado") else 0)
             )
-        # Snapshot de francos tomados — solo legajos del departamento cerrado
+        # Snapshot de francos tomados — legajos del departamento cerrado,
+        # incluyendo empleados sin fichadas (ej. Karen Soto en Redes) para que
+        # sus francos también entren al snapshot de su propio cierre y a la
+        # actualización de saldo (antes se agregaban recién en el bloque de
+        # saldo, después de este snapshot, y quedaban afuera).
         legajos_cierre = [str(e.get("legajo", "")) for e in resumen]
+        _set_legajos_cierre = set(legajos_cierre)
+        for _row in conn.execute("SELECT legajo, departamento FROM empleados_extra"):
+            if _normalizar_departamento_web(_row["departamento"] or "") == departamento:
+                _leg = str(_row["legajo"])
+                if _leg not in _set_legajos_cierre:
+                    legajos_cierre.append(_leg)
+                    _set_legajos_cierre.add(_leg)
         _snapshot_francos_cierre(conn, pid, fecha_corte,
                                  legajos=legajos_cierre, departamento=departamento)
         # Borrar parciales de francos de las semanas cerradas
@@ -3333,12 +3456,17 @@ def periodo_cerrar():
     _guardar_metadata(meta)
 
     # ── Actualización automática de saldo_inicial ──────────────────────────
-    # Se ejecuta DESPUÉS de limpiar sesión y parciales para que _calcular_saldos()
-    # devuelva el saldo neto real sin doble conteo.
+    # Se ejecuta DESPUÉS de limpiar sesión y parciales. Usa _delta_francos_cierre
+    # (solo lo que ESTE cierre #pid aportó a periodo_empleados y a su propio
+    # francos_cierre_detalle) en vez de _calcular_saldos() (saldo "en vivo"
+    # global que también suma francos_semana_parcial de cualquier semana/depto
+    # en curso sin cerrar todavía). Así el saldo grabado nunca mezcla datos de
+    # otro período/mes/depto que esté en curso al momento de este cierre —
+    # ver CLAUDE.md, regla de la cadena saldo_final == saldo_inicial siguiente.
     try:
-        saldos_nuevos = _calcular_saldos()
-        legajos_cierre_set = {str(e.get("legajo", "")) for e in resumen}
+        legajos_cierre_set = set(legajos_cierre)
         ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        nombres_conocidos = {str(e["legajo"]): e["nombre"] for e in _empleados_conocidos()}
 
         with _get_db() as conn:
             # Guardar snapshot de saldos anteriores para poder revertir al anular
@@ -3359,23 +3487,6 @@ def periodo_cerrar():
                     saldo_ant[leg] = {"saldo": 0, "tomados_al_corte": 0,
                                       "gen_extra_al_corte": 0, "fecha_corte": "2026-05-21"}
 
-            # Capturar empleados del depto en empleados_extra (sin fichadas, ej: Karen Soto en Redes)
-            for _row in conn.execute("SELECT legajo, departamento FROM empleados_extra"):
-                if _normalizar_departamento_web(_row["departamento"] or "") == departamento:
-                    _leg = str(_row["legajo"])
-                    if _leg not in saldo_ant:
-                        _fsi = conn.execute(
-                            "SELECT saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte "
-                            "FROM francos_saldo_inicial WHERE CAST(legajo AS TEXT)=?", (_leg,)
-                        ).fetchone()
-                        saldo_ant[_leg] = {
-                            "saldo":              (_fsi["saldo"] or 0) if _fsi else 0,
-                            "tomados_al_corte":   (_fsi["tomados_al_corte"] or 0) if _fsi else 0,
-                            "gen_extra_al_corte": (_fsi["gen_extra_al_corte"] or 0) if _fsi else 0,
-                            "fecha_corte":        (_fsi["fecha_corte"] or "2026-05-21") if _fsi else "2026-05-21",
-                        }
-                        legajos_cierre_set.add(_leg)
-
             conn.execute(
                 "UPDATE periodos SET saldo_anterior=? WHERE id=?",
                 (json.dumps(saldo_ant, ensure_ascii=False), pid)
@@ -3391,13 +3502,20 @@ def periodo_cerrar():
             for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo"):
                 gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
 
-            # Actualizar saldo_inicial con el saldo actual calculado
-            for s in saldos_nuevos:
-                leg = str(s["legajo"])
-                if leg not in legajos_cierre_set:
-                    continue
+            # Delta propio de este cierre: solo lo que quedó grabado bajo este
+            # pid en periodo_empleados.francos y francos_cierre_detalle.
+            deltas = _delta_francos_cierre(conn, pid, legajos_cierre_set)
+
+            # Actualizar saldo_inicial con el saldo nuevo calculado
+            for leg in legajos_cierre_set:
+                base = saldo_ant[leg]
+                d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
+                gen_extra_nuevo = max(0, gen_extra_totales.get(leg, 0) - base["gen_extra_al_corte"])
+                saldo_nuevo = base["saldo"] + d["generados_periodo"] + gen_extra_nuevo - d["tomados_periodo"]
+
                 emp_resumen = next((e for e in resumen if str(e.get("legajo","")) == leg), None)
-                nombre = emp_resumen.get("nombre", s["nombre"]) if emp_resumen else s["nombre"]
+                nombre = (emp_resumen.get("nombre") if emp_resumen else None) or nombres_conocidos.get(leg, leg)
+
                 conn.execute("""
                     INSERT INTO francos_saldo_inicial
                         (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
@@ -3411,7 +3529,7 @@ def periodo_cerrar():
                         fecha_corte        = excluded.fecha_corte
                 """, (
                     leg, nombre,
-                    s["saldo_actual"],
+                    saldo_nuevo,
                     f"Actualizado automáticamente al cerrar período #{pid} ({fecha_corte})",
                     ahora_str,
                     tomados_totales.get(leg, 0),
@@ -3419,7 +3537,7 @@ def periodo_cerrar():
                     fecha_corte,
                 ))
             conn.commit()
-        actualizados = sum(1 for s in saldos_nuevos if str(s["legajo"]) in legajos_cierre_set)
+        actualizados = len(legajos_cierre_set)
         print(f"[INFO] saldo_inicial actualizado para {actualizados} empleados del cierre #{pid} ({departamento})")
         saldo_warning = None
     except Exception as exc_saldo:
@@ -4852,10 +4970,22 @@ def admin_corregir_francos_cierre(pid):
         claves_actuales = {_clave(r) for r in actuales}
         faltantes = [r for r in correctos if _clave(r) not in claves_actuales]
 
-        tomados_correcto_por_leg = {}
-        for r in correctos:
-            leg = str(r["legajo"])
-            tomados_correcto_por_leg[leg] = tomados_correcto_por_leg.get(leg, 0) + (r["dias"] or 0)
+        # tomados_al_corte es un puntero ACUMULADO (todo lo tomado, no anulado,
+        # hasta fecha_corte) -- no la ventana incremental de este cierre
+        # puntual. Un legajo con historial de un cierre activo anterior ya
+        # tiene ese acumulado correctamente contado; usar solo la ventana de
+        # ESTE cierre (como antes) lo resetearía por debajo del valor real y
+        # generaría un doble descuento futuro. Ver CLAUDE.md / plan de
+        # rediseño de cierre de francos.
+        ph_legajos = ",".join("?" * len(legajos))
+        tomados_acumulado_correcto = {r["legajo"]: (r["total"] or 0) for r in conn.execute(f"""
+            SELECT legajo, SUM(dias) as total FROM francos_tomados
+            WHERE COALESCE(estado,'') != 'Anulado'
+              AND {_SQL_CARGADO_EN_NORM} != ''
+              AND {_SQL_CARGADO_EN_NORM} <= ?
+              AND legajo IN ({ph_legajos})
+            GROUP BY legajo
+        """, (fecha_corte, *legajos))}
 
         saldos_iniciales = {r["legajo"]: dict(r) for r in conn.execute("SELECT * FROM francos_saldo_inicial")}
 
@@ -4863,7 +4993,7 @@ def admin_corregir_francos_cierre(pid):
         for leg in legajos:
             si = saldos_iniciales.get(leg, {})
             tomados_actual   = si.get("tomados_al_corte") or 0
-            tomados_correcto = tomados_correcto_por_leg.get(leg, 0)
+            tomados_correcto = tomados_acumulado_correcto.get(leg, 0)
             diferencia = tomados_correcto - tomados_actual
             saldo_actual = si.get("saldo") or 0
             saldos_diff.append({
@@ -4923,12 +5053,13 @@ def admin_corregir_francos_cierre(pid):
             conn.execute("""
                 INSERT INTO francos_cierre_detalle
                   (periodo_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
-                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones,
+                   francos_tomados_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (pid, r["legajo"], r["nombre"], departamento, r["tipo"],
                   r["fecha_desde"] or "", r["fecha_hasta"] or "", r["fechas_sueltas"] or "[]",
                   r["dias"], r["estado"] or "", r["fecha_emision"] or "",
-                  r["autorizado_por"] or "", r["observaciones"] or ""))
+                  r["autorizado_por"] or "", r["observaciones"] or "", r["id"]))
             conn.execute("""
                 UPDATE francos_tomados SET estado='Cerrado'
                 WHERE id=? AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado')
@@ -6208,12 +6339,15 @@ def francos_eliminar(fid):
     motivo = request.form.get("motivo", "").strip()
     with _get_db() as conn:
         franco = conn.execute(
-            "SELECT legajo, dias, cargado_en, observaciones, cierre_francos_id "
+            "SELECT legajo, dias, cargado_en, observaciones, cierre_francos_id, estado "
             "FROM francos_tomados WHERE id=?", (fid,)
         ).fetchone()
         if not franco:
             return redirect(url_for("francos"))
-        if franco["cierre_francos_id"] is not None:
+        if franco["cierre_francos_id"] is not None or (franco["estado"] or "") == "Cerrado":
+            # "Cerrado" == capturado por un cierre de periodos (Redes/Administración);
+            # para anular ese franco sin romper el snapshot histórico hay que
+            # usar /francos/anular-cerrado, que registra la devolución trazable.
             return redirect(url_for("francos") + "?error=movimiento_cerrado")
         obs_actual = franco["observaciones"] or ""
         nueva_obs = f"[ANULADO: {motivo}] {obs_actual}".strip() if motivo else f"[ANULADO] {obs_actual}".strip()
@@ -6227,13 +6361,13 @@ def francos_aprobar(fid):
     if not _autenticado(): return _requiere_auth()
     with _get_db() as conn:
         franco = conn.execute(
-            "SELECT cierre_francos_id FROM francos_tomados WHERE id=?", (fid,)
+            "SELECT cierre_francos_id, estado FROM francos_tomados WHERE id=?", (fid,)
         ).fetchone()
-        if franco and franco["cierre_francos_id"] is not None:
+        if franco and (franco["cierre_francos_id"] is not None or (franco["estado"] or "") == "Cerrado"):
             return redirect(url_for("francos") + "?error=movimiento_cerrado")
         conn.execute(
             "UPDATE francos_tomados SET estado='Aprobado' "
-            "WHERE id=? AND cierre_francos_id IS NULL", (fid,)
+            "WHERE id=? AND cierre_francos_id IS NULL AND COALESCE(estado,'') != 'Cerrado'", (fid,)
         )
         conn.commit()
     return redirect(url_for("francos"))
