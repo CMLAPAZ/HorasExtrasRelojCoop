@@ -4905,6 +4905,85 @@ def admin_corregir_francos_cierre(pid):
     })
 
 
+@app.route("/admin/restaurar-saldo-desde-backup", methods=["GET", "POST"])
+def admin_restaurar_saldo_desde_backup():
+    """Restaura filas puntuales de francos_saldo_inicial desde un backup
+    sqlite hecho por /admin/corregir-francos-cierre (parámetro `backup`,
+    solo nombre de archivo dentro de DATOS_DIR, sin rutas) para los
+    `legajos` indicados (coma-separado).
+
+    Sirve para deshacer un ajuste de saldo que resultó incorrecto para
+    legajos puntuales, sin tocar francos_cierre_detalle ni el resto de la
+    corrección (que puede seguir siendo válida para otros legajos).
+
+    GET = diagnóstico de solo lectura (valores actuales vs. los del
+    backup). ?confirmar=si aplica: UPDATE de francos_saldo_inicial con los
+    valores (saldo, tomados_al_corte, gen_extra_al_corte, fecha_corte) tal
+    como estaban en el backup, solo para esos legajos."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    backup_nombre = request.args.get("backup", "").strip()
+    legajos = [s.strip() for s in request.args.get("legajos", "").split(",") if s.strip()]
+    if not backup_nombre or "/" in backup_nombre or "\\" in backup_nombre:
+        return jsonify({"error": "Parámetro 'backup' inválido o faltante (solo nombre de archivo)."}), 400
+    if not legajos:
+        return jsonify({"error": "Falta el parámetro 'legajos' (coma-separado)."}), 400
+
+    backup_path = DATOS_DIR / backup_nombre
+    if not backup_path.exists():
+        return jsonify({"error": f"No existe el backup {backup_nombre} en {DATOS_DIR}."}), 404
+
+    backup_conn = sqlite3.connect(str(backup_path))
+    backup_conn.row_factory = sqlite3.Row
+    ph = ",".join("?" * len(legajos))
+    filas_backup = {
+        r["legajo"]: dict(r)
+        for r in backup_conn.execute(
+            f"SELECT * FROM francos_saldo_inicial WHERE legajo IN ({ph})", legajos
+        ).fetchall()
+    }
+    backup_conn.close()
+
+    with _get_db() as conn:
+        actuales = {
+            r["legajo"]: dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM francos_saldo_inicial WHERE legajo IN ({ph})", legajos
+            ).fetchall()
+        }
+
+        comparacion = []
+        for leg in legajos:
+            b = filas_backup.get(leg)
+            a = actuales.get(leg)
+            comparacion.append({
+                "legajo": leg,
+                "en_backup": b,
+                "actual": a,
+            })
+
+        if request.args.get("confirmar") != "si":
+            return jsonify({"backup": backup_nombre, "comparacion": comparacion})
+
+        restaurados = []
+        for leg in legajos:
+            b = filas_backup.get(leg)
+            if not b:
+                continue
+            conn.execute("""
+                UPDATE francos_saldo_inicial
+                SET saldo=?, tomados_al_corte=?, gen_extra_al_corte=?, fecha_corte=?,
+                    nota=?, cargado_en=?
+                WHERE legajo=?
+            """, (b["saldo"], b["tomados_al_corte"], b["gen_extra_al_corte"], b["fecha_corte"],
+                  f"Restaurado desde backup {backup_nombre}",
+                  datetime.now().strftime("%Y-%m-%d %H:%M:%S"), leg))
+            restaurados.append(leg)
+        conn.commit()
+
+    return jsonify({"ok": True, "restaurados": restaurados, "comparacion": comparacion})
+
+
 @app.route("/admin/revertir-francos-cierre-anulado/<int:pid>", methods=["GET", "POST"])
 def admin_revertir_francos_cierre_anulado(pid):
     """Aplica retroactivamente lo que ahora hace periodo_anular automáticamente:
