@@ -5414,6 +5414,56 @@ def admin_corregir_fecha_corte(pid):
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
 
 
+@app.route("/admin/vincular-franco-a-cierre/<int:franco_id>/<int:cierre_id>")
+def admin_vincular_franco_a_cierre(franco_id, cierre_id):
+    """Vincula manualmente un franco_tomados puntual a un cierres_francos
+    puntual (mismo efecto que _vincular_movimientos_cierre_francos, pero
+    para un solo registro elegido a mano) -- para corregir un caso donde
+    quedó sin vincular (huérfano) y se sabe a qué cierre le corresponde
+    en realidad.
+
+    Solo lectura por default (muestra el franco y el cierre encontrados,
+    sin tocar nada). Con ?confirmar=si aplica: pone estado='Cerrado',
+    guarda el estado actual en estado_antes_cierre (para poder revertir
+    si se anula ese cierre) y cierre_francos_id=cierre_id. Rechaza si el
+    franco ya está vinculado a otro cierre (para no pisar una vinculación
+    existente por error)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        franco = conn.execute(
+            "SELECT * FROM francos_tomados WHERE id=?", (franco_id,)
+        ).fetchone()
+        if not franco:
+            return jsonify({"error": f"francos_tomados #{franco_id} no encontrado"}), 404
+        franco = dict(franco)
+        cierre = conn.execute(
+            "SELECT * FROM cierres_francos WHERE id=?", (cierre_id,)
+        ).fetchone()
+        if not cierre:
+            return jsonify({"error": f"cierres_francos #{cierre_id} no encontrado"}), 404
+        cierre = dict(cierre)
+
+        if franco["cierre_francos_id"] is not None and franco["cierre_francos_id"] != cierre_id:
+            return jsonify({
+                "error": f"El franco #{franco_id} ya está vinculado a otro cierre (#{franco['cierre_francos_id']}) -- no se reasigna sin desvincularlo primero.",
+                "franco": franco,
+            }), 409
+
+        if request.args.get("confirmar") == "si":
+            conn.execute("""
+                UPDATE francos_tomados
+                SET cierre_francos_id=?, estado_antes_cierre=?, estado='Cerrado'
+                WHERE id=?
+            """, (cierre_id, franco["estado"] or "Aprobado", franco_id))
+            conn.commit()
+
+    return jsonify({
+        "franco": franco,
+        "cierre": {"id": cierre["id"], "departamento": cierre["departamento"], "fecha_hasta": cierre["fecha_hasta"]},
+        "aplicado": request.args.get("confirmar") == "si",
+    })
+
+
 @app.route("/admin/recalcular-saldo-cierre-francos/<int:cid>")
 def admin_recalcular_saldo_cierre_francos(cid):
     """Solo lectura por default: recalcula el snapshot de saldo
