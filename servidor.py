@@ -4188,23 +4188,17 @@ def francos_cierre_pdf(cid):
             return "El PDF histórico de este cierre anulado no está disponible.", 404
         return send_file(matches[-1], mimetype="application/pdf", as_attachment=False,
                          download_name=f"francos_{depto_visible.lower()}_{fecha_hasta}.pdf")
-    departamento  = _normalizar_departamento_web(depto_visible)
-    with _get_db() as conn:
-        legajos = [str(r["legajo"]) for r in conn.execute(
-            "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
-            "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
-            (depto_visible.lower(), departamento)
-        )]
-    if not legajos:
-        return "Sin empleados.", 404
-    ph = ",".join("?" * len(legajos))
+    # Exactamente lo que _vincular_movimientos_cierre_francos asoció a ESTE
+    # cierre (cierre_francos_id=cid) -- no una re-búsqueda por fecha, que
+    # mostraría francos que en realidad quedaron vinculados a otro cierre
+    # (o a ninguno) simplemente por caer antes de este corte.
     with _get_db() as conn:
         rows = conn.execute(
-            f"SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, "
-            f"fecha_emision, autorizado_por, observaciones FROM francos_tomados "
-            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
-            f"ORDER BY CAST(legajo AS INTEGER), fecha_desde",
-            (*legajos, fecha_hasta)
+            "SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, "
+            "fecha_emision, autorizado_por, observaciones FROM francos_tomados "
+            "WHERE cierre_francos_id = ? "
+            "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (cid,)
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
