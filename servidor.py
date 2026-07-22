@@ -5436,7 +5436,13 @@ def admin_diagnostico_francos_huerfanos():
 
     Un huérfano real es 'Cerrado' sin cierre_francos_id Y sin ninguna fila
     correspondiente en francos_cierre_detalle -- no lo reclama ninguno de
-    los dos mecanismos. No escribe nada."""
+    los dos mecanismos.
+
+    Sin ?confirmar=si es solo diagnóstico (no escribe nada). Con
+    ?confirmar=si, revierte el estado de los huérfanos encontrados a
+    'Aprobado' (no toca cierre_francos_id -- ya es NULL -- ni el saldo,
+    que ya los contaba igual estando en 'Cerrado'), para que un futuro
+    cierre de su departamento los pueda capturar formalmente."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
     with _get_db() as conn:
         huerfanos = [dict(r) for r in conn.execute("""
@@ -5465,10 +5471,21 @@ def admin_diagnostico_francos_huerfanos():
             WHERE cierre_francos_id IS NOT NULL AND COALESCE(estado,'') != 'Cerrado'
             ORDER BY legajo, fecha_desde
         """).fetchall()]
+
+        if request.args.get("confirmar") == "si" and huerfanos:
+            ids = [h["id"] for h in huerfanos]
+            ph_ids = ",".join("?" * len(ids))
+            conn.execute(
+                f"UPDATE francos_tomados SET estado='Aprobado' WHERE id IN ({ph_ids})",
+                ids,
+            )
+            conn.commit()
+
     return jsonify({
         "huerfanos_reales": huerfanos,
         "vinculado_pero_no_cerrado": vinculado_sin_cerrado,
         "total_inconsistencias": len(huerfanos) + len(vinculado_sin_cerrado),
+        "corregidos": len(huerfanos) if request.args.get("confirmar") == "si" else 0,
     })
 
 
