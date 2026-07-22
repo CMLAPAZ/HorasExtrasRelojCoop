@@ -5422,20 +5422,41 @@ def admin_corregir_fecha_corte(pid):
 
 @app.route("/admin/diagnostico-francos-huerfanos")
 def admin_diagnostico_francos_huerfanos():
-    """Solo lectura: busca inconsistencias entre estado y cierre_francos_id
-    en francos_tomados -- el flujo normal (vincular/anular) siempre mueve
-    los dos juntos, así que cualquier fila con estado='Cerrado' pero
-    cierre_francos_id NULL (o viceversa) es un huérfano de una corrección
-    manual anterior, no algo que el código actual pueda producir. No
-    escribe nada."""
+    """Solo lectura: busca francos_tomados marcados 'Cerrado' que no
+    pertenecen a NINGUNO de los dos mecanismos de cierre.
+
+    Un franco 'Cerrado' es normal y esperado en dos casos:
+    - mecanismo cierres_francos (Guardias/Ingenieros/etc.): cierre_francos_id
+      apunta al cierre que lo tomó.
+    - mecanismo periodos (Redes/Administración, vía _snapshot_francos_cierre):
+      NUNCA usa cierre_francos_id (ese campo es exclusivo del otro
+      mecanismo) -- en cambio queda una copia en francos_cierre_detalle,
+      matcheada por francos_tomados_id (o por tupla de campos para filas
+      históricas de antes de esa columna).
+
+    Un huérfano real es 'Cerrado' sin cierre_francos_id Y sin ninguna fila
+    correspondiente en francos_cierre_detalle -- no lo reclama ninguno de
+    los dos mecanismos. No escribe nada."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
     with _get_db() as conn:
-        cerrado_sin_cierre = [dict(r) for r in conn.execute("""
-            SELECT id, legajo, nombre, tipo, fecha_desde, fecha_hasta, dias,
-                   estado, estado_antes_cierre, cargado_en, cierre_francos_id
-            FROM francos_tomados
-            WHERE estado='Cerrado' AND cierre_francos_id IS NULL
-            ORDER BY legajo, fecha_desde
+        huerfanos = [dict(r) for r in conn.execute("""
+            SELECT ft.id, ft.legajo, ft.nombre, ft.tipo, ft.fecha_desde, ft.fecha_hasta,
+                   ft.dias, ft.estado, ft.estado_antes_cierre, ft.cargado_en,
+                   ft.cierre_francos_id
+            FROM francos_tomados ft
+            WHERE ft.estado='Cerrado' AND ft.cierre_francos_id IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM francos_cierre_detalle fcd
+                  WHERE fcd.francos_tomados_id = ft.id
+                     OR (
+                         fcd.francos_tomados_id IS NULL
+                         AND fcd.legajo = ft.legajo AND fcd.tipo = ft.tipo
+                         AND fcd.fecha_desde = ft.fecha_desde AND fcd.fecha_hasta = ft.fecha_hasta
+                         AND COALESCE(fcd.fechas_sueltas,'[]') = COALESCE(ft.fechas_sueltas,'[]')
+                         AND fcd.dias = ft.dias
+                     )
+              )
+            ORDER BY ft.legajo, ft.fecha_desde
         """).fetchall()]
         vinculado_sin_cerrado = [dict(r) for r in conn.execute("""
             SELECT id, legajo, nombre, tipo, fecha_desde, fecha_hasta, dias,
@@ -5445,9 +5466,9 @@ def admin_diagnostico_francos_huerfanos():
             ORDER BY legajo, fecha_desde
         """).fetchall()]
     return jsonify({
-        "cerrado_sin_cierre_asociado": cerrado_sin_cierre,
+        "huerfanos_reales": huerfanos,
         "vinculado_pero_no_cerrado": vinculado_sin_cerrado,
-        "total_inconsistencias": len(cerrado_sin_cierre) + len(vinculado_sin_cerrado),
+        "total_inconsistencias": len(huerfanos) + len(vinculado_sin_cerrado),
     })
 
 
