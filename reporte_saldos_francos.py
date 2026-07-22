@@ -213,6 +213,23 @@ def _calcular_saldos():
 
     todos = {**emps_db, **emps_ses}
 
+    # En el módulo Francos, los legajos 100/101 (Mancioni, Gatti) pertenecen
+    # exclusivamente a Ingenieros. Un periodo_empleados o sesion.json viejo
+    # (de antes de la reasignación) puede conservarlos como Redes -- no debe
+    # pisar la fuente manual empleados_extra. Mismo criterio que
+    # servidor.py::_empleados_conocidos().
+    if DB_FILE.exists():
+        with _get_db() as conn:
+            for r in conn.execute(
+                "SELECT legajo, nombre, departamento FROM empleados_extra "
+                "WHERE activo=1 AND legajo IN ('100','101')"
+            ):
+                leg = str(r["legajo"])
+                todos[leg] = {
+                    "nombre":       r["nombre"],
+                    "departamento": r["departamento"] or "Sin departamento",
+                }
+
     resultado = []
     for leg, info in todos.items():
         ini      = iniciales_db.get(leg, {"saldo": 0, "tomados_al_corte": 0, "gen_extra_al_corte": 0})
