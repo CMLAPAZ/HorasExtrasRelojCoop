@@ -5389,6 +5389,71 @@ def admin_corregir_fecha_corte(pid):
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
 
 
+@app.route("/admin/historial-legajo/<legajo>")
+def admin_historial_legajo(legajo):
+    """Solo lectura: historial completo de un legajo en los dos mecanismos
+    de cierre de francos (periodos, para deptos con fichadas; cierres_francos,
+    para deptos sin fichadas como Ingenieros), su empleados_extra actual y su
+    francos_saldo_inicial actual. Pensada para trazar una transición de
+    departamento (ej. Redes -> Ingenieros) y confirmar que no se perdió ni
+    duplicó saldo en el cambio."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    leg = str(legajo)
+
+    with _get_db() as conn:
+        periodos_leg = [dict(r) for r in conn.execute("""
+            SELECT pe.periodo_id, pe.departamento, pe.francos, pe.ot50, pe.ot100,
+                   p.cerrado_en, p.fecha_desde, p.fecha_hasta,
+                   COALESCE(p.estado,'ACTIVO') as estado
+            FROM periodo_empleados pe
+            JOIN periodos p ON p.id = pe.periodo_id
+            WHERE pe.legajo = ?
+            ORDER BY p.cerrado_en
+        """, (leg,)).fetchall()]
+
+        detalle_cierres = [dict(r) for r in conn.execute("""
+            SELECT periodo_id, dias, estado, fecha_desde, fecha_hasta
+            FROM francos_cierre_detalle
+            WHERE legajo = ?
+            ORDER BY periodo_id, fecha_desde
+        """, (leg,)).fetchall()]
+
+        try:
+            cierres_francos_leg = [dict(r) for r in conn.execute("""
+                SELECT cf.id as cierre_francos_id, cf.departamento, cf.cerrado_en,
+                       cf.fecha_hasta, COALESCE(cf.estado,'ACTIVO') as estado,
+                       ft.dias, ft.tipo, ft.fecha_desde as franco_fecha_desde,
+                       ft.fecha_hasta as franco_fecha_hasta
+                FROM francos_tomados ft
+                JOIN cierres_francos cf ON cf.id = ft.cierre_francos_id
+                WHERE ft.legajo = ?
+                ORDER BY cf.cerrado_en
+            """, (leg,)).fetchall()]
+        except Exception:
+            cierres_francos_leg = []
+
+        saldo_inicial = conn.execute(
+            "SELECT * FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+        ).fetchone()
+        empleado_extra = conn.execute(
+            "SELECT * FROM empleados_extra WHERE legajo=?", (leg,)
+        ).fetchone()
+
+    ultimo_cierre_periodos = periodos_leg[-1] if periodos_leg else None
+    ultimo_cierre_francos = cierres_francos_leg[-1] if cierres_francos_leg else None
+
+    return jsonify({
+        "legajo": leg,
+        "empleados_extra_actual": dict(empleado_extra) if empleado_extra else None,
+        "francos_saldo_inicial_actual": dict(saldo_inicial) if saldo_inicial else None,
+        "historial_periodos_horas_extra": periodos_leg,
+        "ultimo_cierre_periodos": ultimo_cierre_periodos,
+        "historial_francos_cierre_detalle": detalle_cierres,
+        "historial_cierres_francos_manual": cierres_francos_leg,
+        "ultimo_cierre_francos_manual": ultimo_cierre_francos,
+    })
+
+
 @app.route("/admin/inspeccionar-saldo-anterior/<int:pid>")
 def admin_inspeccionar_saldo_anterior(pid):
     """Solo lectura: muestra periodos.saldo_anterior (el snapshot de
