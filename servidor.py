@@ -5420,6 +5420,37 @@ def admin_corregir_fecha_corte(pid):
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
 
 
+@app.route("/admin/diagnostico-francos-huerfanos")
+def admin_diagnostico_francos_huerfanos():
+    """Solo lectura: busca inconsistencias entre estado y cierre_francos_id
+    en francos_tomados -- el flujo normal (vincular/anular) siempre mueve
+    los dos juntos, así que cualquier fila con estado='Cerrado' pero
+    cierre_francos_id NULL (o viceversa) es un huérfano de una corrección
+    manual anterior, no algo que el código actual pueda producir. No
+    escribe nada."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        cerrado_sin_cierre = [dict(r) for r in conn.execute("""
+            SELECT id, legajo, nombre, tipo, fecha_desde, fecha_hasta, dias,
+                   estado, estado_antes_cierre, cargado_en, cierre_francos_id
+            FROM francos_tomados
+            WHERE estado='Cerrado' AND cierre_francos_id IS NULL
+            ORDER BY legajo, fecha_desde
+        """).fetchall()]
+        vinculado_sin_cerrado = [dict(r) for r in conn.execute("""
+            SELECT id, legajo, nombre, tipo, fecha_desde, fecha_hasta, dias,
+                   estado, estado_antes_cierre, cargado_en, cierre_francos_id
+            FROM francos_tomados
+            WHERE cierre_francos_id IS NOT NULL AND COALESCE(estado,'') != 'Cerrado'
+            ORDER BY legajo, fecha_desde
+        """).fetchall()]
+    return jsonify({
+        "cerrado_sin_cierre_asociado": cerrado_sin_cierre,
+        "vinculado_pero_no_cerrado": vinculado_sin_cerrado,
+        "total_inconsistencias": len(cerrado_sin_cierre) + len(vinculado_sin_cerrado),
+    })
+
+
 @app.route("/admin/historial-legajo/<legajo>")
 def admin_historial_legajo(legajo):
     """Solo lectura: historial completo de un legajo en los dos mecanismos
