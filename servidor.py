@@ -5470,6 +5470,22 @@ def admin_historial_legajo(legajo):
             "SELECT * FROM empleados_extra WHERE legajo=?", (leg,)
         ).fetchone()
 
+        # Fichas puntuales en vivo (todas, sin filtrar por fecha ni cierre) --
+        # para poder ver a simple vista cuáles son de qué mes por su
+        # cargado_en, antes de cerrar un período manual.
+        francos_tomados_leg = [dict(r) for r in conn.execute("""
+            SELECT id, tipo, fecha_desde, fecha_hasta, dias, estado, cargado_en, cierre_francos_id
+            FROM francos_tomados WHERE legajo=? ORDER BY cargado_en
+        """, (leg,)).fetchall()]
+        francos_generados_leg = [dict(r) for r in conn.execute("""
+            SELECT id, descripcion, dias, cargado_en, cierre_francos_id
+            FROM francos_generados WHERE legajo=? ORDER BY cargado_en
+        """, (leg,)).fetchall()]
+        francos_semana_manual_leg = [dict(r) for r in conn.execute("""
+            SELECT id, semana_num, mes, dias, guardado_en, cierre_francos_id
+            FROM francos_semana_manual WHERE legajo=? ORDER BY mes
+        """, (leg,)).fetchall()]
+
     ultimo_cierre_periodos = periodos_leg[-1] if periodos_leg else None
     ultimo_cierre_francos = cierres_francos_leg[-1] if cierres_francos_leg else None
 
@@ -5482,6 +5498,9 @@ def admin_historial_legajo(legajo):
         "historial_francos_cierre_detalle": detalle_cierres,
         "historial_cierres_francos_manual": cierres_francos_leg,
         "ultimo_cierre_francos_manual": ultimo_cierre_francos,
+        "francos_tomados_en_vivo": francos_tomados_leg,
+        "francos_generados_en_vivo": francos_generados_leg,
+        "francos_semana_manual_en_vivo": francos_semana_manual_leg,
     })
 
 
