@@ -3791,8 +3791,8 @@ def _vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta):
     )
     cur_gen = conn.execute(
         f"UPDATE francos_generados SET cierre_francos_id=? "
-        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL",
-        (cierre_id, *legajos),
+        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL AND cargado_en <= ?",
+        (cierre_id, *legajos, fecha_hasta),
     )
     cur_sem = conn.execute(
         f"UPDATE francos_semana_manual SET cierre_francos_id=? "
@@ -3861,44 +3861,53 @@ def francos_cierre_nuevo():
         )
         conn.commit()
 
-    # Actualizar saldo_inicial con el saldo calculado al corte
+    # Actualizar saldo_inicial con el saldo calculado AL CORTE (fecha_hasta) --
+    # NO con _calcular_saldos() (saldo "en vivo", sin límite superior de
+    # fecha, que mezclaría movimientos cargados después de este corte, ej.
+    # francos de julio en un cierre de junio). Mismo criterio que
+    # periodo_cerrar / _delta_francos_cierre para el mecanismo de periodos.
     try:
         ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        saldos = _calcular_saldos()
-
-        # Snapshot de saldo al cierre (foto): saldo_anterior + generados + tomados + saldo_final
-        snap = {}
-        for s in saldos:
-            if str(s["legajo"]) in legajos:
-                snap[str(s["legajo"])] = {
-                    "nombre":         s["nombre"],
-                    "saldo_anterior": s["saldo_inicial"],
-                    "generados":      s["generados"],
-                    "tomados":        s["tomados"],
-                    "saldo_final":    s["saldo_actual"],
-                }
         with _get_db() as conn:
-            conn.execute("UPDATE cierres_francos SET saldo_anterior=? WHERE id=?",
-                         (json.dumps(snap, ensure_ascii=False), cid))
-            conn.commit()
-
-        with _get_db() as conn:
-            tomados_totales = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+            tomados_al_hasta = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
                 f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
-                f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' GROUP BY legajo",
-                legajos
+                f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
+                f"GROUP BY legajo", (*legajos, fecha_hasta)
             )}
-            gen_extra_totales = {}
-            for r in conn.execute(f"SELECT legajo, SUM(dias) as total FROM francos_generados WHERE legajo IN ({ph}) GROUP BY legajo", legajos):
-                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
-            for r in conn.execute(f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual WHERE legajo IN ({ph}) GROUP BY legajo", legajos):
-                gen_extra_totales[r["legajo"]] = gen_extra_totales.get(r["legajo"], 0) + (r["total"] or 0)
-            for s in saldos:
-                leg = str(s["legajo"])
-                if leg not in legajos:
-                    continue
+            gen_extra_al_hasta = {}
+            for r in conn.execute(
+                f"SELECT legajo, SUM(dias) as total FROM francos_generados "
+                f"WHERE legajo IN ({ph}) AND cargado_en <= ? GROUP BY legajo",
+                (*legajos, fecha_hasta)
+            ):
+                gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+            for r in conn.execute(
+                f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual "
+                f"WHERE legajo IN ({ph}) AND guardado_en <= ? GROUP BY legajo",
+                (*legajos, fecha_hasta)
+            ):
+                gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+
+            snap = {}
+            for leg in legajos:
+                base = base_anterior.get(leg) or {}
+                base_saldo     = (base.get("saldo") or 0) if base else 0
+                base_tom_corte = (base.get("tomados_al_corte") or 0) if base else 0
+                base_gen_corte = (base.get("gen_extra_al_corte") or 0) if base else 0
+
+                tomados_periodo   = max(0, tomados_al_hasta.get(leg, 0) - base_tom_corte)
+                generados_periodo = max(0, gen_extra_al_hasta.get(leg, 0) - base_gen_corte)
+                saldo_nuevo = base_saldo + generados_periodo - tomados_periodo
+
                 emp_row = next((e for e in _empleados_conocidos() if str(e["legajo"]) == leg), None)
-                nombre = emp_row["nombre"] if emp_row else s["nombre"]
+                nombre = emp_row["nombre"] if emp_row else ((base.get("nombre") if base else "") or leg)
+
+                snap[leg] = {
+                    "nombre": nombre, "saldo_anterior": base_saldo,
+                    "generados": generados_periodo, "tomados": tomados_periodo,
+                    "saldo_final": saldo_nuevo,
+                }
+
                 conn.execute("""
                     INSERT INTO francos_saldo_inicial
                         (legajo, nombre, saldo, nota, cargado_en, tomados_al_corte, gen_extra_al_corte, fecha_corte)
@@ -3908,10 +3917,13 @@ def francos_cierre_nuevo():
                         tomados_al_corte=excluded.tomados_al_corte,
                         gen_extra_al_corte=excluded.gen_extra_al_corte,
                         fecha_corte=excluded.fecha_corte
-                """, (leg, nombre, s["saldo_actual"],
+                """, (leg, nombre, saldo_nuevo,
                       f"Cierre manual francos {depto_visible} al {fecha_hasta}",
-                      ahora_str, tomados_totales.get(leg, 0),
-                      gen_extra_totales.get(leg, 0), fecha_hasta))
+                      ahora_str, tomados_al_hasta.get(leg, 0),
+                      gen_extra_al_hasta.get(leg, 0), fecha_hasta))
+
+            conn.execute("UPDATE cierres_francos SET saldo_anterior=? WHERE id=?",
+                         (json.dumps(snap, ensure_ascii=False), cid))
             conn.commit()
     except Exception as e:
         print(f"[ADVERTENCIA] Error actualizando saldo en cierre manual: {e}")

@@ -13,7 +13,7 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
             estado TEXT, estado_antes_cierre TEXT DEFAULT '', cierre_francos_id INTEGER
         );
         CREATE TABLE francos_generados (
-            id INTEGER PRIMARY KEY, legajo TEXT, cierre_francos_id INTEGER
+            id INTEGER PRIMARY KEY, legajo TEXT, cargado_en TEXT, cierre_francos_id INTEGER
         );
         CREATE TABLE francos_semana_manual (
             id INTEGER PRIMARY KEY, legajo TEXT, mes TEXT,
@@ -26,7 +26,10 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
             (4, '101', '2026-06-20', 'Cerrado', 'Aprobado', 8),
             (5, '113', '2026-06-10', 'Aprobado', '', NULL);
         INSERT INTO francos_generados VALUES
-            (1, '100', NULL), (2, '101', 8), (3, '113', NULL);
+            (1, '100', '2026-06-05', NULL),
+            (2, '100', '2026-07-02', NULL),
+            (3, '101', '2026-06-10', 8),
+            (4, '113', '2026-06-05', NULL);
         INSERT INTO francos_semana_manual VALUES
             (1, '100', '2026-06', NULL),
             (2, '101', '2026-07', NULL),
@@ -50,6 +53,12 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
     assert conn.execute(
         "SELECT cierre_francos_id FROM francos_generados WHERE id=1"
     ).fetchone()[0] == 9
+    # cargado DESPUÉS del corte (30/06) -> no debe vincularse a este cierre,
+    # aunque esté pendiente (reproduce el bug real: un generado de julio
+    # colándose en un cierre de junio)
+    assert conn.execute(
+        "SELECT cierre_francos_id FROM francos_generados WHERE id=2"
+    ).fetchone()[0] is None
     assert conn.execute(
         "SELECT cierre_francos_id FROM francos_semana_manual WHERE id=1"
     ).fetchone()[0] == 9
@@ -57,5 +66,5 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
         "SELECT cierre_francos_id FROM francos_semana_manual WHERE id=2"
     ).fetchone()[0] is None
     assert conn.execute(
-        "SELECT cierre_francos_id FROM francos_generados WHERE id=3"
+        "SELECT cierre_francos_id FROM francos_generados WHERE id=4"
     ).fetchone()[0] is None
