@@ -5420,6 +5420,102 @@ def admin_corregir_fecha_corte(pid):
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
 
 
+@app.route("/admin/recalcular-saldo-cierre-francos/<int:cid>")
+def admin_recalcular_saldo_cierre_francos(cid):
+    """Solo lectura por default: recalcula el snapshot de saldo
+    (cierres_francos.saldo_anterior, lo que muestra "Ver saldo al cierre")
+    de un cierre manual de francos YA HECHO, usando la misma fórmula
+    acotada a fecha_hasta que /francos/cierre/nuevo usa hoy -- para
+    cierres viejos, creados antes de ese arreglo, cuyo snapshot de saldo
+    puede no coincidir con el detalle de francos capturado (ej. un legajo
+    aparece en el detalle pero con tomados=0 en el saldo).
+
+    No toca el PDF ya guardado de "Ver francos" (archivo estático) ni
+    ningún otro cierre. Con ?confirmar=si, sobreescribe
+    cierres_francos.saldo_anterior de este cid con el snapshot recalculado."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        cf = conn.execute("SELECT * FROM cierres_francos WHERE id=?", (cid,)).fetchone()
+        if not cf:
+            return jsonify({"error": f"Cierre de francos #{cid} no encontrado"}), 404
+        cf = dict(cf)
+        fecha_hasta = cf["fecha_hasta"]
+        departamento = _normalizar_departamento_web(cf["departamento"])
+
+        try:
+            base_anterior = json.loads(cf.get("base_anterior") or "{}")
+        except Exception:
+            base_anterior = {}
+        if not base_anterior:
+            return jsonify({"error": "Este cierre no tiene base_anterior guardada -- no se puede recalcular con seguridad."}), 409
+
+        legajos = list(base_anterior.keys())
+        ph = ",".join("?" * len(legajos))
+        mes_hasta = (fecha_hasta or "")[:7]
+
+        tomados_al_hasta = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' "
+            f"AND {_SQL_CARGADO_EN_DIA} <= ? GROUP BY legajo",
+            (*legajos, fecha_hasta)
+        )}
+        gen_extra_al_hasta = {}
+        for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_generados "
+            f"WHERE legajo IN ({ph}) AND {_SQL_CARGADO_EN_DIA} <= ? GROUP BY legajo",
+            (*legajos, fecha_hasta)
+        ):
+            gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+        for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual "
+            f"WHERE legajo IN ({ph}) AND mes <= ? GROUP BY legajo",
+            (*legajos, mes_hasta)
+        ):
+            gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+
+        nombres_conocidos = {str(e["legajo"]): e["nombre"] for e in _empleados_conocidos()}
+
+        snap_nuevo = {}
+        diffs = []
+        for leg in legajos:
+            base = base_anterior.get(leg) or {}
+            base_saldo     = (base.get("saldo") or 0) if base else 0
+            base_tom_corte = (base.get("tomados_al_corte") or 0) if base else 0
+            base_gen_corte = (base.get("gen_extra_al_corte") or 0) if base else 0
+
+            tomados_periodo   = max(0, tomados_al_hasta.get(leg, 0) - base_tom_corte)
+            generados_periodo = max(0, gen_extra_al_hasta.get(leg, 0) - base_gen_corte)
+            saldo_final = base_saldo + generados_periodo - tomados_periodo
+            nombre = nombres_conocidos.get(leg) or (base.get("nombre") if base else "") or leg
+
+            snap_nuevo[leg] = {
+                "nombre": nombre, "saldo_anterior": base_saldo,
+                "generados": generados_periodo, "tomados": tomados_periodo,
+                "saldo_final": saldo_final,
+            }
+
+        try:
+            snap_actual = json.loads(cf.get("saldo_anterior") or "{}")
+        except Exception:
+            snap_actual = {}
+        for leg in legajos:
+            if snap_actual.get(leg) != snap_nuevo.get(leg):
+                diffs.append({"legajo": leg, "actual": snap_actual.get(leg), "correcto": snap_nuevo.get(leg)})
+
+        if request.args.get("confirmar") == "si":
+            conn.execute(
+                "UPDATE cierres_francos SET saldo_anterior=? WHERE id=?",
+                (json.dumps(snap_nuevo, ensure_ascii=False), cid)
+            )
+            conn.commit()
+
+    return jsonify({
+        "cierre_francos_id": cid, "departamento": departamento, "fecha_hasta": fecha_hasta,
+        "diferencias": diffs, "aplicado": request.args.get("confirmar") == "si",
+    })
+
+
 @app.route("/admin/diagnostico-francos-huerfanos")
 def admin_diagnostico_francos_huerfanos():
     """Solo lectura: busca francos_tomados marcados 'Cerrado' que no
