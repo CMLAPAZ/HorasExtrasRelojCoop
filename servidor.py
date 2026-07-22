@@ -20,6 +20,11 @@ SUPERVISOR_PASS  = os.environ.get("SUPERVISOR_PASS",  "cm2026")
 FIRMA_SUPERVISOR = os.environ.get("FIRMA_SUPERVISOR", "CM - Carola Martin")
 # URL base para links de WhatsApp — si está vacío usa el host del request
 WA_BASE_URL = os.environ.get("WA_BASE_URL", "")
+# Clave para disparar el reporte semanal de francos desde un cron externo
+# (ver /tareas/reporte-francos-semanal) — Scheduled Tasks de PythonAnywhere
+# requiere plan pago; esto es la alternativa gratuita. Sin configurar,
+# la ruta queda deshabilitada (falla cerrado).
+REPORTE_FRANCOS_TOKEN = os.environ.get("REPORTE_FRANCOS_TOKEN", "")
 
 SESION_FILE    = Path("sesion.json")
 CONFIRM_DIR    = Path("confirmaciones")
@@ -6785,6 +6790,34 @@ def plus_vacacional():
         departamento=depto_visible, depto_param=depto_param,
         labels=labels, empleados=empleados,
         generado=datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+
+# ═══════════════════════════════════════════════
+# TAREAS PROGRAMADAS VÍA CRON EXTERNO
+# ═══════════════════════════════════════════════
+
+@app.route("/tareas/reporte-francos-semanal", methods=["GET", "POST"])
+def tarea_reporte_francos_semanal():
+    """Dispara reporte_saldos_francos.main() (PDF de saldos por depto +
+    envío por email a supervisores) desde un servicio de cron externo
+    (ej. cron-job.org), sin necesitar sesión de supervisor.
+
+    Reemplaza a la Scheduled Task de PythonAnywhere, que requiere plan
+    pago. Protegida por REPORTE_FRANCOS_TOKEN (variable de entorno) —
+    sin configurar, la ruta rechaza cualquier pedido (falla cerrado)."""
+    if not REPORTE_FRANCOS_TOKEN or request.args.get("token", "") != REPORTE_FRANCOS_TOKEN:
+        return jsonify({"error": "No autorizado"}), 401
+
+    import reporte_saldos_francos as rrf
+    try:
+        rrf.main()
+        return jsonify({"ok": True})
+    except SystemExit as se:
+        # main() usa sys.exit(0)/(1) en algunos caminos (ej. sin datos) —
+        # no es un error del servidor, solo cómo señaliza su propio final.
+        return jsonify({"ok": se.code in (0, None), "exit_code": se.code})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ═══════════════════════════════════════════════
