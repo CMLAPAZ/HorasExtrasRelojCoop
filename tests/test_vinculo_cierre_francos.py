@@ -9,7 +9,7 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
     conn = sqlite3.connect(":memory:")
     conn.executescript("""
         CREATE TABLE francos_tomados (
-            id INTEGER PRIMARY KEY, legajo TEXT, fecha_desde TEXT,
+            id INTEGER PRIMARY KEY, legajo TEXT, fecha_desde TEXT, cargado_en TEXT,
             estado TEXT, estado_antes_cierre TEXT DEFAULT '', cierre_francos_id INTEGER
         );
         CREATE TABLE francos_generados (
@@ -19,12 +19,16 @@ def test_vincula_solo_movimientos_pendientes_y_dentro_del_corte():
             id INTEGER PRIMARY KEY, legajo TEXT, mes TEXT,
             cierre_francos_id INTEGER
         );
+        -- id=1: tomado en MAYO pero cargado en junio (dentro del corte) -> debe
+        -- vincularse -- prueba que lo que importa es cargado_en, no fecha_desde.
+        -- id=2: tomado en JUNIO pero cargado en julio (después del corte) -> NO
+        -- debe vincularse -- misma prueba, en sentido inverso.
         INSERT INTO francos_tomados VALUES
-            (1, '100', '2026-06-10', 'Aprobado', '', NULL),
-            (2, '100', '2026-07-01', 'Aprobado', '', NULL),
-            (3, '101', '2026-06-15', 'Anulado', '', NULL),
-            (4, '101', '2026-06-20', 'Cerrado', 'Aprobado', 8),
-            (5, '113', '2026-06-10', 'Aprobado', '', NULL);
+            (1, '100', '2026-05-01', '2026-06-10', 'Aprobado', '', NULL),
+            (2, '100', '2026-06-01', '2026-07-01', 'Aprobado', '', NULL),
+            (3, '101', '2026-06-15', '2026-06-15', 'Anulado', '', NULL),
+            (4, '101', '2026-06-20', '2026-06-20', 'Cerrado', 'Aprobado', 8),
+            (5, '113', '2026-06-10', '2026-06-10', 'Aprobado', '', NULL);
         INSERT INTO francos_generados VALUES
             (1, '100', '2026-06-05', NULL),
             (2, '100', '2026-07-02', NULL),

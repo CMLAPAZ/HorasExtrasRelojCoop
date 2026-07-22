@@ -693,6 +693,11 @@ def _fmt_fecha_corte_pdf(fecha_corte):
 # superior de la ventana incremental, así "YYYY-MM-DDTHH:MM:SS[.ffffff]" y
 # "YYYY-MM-DD HH:MM:SS[.ffffff]" se comparan de forma equivalente.
 _SQL_CARGADO_EN_NORM = "REPLACE(TRIM(COALESCE(cargado_en,'')), 'T', ' ')"
+# Igual que _SQL_CARGADO_EN_NORM pero recortado al día (los cierres
+# manuales de francos -- cierres_francos -- usan un corte de solo fecha,
+# sin hora; sin este recorte, cualquier cargado_en con hora >00:00:00 del
+# día del corte quedaría excluido por comparación de string).
+_SQL_CARGADO_EN_DIA = "SUBSTR(REPLACE(TRIM(COALESCE(cargado_en,'')), 'T', ' '), 1, 10)"
 
 
 def _fecha_corte_anterior(conn, pid, departamento, fecha_corte_actual):
@@ -3767,9 +3772,12 @@ def _vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta):
     """Asocia de forma irreversible (hasta una futura anulación controlada)
     los movimientos manuales pendientes con el cierre del departamento.
 
-    - tomados: hasta la fecha de corte;
-    - semanas manuales: hasta el mes de la fecha de corte;
-    - generados extraordinarios: todos los pendientes cargados al cerrar.
+    - tomados y generados extraordinarios: por fecha de CARGA (cargado_en),
+      no por la fecha tomada -- es lo que decide a qué cierre pertenece un
+      movimiento, mismo criterio que _seleccionar_francos_ventana_cierre
+      para el mecanismo de periodos;
+    - semanas manuales: hasta el mes de la fecha de corte (no tienen
+      cargado_en individual, se agrupan por mes).
 
     Los movimientos ya asociados a otro cierre nunca se reasignan.
     """
@@ -3786,12 +3794,12 @@ def _vincular_movimientos_cierre_francos(conn, cierre_id, legajos, fecha_hasta):
         f"WHERE legajo IN ({ph}) "
         f"AND cierre_francos_id IS NULL "
         f"AND COALESCE(estado,'') NOT IN ('Anulado','Cerrado') "
-        f"AND fecha_desde <= ?",
+        f"AND {_SQL_CARGADO_EN_DIA} <= ?",
         (cierre_id, *legajos, fecha_hasta),
     )
     cur_gen = conn.execute(
         f"UPDATE francos_generados SET cierre_francos_id=? "
-        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL AND cargado_en <= ?",
+        f"WHERE legajo IN ({ph}) AND cierre_francos_id IS NULL AND {_SQL_CARGADO_EN_DIA} <= ?",
         (cierre_id, *legajos, fecha_hasta),
     )
     cur_sem = conn.execute(
@@ -3839,10 +3847,13 @@ def francos_cierre_nuevo():
         if not legajos:
             return jsonify({"error": f"Sin empleados para {depto_visible}."}), 400
         ph = ",".join("?" * len(legajos))
-        # Calcular total días
+        # Calcular total días -- por fecha de CARGA (cargado_en), no por la
+        # fecha tomada: es lo que decide a qué cierre pertenece un franco
+        # (mismo criterio que _seleccionar_francos_ventana_cierre).
         total = conn.execute(
             f"SELECT COALESCE(SUM(dias),0) FROM francos_tomados "
-            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ?",
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' "
+            f"AND {_SQL_CARGADO_EN_DIA} <= ?",
             (*legajos, fecha_hasta)
         ).fetchone()[0]
         # Registrar cierre
@@ -3868,23 +3879,29 @@ def francos_cierre_nuevo():
     # periodo_cerrar / _delta_francos_cierre para el mecanismo de periodos.
     try:
         ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mes_hasta = (fecha_hasta or "")[:7]
         with _get_db() as conn:
+            # Por fecha de CARGA (cargado_en), no por la fecha tomada --
+            # mismo criterio que _vincular_movimientos_cierre_francos.
             tomados_al_hasta = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
                 f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
-                f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
+                f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' "
+                f"AND {_SQL_CARGADO_EN_DIA} <= ? "
                 f"GROUP BY legajo", (*legajos, fecha_hasta)
             )}
             gen_extra_al_hasta = {}
             for r in conn.execute(
                 f"SELECT legajo, SUM(dias) as total FROM francos_generados "
-                f"WHERE legajo IN ({ph}) AND cargado_en <= ? GROUP BY legajo",
+                f"WHERE legajo IN ({ph}) AND {_SQL_CARGADO_EN_DIA} <= ? GROUP BY legajo",
                 (*legajos, fecha_hasta)
             ):
                 gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+            # francos_semana_manual no tiene cargado_en individual -- se
+            # agrupa por mes, igual que en _vincular_movimientos_cierre_francos.
             for r in conn.execute(
                 f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual "
-                f"WHERE legajo IN ({ph}) AND guardado_en <= ? GROUP BY legajo",
-                (*legajos, fecha_hasta)
+                f"WHERE legajo IN ({ph}) AND mes <= ? GROUP BY legajo",
+                (*legajos, mes_hasta)
             ):
                 gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
 
@@ -3928,14 +3945,16 @@ def francos_cierre_nuevo():
     except Exception as e:
         print(f"[ADVERTENCIA] Error actualizando saldo en cierre manual: {e}")
 
-    # Generar PDF
+    # Generar PDF -- exactamente los francos que _vincular_movimientos_cierre_francos
+    # ya asoció a este cierre (cierre_francos_id=cid), sin re-derivar el
+    # filtro de fecha por separado (evita que ambos puedan divergir).
     with _get_db() as conn:
         rows = conn.execute(
             f"SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, "
             f"fecha_emision, autorizado_por, observaciones FROM francos_tomados "
-            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' AND fecha_desde <= ? "
+            f"WHERE cierre_francos_id = ? "
             f"ORDER BY CAST(legajo AS INTEGER), fecha_desde",
-            (*legajos, fecha_hasta)
+            (cid,)
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
