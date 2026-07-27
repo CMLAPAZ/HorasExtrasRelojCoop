@@ -12,6 +12,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from puntualidad_db import (
+    consultar_jornadas_mes,
     guardar_jornadas,
     guardar_resumenes_mensuales,
     inicializar_base_puntualidad,
@@ -125,18 +126,29 @@ def importar_archivo_puntualidad(
     if not jornadas:
         raise ValueError("No se generaron jornadas de puntualidad.")
 
-    resumenes = resumir_por_mes(jornadas)
-    meses = _meses_de(resumenes)
+    meses_del_archivo = _meses_de(resumir_por_mes(jornadas))
 
     jornadas_guardadas = guardar_jornadas(
         base_dir,
         jornadas,
         reemplazar_mes=reemplazar_mes,
     )
+
+    # El resumen mensual se recalcula siempre a partir de TODAS las jornadas
+    # ya guardadas de cada mes afectado (no solo las de este archivo): un mes
+    # suele cargarse en varios archivos semanales, y si acá se guardara nada
+    # más que lo de este import, las semanas siguientes del mismo mes
+    # quedarían afuera del resumen (UNIQUE anio+mes+legajo descarta el
+    # duplicado) o lo pisarían por completo (reemplazar_mes=True).
+    jornadas_completas_meses = []
+    for anio, mes in meses_del_archivo:
+        jornadas_completas_meses.extend(consultar_jornadas_mes(base_dir, anio, mes))
+    resumenes = resumir_por_mes(jornadas_completas_meses)
+    meses = _meses_de(resumenes)
     resumenes_guardados = guardar_resumenes_mensuales(
         base_dir,
         resumenes,
-        reemplazar_mes=reemplazar_mes,
+        reemplazar_mes=True,
     )
 
     duplicados_omitidos = 0

@@ -175,7 +175,7 @@ def calcular_jornadas_puntualidad(
 
         # Asignar cada par a su fecha correcta (regla de madrugada)
         por_dia_pares = defaultdict(list)
-        for e, s in pares:
+        for e, s, _motivo in pares:
             fecha_dest = e.date()
             if _debe_imputarse_al_dia_anterior(
                 e=e, s=s, depto=depto, legajo=legajo_str,

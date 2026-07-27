@@ -125,6 +125,26 @@ def test_reemplazar_mes_actualiza_datos(tmp_base, tmp_archivos, cfg_vacia):
     assert resumen[0]["cantidad_tardanzas"] == 1
 
 
+def test_importar_dos_semanas_mismo_mes_acumula_resumen(tmp_base, tmp_archivos, cfg_vacia):
+    """El resumen mensual debe reflejar TODAS las jornadas del mes ya guardadas,
+    no solo las del archivo importado en último lugar -- un mes suele cargarse
+    en varios archivos semanales (una por semana de fichadas)."""
+    semana1 = _csv(os.path.join(tmp_archivos, "semana1.csv"),
+                    _rows(legajo="10", fecha="2026-01-05", entrada="06:00"))
+    semana2 = _csv(os.path.join(tmp_archivos, "semana2.csv"),
+                    _rows(legajo="10", fecha="2026-01-12", entrada="06:10"))
+
+    importar_archivo_puntualidad(tmp_base, semana1)
+    importar_archivo_puntualidad(tmp_base, semana2)
+
+    jornadas = consultar_jornadas_mes(tmp_base, 2026, 1)
+    resumen = consultar_resumen_mes(tmp_base, 2026, 1)
+    assert len(jornadas) == 2
+    assert len(resumen) == 1
+    assert resumen[0]["dias_evaluados"] == 2
+    assert resumen[0]["cantidad_tardanzas"] == 1
+
+
 def test_importar_carpeta_procesa_archivos_ordenados(tmp_base, tmp_archivos, cfg_vacia):
     _csv(os.path.join(tmp_archivos, "2026-01.csv"), _rows(legajo="10", fecha="2026-01-05"))
     _csv(os.path.join(tmp_archivos, "2026-02.csv"), _rows(legajo="20", fecha="2026-02-02"))
