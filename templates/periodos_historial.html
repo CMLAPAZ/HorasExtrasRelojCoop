@@ -137,7 +137,11 @@
          style="height:36px;padding:0 18px;background:#172033;color:#fff;border-radius:7px;font-size:.85rem;font-weight:700;display:inline-flex;align-items:center;text-decoration:none">
         Ver informe mensual combinado
       </a>
-      <span style="font-size:.8rem;color:#64748b">Un PDF con los cierres de todos los departamentos del mes seleccionado.</span>
+      <a id="btn-informe-mensual-francos" href="#" onclick="descargarInformeMensualFrancos(event)"
+         style="height:36px;padding:0 18px;background:#0f5132;color:#fff;border-radius:7px;font-size:.85rem;font-weight:700;display:inline-flex;align-items:center;text-decoration:none">
+        Ver informe mensual de francos (todos los deptos)
+      </a>
+      <span style="font-size:.8rem;color:#64748b">El primero incluye horas + francos solo de Redes/Administración. El segundo es solo saldo y detalle de francos, pero de TODOS los departamentos (incluye Guardias/Internet/Telefonía/Ingenieros).</span>
     </div>
   </div>
 
@@ -272,6 +276,13 @@ function descargarInformeMensual(e) {
   const mes = document.getElementById('mes-informe').value;
   if (!mes) { alert('Seleccioná un mes primero.'); return; }
   window.open('/periodos/informe_mensual?mes=' + mes, '_blank');
+}
+
+function descargarInformeMensualFrancos(e) {
+  e.preventDefault();
+  const mes = document.getElementById('mes-informe').value;
+  if (!mes) { alert('Seleccioná un mes primero.'); return; }
+  window.open('/periodos/informe_mensual_francos?mes=' + mes, '_blank');
 }
 
 // Pre-seleccionar mes anterior

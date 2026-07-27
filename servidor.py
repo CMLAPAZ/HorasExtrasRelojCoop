@@ -4696,6 +4696,296 @@ def _generar_pdf_cierre_completo(pid):
     return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
 
 
+def _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
+                                   saldo_rows, ft_rows, legajos, devoluciones=None):
+    """Sección 'solo francos' (saldo + detalle tomados + movimientos
+    compensatorios) para UN departamento, sobre un PDF ya abierto.
+    Usada tanto para depts con fichadas (periodos) como sin fichadas
+    (cierres_francos) -- ambos alimentan la misma forma normalizada:
+    saldo_rows = [{legajo, nombre, saldo_anterior, generados, tomados, saldo_final}]
+    ft_rows = filas de francos tomados (dict con tipo/fecha_desde/fecha_hasta/
+    fechas_sueltas/dias/estado/observaciones/nombre/legajo)."""
+
+    def titulo_seccion(texto):
+        pdf.set_fill_color(23, 32, 51)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(fam, "B", 10)
+        pdf.cell(0, 8, f"  {texto}", ln=1, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+    def cabecera_tabla(cols, anchos):
+        pdf.set_fill_color(200, 215, 240)
+        pdf.set_font(fam, "B", 7)
+        for col, ancho in zip(cols, anchos):
+            pdf.cell(ancho, 6, col, 1, 0, "C", fill=True)
+        pdf.ln()
+        pdf.set_font(fam, "", 7)
+
+    def check_pag(alto=6):
+        if pdf.get_y() + alto > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            return True
+        return False
+
+    pdf.add_page()
+    titulo_seccion(f"SALDO DE FRANCOS AL CIERRE — {depto_visible}")
+    pdf.set_font(fam, "I", 8)
+    pdf.cell(0, 5, periodo_label, ln=1)
+    pdf.ln(3)
+
+    COLS_S = ["Leg.", "Nombre", "Saldo anterior", "Generados período", "Tomados", "Saldo final"]
+    ANCH_S = [12,     52,       28,                28,                  20,         24]
+    cabecera_tabla(COLS_S, ANCH_S)
+
+    tot_sal_ant = tot_gen = tot_tom = tot_sal_fin = 0
+    for row in sorted(saldo_rows, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
+        check_pag()
+        si_ant  = row.get("saldo_anterior", 0) or 0
+        gen_per = row.get("generados", 0) or 0
+        tom     = row.get("tomados", 0) or 0
+        sf      = row.get("saldo_final", si_ant + gen_per - tom)
+        tot_sal_ant += si_ant; tot_gen += gen_per
+        tot_tom     += tom;    tot_sal_fin += sf
+
+        if sf > 0:   pdf.set_fill_color(220, 252, 231)
+        elif sf < 0: pdf.set_fill_color(254, 202, 202)
+        else:        pdf.set_fill_color(241, 245, 249)
+
+        pdf.cell(ANCH_S[0], 6, str(row["legajo"]),      1, 0, "C", True)
+        pdf.cell(ANCH_S[1], 6, row.get("nombre", ""),   1, 0, "L", True)
+        pdf.cell(ANCH_S[2], 6, str(si_ant),             1, 0, "C", True)
+        pdf.cell(ANCH_S[3], 6, str(gen_per),            1, 0, "C", True)
+        pdf.cell(ANCH_S[4], 6, str(tom),                1, 0, "C", True)
+        pdf.cell(ANCH_S[5], 6, str(sf),                 1, 1, "C", True)
+        pdf.set_fill_color(255, 255, 255)
+
+    pdf.set_fill_color(23, 32, 51); pdf.set_text_color(255, 255, 255)
+    pdf.set_font(fam, "B", 7)
+    pdf.cell(ANCH_S[0] + ANCH_S[1], 6, "TOTALES", 1, 0, "R", fill=True)
+    pdf.cell(ANCH_S[2], 6, str(tot_sal_ant), 1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[3], 6, str(tot_gen),     1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[4], 6, str(tot_tom),     1, 0, "C", fill=True)
+    pdf.cell(ANCH_S[5], 6, str(tot_sal_fin), 1, 1, "C", fill=True)
+    pdf.set_text_color(0, 0, 0)
+
+    # Notas de ajuste manual al pie
+    if legajos:
+        ph_ns = ",".join("?" * len(legajos))
+        with _get_db() as conn:
+            notas_ajs = [(str(r["leg"]),
+                          next((row.get("nombre", "") for row in saldo_rows
+                                if str(row["legajo"]) == str(r["leg"])), str(r["leg"])),
+                          r["nota"])
+                         for r in conn.execute(
+                             f"SELECT CAST(legajo AS TEXT) as leg, nota FROM francos_saldo_inicial "
+                             f"WHERE CAST(legajo AS TEXT) IN ({ph_ns}) AND nota LIKE 'Ajuste manual%'",
+                             legajos)]
+        if notas_ajs:
+            pdf.ln(5)
+            pdf.set_font(fam, "B", 7); pdf.set_text_color(90, 90, 90)
+            pdf.cell(0, 5, "Ajustes manuales de saldo inicial:", ln=1)
+            pdf.set_font(fam, "", 7)
+            for leg_n, nom_n, nota_n in notas_ajs:
+                pdf.cell(0, 4, f"  {leg_n} {nom_n}: {nota_n}", ln=1)
+            pdf.set_text_color(0, 0, 0)
+
+    if ft_rows:
+        pdf.add_page()
+        titulo_seccion(f"DETALLE DE FRANCOS TOMADOS — {depto_visible}")
+        pdf.set_font(fam, "I", 8)
+        pdf.cell(0, 5, periodo_label, ln=1)
+        pdf.ln(3)
+
+        COLS_F = ["Leg.", "Nombre", "Tipo", "Fechas", "Días", "Estado", "Observaciones"]
+        ANCH_F = [12,     52,       14,      60,        10,     20,       22]
+        cabecera_tabla(COLS_F, ANCH_F)
+
+        for ft in sorted(ft_rows, key=lambda x: (int(x["legajo"]) if str(x["legajo"]).isdigit() else 0,
+                                                  x.get("fecha_desde", ""))):
+            tipo = ft.get("tipo", "")
+            if tipo == "UNICO":
+                fechas = ft.get("fecha_desde", "")
+            elif tipo == "RANGO":
+                fechas = f"{ft.get('fecha_desde','')} → {ft.get('fecha_hasta','')}"
+            else:
+                try:
+                    fl = json.loads(ft.get("fechas_sueltas") or "[]")
+                    fechas = ", ".join(fl[:3]) + (f" +{len(fl)-3}" if len(fl) > 3 else "")
+                except Exception:
+                    fechas = ft.get("fecha_desde", "")
+
+            check_pag()
+            pdf.cell(ANCH_F[0], 6, str(ft.get("legajo", "")),        1, 0, "C")
+            pdf.cell(ANCH_F[1], 6, ft.get("nombre", ""),             1, 0, "L")
+            pdf.cell(ANCH_F[2], 6, tipo,                             1, 0, "C")
+            pdf.cell(ANCH_F[3], 6, fechas,                           1, 0, "L")
+            pdf.cell(ANCH_F[4], 6, str(ft.get("dias", 0)),           1, 0, "C")
+            pdf.cell(ANCH_F[5], 6, ft.get("estado", ""),             1, 0, "C")
+            pdf.cell(ANCH_F[6], 6, ft.get("observaciones", "") or "", 1, 1, "L")
+
+    if devoluciones:
+        pdf.ln(5)
+        titulo_seccion("MOVIMIENTOS COMPENSATORIOS")
+        pdf.set_font(fam, "", 8)
+        total_dev = 0
+        for d in devoluciones:
+            check_pag()
+            dias_dev = d.get("dias", 0) or 0
+            total_dev += dias_dev
+            tipo = d.get("tipo", "")
+            if tipo == "RANGO":
+                fechas = f"{d.get('fecha_desde','')} → {d.get('fecha_hasta','')}"
+            elif tipo == "SUELTAS":
+                try:
+                    fechas = ", ".join(json.loads(d.get("fechas_sueltas") or "[]"))
+                except Exception:
+                    fechas = ""
+            else:
+                fechas = d.get("fecha_desde", "")
+            pdf.set_text_color(0, 120, 0)
+            pdf.multi_cell(0, 5,
+                f"  {d.get('legajo','')} - {d.get('nombre','')}: Devolución por anulación de "
+                f"franco cerrado ({fechas}) +{dias_dev} — Motivo: {d.get('motivo','')}")
+            pdf.set_text_color(0, 0, 0)
+        pdf.set_font(fam, "B", 8)
+        pdf.set_text_color(0, 120, 0)
+        pdf.cell(0, 6, f"  Total devolución por anulación de francos cerrados: +{total_dev}", ln=1)
+        pdf.set_text_color(0, 0, 0)
+
+
+def _generar_pdf_informe_mensual_francos(mes):
+    """PDF combinado de SOLO francos (saldo + detalle de tomados) de TODOS
+    los departamentos de un mes -- tanto los que cierran vía `periodos`
+    (Redes/Administración, con fichadas) como los que cierran vía
+    `cierres_francos` (Guardias/Internet/Telefonía/Ingenieros, manual).
+    Devuelve None si no hay ningún cierre para ese mes."""
+    from pdf_generator import PDFGeneral
+
+    pdf = PDFGeneral()
+    pdf.titulo = f"Informe Mensual de Francos — {mes}"
+    pdf.feriados = set(_cargar_feriados_config())
+    fam = "DejaVu" if pdf._unicode else "Helvetica"
+    pdf.portada_abreviaciones(f"Todos los departamentos — {mes}")
+
+    hubo_contenido = False
+
+    # ── Departamentos con fichadas (mecanismo `periodos`) ────────────────
+    with _get_db() as conn:
+        periodos_rows = [dict(r) for r in conn.execute(
+            "SELECT id, fecha_desde, fecha_hasta, saldo_anterior FROM periodos "
+            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND fecha_desde LIKE ? ORDER BY id",
+            (f"{mes}%",)
+        ).fetchall()]
+
+    for pr in periodos_rows:
+        pid = pr["id"]
+        with _get_db() as conn:
+            emps_db = [dict(r) for r in conn.execute(
+                "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY CAST(legajo AS INTEGER)",
+                (pid,)
+            ).fetchall()]
+            ft_db = [dict(r) for r in conn.execute(
+                "SELECT * FROM francos_cierre_detalle WHERE periodo_id=? "
+                "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+                (pid,)
+            ).fetchall()]
+            devoluciones = [dict(r) for r in conn.execute(
+                "SELECT * FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id=? "
+                "ORDER BY CAST(legajo AS INTEGER)",
+                (pid,)
+            ).fetchall()]
+        if not emps_db:
+            continue
+
+        try:
+            saldo_ant = json.loads(pr.get("saldo_anterior") or "{}")
+        except Exception:
+            saldo_ant = {}
+        departamento_norm = _normalizar_departamento_web(emps_db[0].get("departamento", ""))
+        depto_visible = _nombre_departamento_visible(departamento_norm) or "Sin departamento"
+
+        tomados_por_leg = {}
+        for ft in ft_db:
+            leg = str(ft["legajo"])
+            tomados_por_leg[leg] = tomados_por_leg.get(leg, 0) + (ft.get("dias") or 0)
+
+        saldo_rows = []
+        for e in emps_db:
+            leg = str(e["legajo"])
+            ant_data = saldo_ant.get(leg, {})
+            si_ant = ant_data.get("saldo", 0) if isinstance(ant_data, dict) else 0
+            gen_per = e.get("francos", 0) or 0
+            tom = tomados_por_leg.get(leg, 0)
+            saldo_rows.append({
+                "legajo": leg, "nombre": e.get("nombre", ""),
+                "saldo_anterior": si_ant, "generados": gen_per,
+                "tomados": tom, "saldo_final": si_ant + gen_per - tom,
+            })
+
+        legajos = [str(e["legajo"]) for e in emps_db]
+        periodo_label = f"Período: {pr.get('fecha_desde','')} al {pr.get('fecha_hasta','')}"
+        _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
+                                       saldo_rows, ft_db, legajos, devoluciones)
+        hubo_contenido = True
+
+    # ── Departamentos sin fichadas (mecanismo `cierres_francos`) ─────────
+    with _get_db() as conn:
+        cf_rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM cierres_francos WHERE COALESCE(estado,'ACTIVO')='ACTIVO' "
+            "AND fecha_hasta LIKE ? ORDER BY id",
+            (f"{mes}%",)
+        ).fetchall()]
+
+    for cf in cf_rows:
+        cid = cf["id"]
+        try:
+            snap = json.loads(cf.get("saldo_anterior") or "{}")
+        except Exception:
+            snap = {}
+        if not snap:
+            continue
+        depto_visible = cf["departamento"]
+        with _get_db() as conn:
+            ft_rows = [dict(r) for r in conn.execute(
+                "SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, "
+                "estado, observaciones FROM francos_tomados WHERE cierre_francos_id=? "
+                "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+                (cid,)
+            ).fetchall()]
+
+        saldo_rows = [{"legajo": leg, **d} for leg, d in snap.items()]
+        legajos = list(snap.keys())
+        periodo_label = f"Cierre al {cf.get('fecha_hasta','')}"
+        _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
+                                       saldo_rows, ft_rows, legajos)
+        hubo_contenido = True
+
+    if not hubo_contenido:
+        return None
+
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+
+
+@app.route("/periodos/informe_mensual_francos")
+def periodos_informe_mensual_francos():
+    """PDF combinado de SOLO francos de TODOS los departamentos (con y sin
+    fichadas) del mes seleccionado -- un depto por sección/página."""
+    if not _autenticado(): return _requiere_auth()
+    mes = request.args.get("mes", "").strip()  # "YYYY-MM"
+    if not mes or len(mes) != 7 or mes[4] != "-":
+        return "Parámetro 'mes' requerido con formato YYYY-MM.", 400
+
+    pdf_data = _generar_pdf_informe_mensual_francos(mes)
+    if pdf_data is None:
+        return f"No hay cierres de francos para {mes}.", 404
+
+    nombre = f"informe_mensual_francos_{mes.replace('-', '_')}.pdf"
+    return send_file(BytesIO(pdf_data), mimetype="application/pdf",
+                     as_attachment=False, download_name=nombre)
+
+
 @app.route("/periodos/informe_mensual")
 def periodos_informe_mensual():
     """PDF combinado de todos los cierres ACTIVOS de un mes (un depto por página)."""
