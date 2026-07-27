@@ -70,6 +70,15 @@ except Exception as e:
     GRAFICOS_DISPONIBLE = False
     GRAFICOS_ERROR = str(e)
 
+PUNTUALIDAD_DISPONIBLE = False
+PUNTUALIDAD_ERROR = ""
+try:
+    from puntualidad_ui import abrir_control_puntualidad
+    PUNTUALIDAD_DISPONIBLE = True
+except Exception as e:
+    PUNTUALIDAD_DISPONIBLE = False
+    PUNTUALIDAD_ERROR = str(e)
+
 # =============================================================================
 # CONFIGURACIÓN: LEGAJOS EXCLUIDOS DE CONTROL DE TARDANZA
 # =============================================================================
@@ -377,6 +386,22 @@ def _accion_ver_graficos():
         )
     except Exception as e:
         messagebox.showerror("Error", f"No se pudieron mostrar los gráficos:\n{e}", parent=ventana)
+
+
+def _accion_control_puntualidad():
+    if not PUNTUALIDAD_DISPONIBLE:
+        messagebox.showwarning(
+            "Puntualidad no disponible",
+            "No se pudo cargar el módulo de control de puntualidad.\n\n"
+            f"Motivo:\n{PUNTUALIDAD_ERROR}",
+            parent=ventana
+        )
+        return
+
+    try:
+        abrir_control_puntualidad(parent=ventana, base_dir=BASE_DIR)
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo abrir Control de Puntualidad:\n{e}", parent=ventana)
 
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -1460,6 +1485,7 @@ menu_ver.add_command(label="Gráficos…",            command=_accion_ver_grafic
 menu_operativo = tk.Menu(menubar, tearoff=0)
 menubar.add_cascade(label="Operativo", menu=menu_operativo)
 menu_operativo.add_command(label="Asignaciones cortadores…", command=abrir_gestor_asignaciones_especiales)
+menu_operativo.add_command(label="Control de puntualidad…", command=_accion_control_puntualidad)
 menu_operativo.add_separator()
 menu_operativo.add_command(label="Horarios Base Paro…",      command=abrir_gestor_horarios_paro)
 menu_operativo.add_command(label="Gestionar Días de Paro…",  command=abrir_gestor_dias_paro)

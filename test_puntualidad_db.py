@@ -20,7 +20,9 @@ from puntualidad_db import (
     guardar_resumenes_mensuales,
     consultar_jornadas_mes,
     consultar_resumen_mes,
+    consultar_resumen_rango,
     consultar_acumulado_anual,
+    consultar_tardanzas,
     mes_ya_procesado,
     eliminar_mes,
     registrar_importacion,
@@ -168,6 +170,16 @@ def test_consulta_no_mezcla_meses(tmp_base):
     assert len(consultar_jornadas_mes(tmp_base, 2026, 2)) == 1
 
 
+def test_consultar_tardanzas_mensual_y_anual(tmp_base):
+    guardar_jornadas(tmp_base, [
+        _jornada(legajo="10", fecha="2026-01-05", mes=1, tardanza=True, minutos=8),
+        _jornada(legajo="10", fecha="2026-01-06", mes=1, tardanza=False),
+        _jornada(legajo="10", fecha="2026-02-02", mes=2, tardanza=True, minutos=12),
+    ])
+    assert len(consultar_tardanzas(tmp_base, 2026, mes=1)) == 1
+    assert len(consultar_tardanzas(tmp_base, 2026, legajo="10")) == 2
+
+
 # ── 5. Acumulado anual ────────────────────────────────────────────────────────
 
 def test_acumulado_suma_meses(tmp_base):
@@ -181,6 +193,19 @@ def test_acumulado_suma_meses(tmp_base):
     assert acum[0]["cantidad_tardanzas"] == 10   # 2+3+5
     assert acum[0]["minutos_tarde"] == 80         # 15+25+40
     assert acum[0]["dias_evaluados"] == 60        # 20*3
+    assert acum[0]["meses_incluidos"] == 3
+
+
+def test_resumen_rango_suma_solo_meses_solicitados(tmp_base):
+    guardar_resumenes_mensuales(tmp_base, [
+        _resumen(legajo="10", mes=1, tardanzas=2, minutos=15),
+        _resumen(legajo="10", mes=2, tardanzas=3, minutos=25),
+        _resumen(legajo="10", mes=3, tardanzas=5, minutos=40),
+    ])
+    filas = consultar_resumen_rango(tmp_base, 2026, 2, 3)
+    assert filas[0]["cantidad_tardanzas"] == 8
+    assert filas[0]["minutos_tarde"] == 65
+    assert filas[0]["meses_incluidos"] == 2
 
 
 def test_acumulado_no_mezcla_años(tmp_base):

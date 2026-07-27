@@ -9,12 +9,32 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from puntualidad_db import consultar_jornadas_mes, consultar_resumen_mes
+from puntualidad_db import (
+    consultar_acumulado_anual,
+    consultar_jornadas_mes,
+    consultar_resumen_rango,
+    consultar_resumen_mes,
+    consultar_tardanzas,
+    inicializar_base_puntualidad,
+)
 from puntualidad_importador import importar_archivo_puntualidad
+from puntualidad_reporte import generar_informe_puntualidad_pdf
+from puntualidad_service import obtener_estado_anual
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CARPETA_ARCHIVOS = os.path.join(BASE_DIR, "archivos")
+
+
+def _estado_icono(estado):
+    return {
+        "VERDE": "verde",
+        "AMARILLO": "amarillo",
+        "NARANJA": "naranja",
+        "ROJO": "rojo",
+        "ADVERTENCIA_ANUAL": "amarillo",
+        "NORMAL": "normal",
+    }.get(str(estado or "").upper(), "normal")
 
 
 def _mes_actual():
@@ -24,9 +44,11 @@ def _mes_actual():
 
 
 class PuntualidadApp:
-    def __init__(self, root):
+    def __init__(self, root, base_dir=None):
         self.root = root
+        self.base_dir = base_dir or BASE_DIR
         self.ruta_archivo = None
+        inicializar_base_puntualidad(self.base_dir)
 
         root.title("Control de Puntualidad")
         root.geometry("1080x650")
@@ -36,14 +58,40 @@ class PuntualidadApp:
         anio, mes = _mes_actual()
         self.anio_var = tk.StringVar(value=str(anio))
         self.mes_var = tk.IntVar(value=mes)
+        self.mes_hasta_var = tk.IntVar(value=mes)
         self.depto_var = tk.StringVar(value="Todos")
+        self.informe_var = tk.StringVar(value="Por periodo")
         self.desde_var = tk.StringVar(value="")
         self.hasta_var = tk.StringVar(value="")
         self.reemplazar_var = tk.BooleanVar(value=False)
         self.estado_var = tk.StringVar(value="Listo")
+        self.estado_imgs = self._crear_estado_imgs()
 
         self._crear_ui()
         self.cargar_resumen()
+
+    def _crear_estado_imgs(self):
+        colores = {
+            "verde": ("#22c55e", "#166534"),
+            "amarillo": ("#eab308", "#854d0e"),
+            "naranja": ("#f97316", "#9a3412"),
+            "rojo": ("#ef4444", "#991b1b"),
+            "normal": ("#cbd5e1", "#64748b"),
+        }
+        imgs = {}
+        for nombre, (relleno, borde) in colores.items():
+            img = tk.PhotoImage(width=18, height=18)
+            img.put("#ffffff", to=(0, 0, 18, 18))
+            cx, cy, radio = 9, 9, 6
+            for y in range(18):
+                for x in range(18):
+                    dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+                    if dist <= radio:
+                        img.put(relleno, (x, y))
+                    elif radio < dist <= radio + 1.3:
+                        img.put(borde, (x, y))
+            imgs[nombre] = img
+        return imgs
 
     def _crear_ui(self):
         self.tabs = ttk.Notebook(self.root)
@@ -88,7 +136,7 @@ class PuntualidadApp:
 
         ttk.Label(filtro_box, text="Anio").grid(row=0, column=0, padx=(8, 2), pady=10)
         ttk.Entry(filtro_box, textvariable=self.anio_var, width=8).grid(row=0, column=1, pady=10)
-        ttk.Label(filtro_box, text="Mes").grid(row=0, column=2, padx=(8, 2), pady=10)
+        ttk.Label(filtro_box, text="Mes desde").grid(row=0, column=2, padx=(8, 2), pady=10)
         ttk.Combobox(
             filtro_box,
             textvariable=self.mes_var,
@@ -96,18 +144,37 @@ class PuntualidadApp:
             width=5,
             state="readonly",
         ).grid(row=0, column=3, pady=10)
-        ttk.Label(filtro_box, text="Depto").grid(row=0, column=4, padx=(8, 2), pady=10)
+        ttk.Label(filtro_box, text="Hasta").grid(row=0, column=4, padx=(8, 2), pady=10)
+        ttk.Combobox(
+            filtro_box,
+            textvariable=self.mes_hasta_var,
+            values=list(range(1, 13)),
+            width=5,
+            state="readonly",
+        ).grid(row=0, column=5, pady=10)
+        ttk.Label(filtro_box, text="Depto").grid(row=0, column=6, padx=(8, 2), pady=10)
         ttk.Combobox(
             filtro_box,
             textvariable=self.depto_var,
             values=["Todos", "redes", "administracion"],
             width=16,
             state="readonly",
-        ).grid(row=0, column=5, pady=10)
-        ttk.Button(filtro_box, text="Cargar", command=self.cargar_resumen).grid(
-            row=0, column=6, padx=8, pady=10
+        ).grid(row=0, column=7, pady=10)
+        ttk.Label(filtro_box, text="Informe").grid(row=0, column=8, padx=(8, 2), pady=10)
+        ttk.Combobox(
+            filtro_box,
+            textvariable=self.informe_var,
+            values=["Por periodo", "Anual"],
+            width=10,
+            state="readonly",
+        ).grid(row=0, column=9, pady=10)
+        ttk.Button(filtro_box, text="Cargar tardanzas", command=self.cargar_resumen).grid(
+            row=0, column=10, padx=8, pady=10
         )
-        filtro_box.columnconfigure(7, weight=1)
+        ttk.Button(filtro_box, text="Imprimir / PDF", command=self.imprimir_informe).grid(
+            row=0, column=11, padx=(0, 8), pady=10
+        )
+        filtro_box.columnconfigure(12, weight=1)
 
         paned = ttk.PanedWindow(tab_consultar, orient="vertical")
         paned.pack(fill="both", expand=True, padx=12, pady=(0, 8))
@@ -119,7 +186,7 @@ class PuntualidadApp:
 
         self.tree_resumen = self._crear_tree(
             resumen_frame,
-            ("departamento", "legajo", "nombre", "dias", "tardanzas", "minutos", "estado"),
+            ("departamento", "legajo", "nombre", "dias", "tardanzas", "minutos"),
             {
                 "departamento": ("Departamento", 130),
                 "legajo": ("Legajo", 80),
@@ -127,8 +194,8 @@ class PuntualidadApp:
                 "dias": ("Dias eval.", 90),
                 "tardanzas": ("Tardanzas", 90),
                 "minutos": ("Minutos", 80),
-                "estado": ("Estado", 120),
             },
+            tree_col=("Estado", 70),
         )
         self.tree_resumen.bind("<<TreeviewSelect>>", lambda _e: self.cargar_detalle())
 
@@ -149,10 +216,15 @@ class PuntualidadApp:
             fill="x", padx=12, pady=(0, 8)
         )
 
-    def _crear_tree(self, parent, columnas, meta):
-        tree = ttk.Treeview(parent, columns=columnas, show="headings")
+    def _crear_tree(self, parent, columnas, meta, tree_col=None):
+        show = "tree headings" if tree_col else "headings"
+        tree = ttk.Treeview(parent, columns=columnas, show=show)
         scroll = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
+        if tree_col:
+            titulo, ancho = tree_col
+            tree.heading("#0", text=titulo)
+            tree.column("#0", width=ancho, minwidth=ancho, stretch=False, anchor="center")
         for col in columnas:
             titulo, ancho = meta[col]
             tree.heading(col, text=titulo)
@@ -170,6 +242,13 @@ class PuntualidadApp:
         mes = int(self.mes_var.get())
         depto = self.depto_var.get()
         return anio, mes, None if depto == "Todos" else depto
+
+    def _rango_meses(self):
+        desde = int(self.mes_var.get())
+        hasta = int(self.mes_hasta_var.get())
+        if desde > hasta:
+            raise ValueError("El mes desde no puede ser posterior al mes hasta.")
+        return desde, hasta
 
     def _limpiar(self, tree):
         for item in tree.get_children():
@@ -197,7 +276,7 @@ class PuntualidadApp:
             return
         try:
             res = importar_archivo_puntualidad(
-                BASE_DIR,
+                self.base_dir,
                 self.ruta_archivo,
                 fecha_desde=self.desde_var.get().strip() or None,
                 fecha_hasta=self.hasta_var.get().strip() or None,
@@ -219,7 +298,18 @@ class PuntualidadApp:
     def cargar_resumen(self):
         try:
             anio, mes, depto = self._filtros()
-            rows = consultar_resumen_mes(BASE_DIR, anio, mes, departamento=depto)
+            modo = self.informe_var.get()
+            anual = modo == "Anual"
+            mes, mes_hasta = self._rango_meses()
+            rango = not anual and mes != mes_hasta
+            if anual:
+                rows = consultar_acumulado_anual(self.base_dir, anio, departamento=depto)
+            elif rango:
+                mes, mes_hasta = self._rango_meses()
+                rows = consultar_resumen_rango(self.base_dir, anio, mes, mes_hasta, departamento=depto)
+            else:
+                rows = consultar_resumen_mes(self.base_dir, anio, mes, departamento=depto)
+            rows = [r for r in rows if int(r["cantidad_tardanzas"] or 0) > 0]
         except Exception as exc:
             messagebox.showerror("Error", str(exc), parent=self.root)
             return
@@ -227,6 +317,10 @@ class PuntualidadApp:
         self._limpiar(self.tree_resumen)
         self._limpiar(self.tree_detalle)
         for r in rows:
+            estado = (
+                obtener_estado_anual(r["cantidad_tardanzas"])
+                if anual or rango else r["estado_mensual"]
+            )
             self.tree_resumen.insert("", "end", values=(
                 r["departamento"],
                 r["legajo"],
@@ -234,9 +328,14 @@ class PuntualidadApp:
                 r["dias_evaluados"],
                 r["cantidad_tardanzas"],
                 r["minutos_tarde"],
-                r["estado_mensual"],
-            ))
-        self.estado_var.set(f"Resumen cargado: {len(rows)} empleados")
+            ), image=self.estado_imgs[_estado_icono(estado)])
+        if anual:
+            periodo = f"anio {anio}"
+        elif rango:
+            periodo = f"meses {mes:02d} a {mes_hasta:02d}/{anio}"
+        else:
+            periodo = f"{mes:02d}/{anio}"
+        self.estado_var.set(f"Tardanzas de {periodo}: {len(rows)} empleados")
 
     def cargar_detalle(self):
         sel = self.tree_resumen.selection()
@@ -246,7 +345,19 @@ class PuntualidadApp:
         legajo = vals[1]
         try:
             anio, mes, depto = self._filtros()
-            rows = consultar_jornadas_mes(BASE_DIR, anio, mes, departamento=depto, legajo=legajo)
+            modo = self.informe_var.get()
+            anual = modo == "Anual"
+            mes, hasta_seleccionado = self._rango_meses()
+            rango = not anual and mes != hasta_seleccionado
+            mes_desde = mes_hasta = None
+            if rango:
+                mes_desde, mes_hasta = mes, hasta_seleccionado
+            rows = consultar_tardanzas(
+                self.base_dir, anio,
+                mes=mes if not anual and not rango else None,
+                departamento=depto, legajo=legajo,
+                mes_desde=mes_desde, mes_hasta=mes_hasta,
+            )
         except Exception as exc:
             messagebox.showerror("Error", str(exc), parent=self.root)
             return
@@ -261,12 +372,72 @@ class PuntualidadApp:
                 r["estado_jornada"],
                 r["observacion"] or "",
             ))
-        self.estado_var.set(f"Detalle cargado: legajo {legajo}, {len(rows)} jornadas")
+        self.estado_var.set(f"Detalle cargado: legajo {legajo}, {len(rows)} llegadas tarde")
+
+    def imprimir_informe(self):
+        try:
+            anio, mes, depto = self._filtros()
+            modo = self.informe_var.get()
+            anual = modo == "Anual"
+            mes, mes_hasta = self._rango_meses()
+            rango = not anual and mes != mes_hasta
+            if anual:
+                resumenes = consultar_acumulado_anual(self.base_dir, anio, departamento=depto)
+            elif rango:
+                resumenes = consultar_resumen_rango(self.base_dir, anio, mes, mes_hasta, departamento=depto)
+            else:
+                resumenes = consultar_resumen_mes(self.base_dir, anio, mes, departamento=depto)
+            resumenes = [r for r in resumenes if int(r["cantidad_tardanzas"] or 0) > 0]
+            tardanzas = consultar_tardanzas(
+                self.base_dir, anio,
+                mes=mes if not anual and not rango else None,
+                departamento=depto,
+                mes_desde=mes if rango else None,
+                mes_hasta=mes_hasta if rango else None,
+            )
+            if not tardanzas:
+                messagebox.showinfo("Sin tardanzas", "No hay llegadas tarde para imprimir.", parent=self.root)
+                return
+            if anual:
+                sufijo = f"{anio}"
+            elif rango:
+                sufijo = f"{anio}_{mes:02d}_a_{mes_hasta:02d}"
+            else:
+                sufijo = f"{anio}_{mes:02d}"
+            ruta = filedialog.asksaveasfilename(
+                parent=self.root,
+                title="Guardar informe de puntualidad",
+                initialdir=os.path.join(self.base_dir, "reportes"),
+                initialfile=f"informe_tardanzas_{sufijo}.pdf",
+                defaultextension=".pdf",
+                filetypes=[("Documento PDF", "*.pdf")],
+            )
+            if not ruta:
+                return
+            generar_informe_puntualidad_pdf(
+                self.base_dir, ruta, anio, None if anual else mes, resumenes, tardanzas,
+                mes_hasta=mes_hasta if rango else None,
+            )
+            self.estado_var.set(f"Informe generado: {ruta}")
+            if os.name == "nt":
+                os.startfile(ruta)
+            else:
+                messagebox.showinfo("Informe generado", ruta, parent=self.root)
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc), parent=self.root)
+
+
+def abrir_control_puntualidad(parent=None, base_dir=None):
+    win = tk.Toplevel(parent) if parent else tk.Tk()
+    if parent:
+        win.transient(parent)
+    PuntualidadApp(win, base_dir=base_dir)
+    return win
 
 
 def main():
     root = tk.Tk()
-    PuntualidadApp(root)
+    PuntualidadApp(root, base_dir=BASE_DIR)
     root.mainloop()
 
 

@@ -264,7 +264,8 @@ def consultar_acumulado_anual(base_dir, anio, departamento=None):
             SELECT legajo, nombre, departamento,
                    SUM(dias_evaluados)     AS dias_evaluados,
                    SUM(cantidad_tardanzas) AS cantidad_tardanzas,
-                   SUM(minutos_tarde)      AS minutos_tarde
+                   SUM(minutos_tarde)      AS minutos_tarde,
+                   COUNT(DISTINCT mes)     AS meses_incluidos
             FROM puntualidad_mes
             WHERE anio=?
         """
@@ -273,6 +274,54 @@ def consultar_acumulado_anual(base_dir, anio, departamento=None):
             sql += " AND departamento=?"
             params.append(departamento)
         sql += " GROUP BY legajo, nombre, departamento ORDER BY departamento, legajo"
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def consultar_resumen_rango(base_dir, anio, mes_desde, mes_hasta, departamento=None):
+    """Acumula los resumenes comprendidos entre dos meses inclusive."""
+    conn = _conectar(base_dir)
+    try:
+        sql = """
+            SELECT legajo, nombre, departamento,
+                   SUM(dias_evaluados)     AS dias_evaluados,
+                   SUM(cantidad_tardanzas) AS cantidad_tardanzas,
+                   SUM(minutos_tarde)      AS minutos_tarde,
+                   COUNT(DISTINCT mes)     AS meses_incluidos
+            FROM puntualidad_mes
+            WHERE anio=? AND mes BETWEEN ? AND ?
+        """
+        params = [anio, mes_desde, mes_hasta]
+        if departamento:
+            sql += " AND departamento=?"
+            params.append(departamento)
+        sql += " GROUP BY legajo, nombre, departamento ORDER BY departamento, legajo"
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def consultar_tardanzas(base_dir, anio, mes=None, departamento=None, legajo=None,
+                         mes_desde=None, mes_hasta=None):
+    """Retorna solo jornadas con llegada tarde, para un mes o todo el anio."""
+    conn = _conectar(base_dir)
+    try:
+        sql = "SELECT * FROM puntualidad_jornada WHERE anio=? AND es_tarde=1"
+        params = [anio]
+        if mes is not None:
+            sql += " AND mes=?"
+            params.append(mes)
+        elif mes_desde is not None and mes_hasta is not None:
+            sql += " AND mes BETWEEN ? AND ?"
+            params.extend([mes_desde, mes_hasta])
+        if departamento:
+            sql += " AND departamento=?"
+            params.append(departamento)
+        if legajo is not None:
+            sql += " AND legajo=?"
+            params.append(str(legajo))
+        sql += " ORDER BY departamento, nombre, fecha"
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
     finally:
         conn.close()
