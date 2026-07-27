@@ -4854,6 +4854,65 @@ def _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
         pdf.set_text_color(0, 0, 0)
 
 
+def _portada_informe_mensual_francos(pdf, fam, mes):
+    """Portada propia del informe mensual de francos combinado -- NO reutiliza
+    portada_abreviaciones() (esa es la leyenda de símbolos del informe de
+    horas/fichadas: feriado trabajado, entrada/salida anticipada, comidas,
+    tardanza -- nada de eso aplica acá, este PDF es solo saldo y detalle de
+    francos)."""
+    pdf.add_page()
+
+    pdf.set_font(fam, "B", 18)
+    pdf.cell(0, 15, "Informe Mensual de Francos", ln=1, align="C")
+    pdf.set_font(fam, "", 11)
+    pdf.cell(0, 7, f"Período: {mes}   |   Todos los departamentos", ln=1, align="C")
+    pdf.ln(8)
+
+    pdf.set_font(fam, "B", 13)
+    pdf.cell(0, 10, "Qué incluye este informe", ln=1)
+    pdf.ln(1)
+    pdf.set_font(fam, "", 10)
+    for txt in [
+        "Un departamento por sección, nunca mezclados entre sí.",
+        "Incluye los departamentos con fichadas cerrados en el mes (Redes, Administración) "
+        "y los que se cierran de forma manual (Guardias, Internet, Telefonía, Ingenieros).",
+        "Por cada departamento: saldo de francos al cierre y detalle de cada franco tomado.",
+        "No incluye horas trabajadas, OT50/OT100, comidas ni tardanzas — para eso está el "
+        "\"Informe mensual combinado\" (horas de Redes/Administración).",
+    ]:
+        pdf.multi_cell(0, 6, f"• {txt}")
+        pdf.ln(1)
+
+    pdf.ln(5)
+    pdf.set_font(fam, "B", 13)
+    pdf.cell(0, 10, "Cómo leer la tabla de saldo", ln=1)
+    pdf.ln(1)
+    pdf.set_font(fam, "", 10)
+    for txt in [
+        "Saldo anterior: saldo de francos que tenía el departamento antes de este cierre.",
+        "Generados en el período: francos generados durante el mes (por OT en los departamentos "
+        "con fichadas, o carga manual en los que no tienen).",
+        "Tomados: días de franco tomados durante el período.",
+        "Saldo final = Saldo anterior + Generados − Tomados.",
+        "Color de la fila: verde = saldo positivo, rojo = saldo negativo, gris = saldo en cero.",
+    ]:
+        pdf.multi_cell(0, 6, f"• {txt}")
+        pdf.ln(1)
+
+    pdf.ln(6)
+    pdf.set_font(fam, "I", 9)
+    pdf.multi_cell(
+        0, 5,
+        "Este informe es de uso interno. La interpretación depende del convenio de Luz y Fuerza."
+    )
+
+    pdf.ln(10)
+    pdf.set_font(fam, "I", 10)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(0, 6, "Desarrollado por CM_Carola", ln=1, align="R")
+    pdf.set_text_color(0, 0, 0)
+
+
 def _generar_pdf_informe_mensual_francos(mes):
     """PDF combinado de SOLO francos (saldo + detalle de tomados) de TODOS
     los departamentos de un mes -- tanto los que cierran vía `periodos`
@@ -4866,7 +4925,7 @@ def _generar_pdf_informe_mensual_francos(mes):
     pdf.titulo = f"Informe Mensual de Francos — {mes}"
     pdf.feriados = set(_cargar_feriados_config())
     fam = "DejaVu" if pdf._unicode else "Helvetica"
-    pdf.portada_abreviaciones(f"Todos los departamentos — {mes}")
+    _portada_informe_mensual_francos(pdf, fam, mes)
 
     hubo_contenido = False
 
@@ -4903,6 +4962,8 @@ def _generar_pdf_informe_mensual_francos(mes):
         except Exception:
             saldo_ant = {}
         departamento_norm = _normalizar_departamento_web(emps_db[0].get("departamento", ""))
+        if _depto_francos_oculto(departamento_norm):
+            continue
         depto_visible = _nombre_departamento_visible(departamento_norm) or "Sin departamento"
 
         tomados_por_leg = {}
@@ -4944,6 +5005,8 @@ def _generar_pdf_informe_mensual_francos(mes):
         except Exception:
             snap = {}
         if not snap:
+            continue
+        if _depto_francos_oculto(cf["departamento"]):
             continue
         depto_visible = cf["departamento"]
         with _get_db() as conn:
