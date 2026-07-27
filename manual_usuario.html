@@ -247,14 +247,14 @@ li{margin-bottom:5px;font-size:.9rem}
     <div style="margin-top:16px">
       <div class="info-pill"><strong>Dirección web</strong><span>cmhoras.pythonanywhere.com</span></div>
       <div class="info-pill"><strong>Ante dudas</strong><span>Consultar a Carola</span></div>
-      <div class="info-pill"><strong>Actualizado</strong><span>19 de junio de 2026</span></div>
+      <div class="info-pill"><strong>Actualizado</strong><span>17 de julio de 2026</span></div>
     </div>
   </div>
 
   <div class="big-warn">
     <h3>⚠️ Regla número uno: nunca mezclar departamentos</h3>
     <p>Cada departamento se trabaja por separado. Antes de hacer cualquier cosa, fijate siempre en qué departamento estás trabajando.</p>
-    <p>Los departamentos son: <strong>Redes · Administración · Guardias · Internet · Telefonía</strong></p>
+    <p>Los departamentos son: <strong>Redes · Administración · Guardias · Internet · Telefonía · Ingenieros</strong></p>
     <p>Si mezclás departamentos, los saldos de francos y los reportes quedan mal. Si tenés dudas, <strong>no avances y consultá a Carola</strong>.</p>
   </div>
 
@@ -286,6 +286,7 @@ li{margin-bottom:5px;font-size:.9rem}
         <span class="badge b-g">Guardias</span>
         <span class="badge b-in">Internet*</span>
         <span class="badge b-t">Telefonía</span>
+        <span class="badge" style="background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe">Ingenieros</span>
       </div>
       <p style="font-size:.76rem;color:var(--mut);margin-top:8px">*Internet sigue existiendo en el sistema pero su módulo de Francos está <strong>oculto temporalmente</strong> (sus francos se manejan por afuera por ahora). Ver detalle en <a href="#sin-fichadas" style="color:var(--acc)">Departamentos sin fichadas</a>.</p>
     </div>
@@ -862,7 +863,7 @@ li{margin-bottom:5px;font-size:.9rem}
   <div class="sec-hd">
     <div class="sec-ico ico-i">📋</div>
     <div>
-      <div class="sec-tag tag-i">Guardias · Internet · Telefonía</div>
+      <div class="sec-tag tag-i">Guardias · Internet · Telefonía · Ingenieros</div>
       <div class="sec-ttl">Departamentos sin fichadas</div>
       <div class="sec-sub">Estos departamentos no usan reloj biométrico</div>
     </div>
@@ -872,7 +873,7 @@ li{margin-bottom:5px;font-size:.9rem}
   <div class="alert a-info">
     <span class="a-ico">ℹ️</span>
     <div class="a-body"><strong>No buscar archivos del reloj para estos departamentos</strong>
-    Guardias, Internet y Telefonía no tienen reloj biométrico. Sus francos se cargan manualmente desde el formulario web.</div>
+    Guardias, Internet, Telefonía e Ingenieros no tienen reloj biométrico. Sus francos se cargan manualmente desde el formulario web o mediante cierre mensual manual.</div>
   </div>
 
   <div class="alert a-warn">
@@ -883,8 +884,20 @@ li{margin-bottom:5px;font-size:.9rem}
 
   <div class="card">
     <div class="card-ttl">Cómo se cargan sus francos</div>
-    <p>Para Guardias y Telefonía, los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
+    <p><strong>Guardias y Telefonía:</strong> los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
+    <p><strong>Ingenieros:</strong> los francos se cargan mediante un <strong>cierre mensual manual</strong> al finalizar cada mes. A diferencia de los deptos con fichadas, el cierre de Ingenieros lo hace Carola directamente en el sistema.</p>
     <p>Si te piden cargar datos de estos departamentos, seguí las instrucciones específicas que te dé Carola.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cierre mensual de Ingenieros y Guardias — reversible</div>
+    <p>Los cierres de francos de <strong>Ingenieros</strong> y <strong>Guardias</strong> son reversibles: si hay un error, Carola puede anular el último cierre activo del departamento y volver a generarlo correctamente.</p>
+    <p>Al anular un cierre se restauran los saldos anteriores automáticamente. Solo el último cierre activo de un departamento se puede anular — los anteriores quedan bloqueados.</p>
+    <div class="alert a-info" style="margin-top:10px">
+      <span class="a-ico">ℹ️</span>
+      <div class="a-body"><strong>La planilla Excel se actualiza cuando ambos cierres del mes están activos</strong>
+      Una vez que Ingenieros <em>y</em> Guardias tienen su cierre activo del mes, Carola puede usar el botón "Actualizar planilla" en el sistema. Eso rellena las columnas de "Franco Original" y "Franco Tomado" del mes correspondiente en la planilla Excel. Si falta el cierre de alguno de los dos, el botón no funciona.</div>
+    </div>
   </div>
 
   <div class="card">
@@ -895,6 +908,7 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><span class="badge b-g">Guardias</span></td><td>Maydana, Garcilazo, Forastieri, Pliego, Espinoza, Uriondo</td></tr>
         <tr><td><span class="badge b-in">Internet</span></td><td>Gomez Nestor, Segui, Frizzo, Grunevalt</td></tr>
         <tr><td><span class="badge b-t">Telefonía</span></td><td>Barolin Franca, Lazaro Gomez, Calvet Silvia Patricia</td></tr>
+        <tr><td><span class="badge" style="background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe">Ingenieros</span></td><td>Mancioni Martin (leg. 100), Gatti Marcelo (leg. 101)</td></tr>
       </tbody>
     </table>
   </div>
@@ -1175,8 +1189,10 @@ li{margin-bottom:5px;font-size:.9rem}
 
   <div class="alert a-info">
     <span class="a-ico">ℹ️</span>
-    <div class="a-body"><strong>Los cierres no se pueden modificar</strong>
-    Un cierre en estado "ACTIVO" es permanente. Si hay un error grave, Carola puede anularlo, pero es un proceso especial que no debe hacerse sin revisión.</div>
+    <div class="a-body"><strong>Cierres de período (horas extras): permanentes</strong>
+    Los cierres de período de Redes y Administración son permanentes. Si hay un error grave, Carola puede anularlo, pero es un proceso especial que no debe hacerse sin revisión.<br><br>
+    <strong>Cierres de francos de Ingenieros y Guardias: reversibles</strong>
+    El último cierre activo de Ingenieros o Guardias puede ser anulado por Carola si hubo un error, y regenerado correctamente. Esto está diseñado así porque estos cierres se hacen manualmente cada mes.</div>
   </div>
 
   <div class="card">
@@ -1335,7 +1351,8 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><strong class="txt-dan">Reset del sistema</strong></td><td>Borra TODOS los datos: semanas, confirmaciones, base de datos. Es irreversible.</td></tr>
         <tr><td><strong class="txt-dan">Restaurar confirmaciones</strong></td><td>Modifica el estado interno del sistema. Solo para emergencias.</td></tr>
         <tr><td><strong class="txt-dan">Recortar semana</strong></td><td>Elimina datos de una semana. No se puede deshacer fácilmente.</td></tr>
-        <tr><td><strong class="txt-dan">Anular cierre</strong></td><td>Revierte un cierre mensual. Afecta todos los saldos calculados.</td></tr>
+        <tr><td><strong class="txt-dan">Anular cierre de período</strong></td><td>Revierte un cierre mensual de horas extras (Redes / Administración). Afecta todos los saldos calculados. Solo Carola puede hacerlo.</td></tr>
+        <tr><td><strong style="color:#d97706">Anular cierre de francos (Ingenieros / Guardias)</strong></td><td>Revierte el último cierre mensual de francos de Ingenieros o Guardias. Está diseñado para ser reversible, pero igual solo lo hace Carola — consultá antes.</td></tr>
         <tr><td><strong class="txt-dan">Ajuste de saldo inicial (menú Admin)</strong></td><td>Fuerza manualmente el saldo de francos de un empleado, pisando el cálculo automático. Solo Carola debe usarlo, y siempre con un motivo claro.</td></tr>
         <tr><td><strong class="txt-dan">Configuración de email</strong></td><td>Si se configura mal, los reportes automáticos dejan de llegar.</td></tr>
         <tr><td><strong class="txt-dan">PythonAnywhere</strong></td><td>Es el servidor donde vive el sistema. Cualquier cambio puede tirar la app.</td></tr>
@@ -1490,7 +1507,7 @@ li{margin-bottom:5px;font-size:.9rem}
       <div class="gl-item"><dt>Legajo</dt><dd>El número de empleado. Es único para cada persona en la empresa. Se usa para identificarlos en el sistema.</dd></div>
       <div class="gl-item"><dt>PythonAnywhere</dt><dd>El servidor donde vive el sistema web. Es como el "lugar" en internet donde está guardado el programa. No tocar sin autorización.</dd></div>
       <div class="gl-item"><dt>Base de datos</dt><dd>El archivo donde se guarda toda la información del sistema: empleados, horas, francos, cierres. Se llama cierres.db.</dd></div>
-      <div class="gl-item"><dt>Depto / Departamento</dt><dd>El sector de trabajo del empleado: Redes, Administración, Guardias, Internet o Telefonía. Cada uno se maneja por separado.</dd></div>
+      <div class="gl-item"><dt>Depto / Departamento</dt><dd>El sector de trabajo del empleado: Redes, Administración, Guardias, Internet, Telefonía o Ingenieros. Cada uno se maneja por separado.</dd></div>
     </dl>
   </div>
 </section>
