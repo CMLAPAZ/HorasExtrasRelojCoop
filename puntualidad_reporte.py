@@ -5,6 +5,8 @@ from datetime import datetime
 
 from fpdf import FPDF
 
+from puntualidad_service import obtener_estado_mensual, obtener_estado_anual
+
 
 MESES = [
     "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -61,6 +63,34 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
     pdf.add_page()
     fam = pdf.familia
 
+    # Seccion de alertas: empleados en NARANJA (5+ tardanzas/mes) o ROJO
+    # (13+ tardanzas/anio). El estado se recalcula con las funciones puras
+    # a partir de cantidad_tardanzas (ya neta de justificadas) en vez de
+    # leer "estado_mensual" del dict, porque en modo anual/rango esa clave
+    # no existe en los resumenes agregados.
+    es_periodo_agregado = mes is None or mes_hasta is not None
+    alertas = []
+    for r in resumenes:
+        cant = int(r.get("cantidad_tardanzas") or 0)
+        estado = obtener_estado_anual(cant) if es_periodo_agregado else obtener_estado_mensual(cant)
+        if estado in ("NARANJA", "ROJO"):
+            alertas.append((r, estado))
+    alertas.sort(key=lambda par: (par[1] != "ROJO", -int(par[0].get("cantidad_tardanzas") or 0)))
+
+    pdf.set_font(fam, "B", 10)
+    pdf.cell(0, 7, "Alertas del periodo (NARANJA / ROJO)", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font(fam, "", 8)
+    if not alertas:
+        pdf.cell(0, 6, "Sin empleados en estado NARANJA o ROJO en este periodo.",
+                 new_x="LMARGIN", new_y="NEXT")
+    else:
+        for r, estado in alertas:
+            cant = int(r.get("cantidad_tardanzas") or 0)
+            linea = (f"- {r['nombre']} (Legajo {r['legajo']}, "
+                     f"{str(r['departamento']).upper()}): {estado} - {cant} tardanzas")
+            pdf.cell(0, 5.5, linea[:110], new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
     pdf.set_font(fam, "B", 9)
     anchos = [23, 18, 76, 22, 23, 24]
     titulos = ["Depto.", "Legajo", "Empleado", "Dias eval.", "Tardanzas", "Minutos"]
@@ -95,7 +125,11 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
         pdf.ln()
         pdf.set_font(fam, "", 7.5)
         for t in filas:
-            obs = str(t.get("observacion") or "Llegada tarde")
+            if t.get("justificada"):
+                motivo = str(t.get("motivo_justificacion") or "").strip()
+                obs = f"JUSTIFICADA - {motivo}" if motivo else "JUSTIFICADA"
+            else:
+                obs = str(t.get("observacion") or "Llegada tarde")
             valores = [t["fecha"], t.get("hora_programada") or "", t.get("hora_entrada") or "", str(t["minutos_tarde"]), obs]
             for i, (ancho, valor) in enumerate(zip(cols, valores)):
                 pdf.cell(ancho, 5.5, str(valor)[:70], border=1, align="L" if i == 4 else "C")

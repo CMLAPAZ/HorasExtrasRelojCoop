@@ -292,7 +292,7 @@ def resumir_por_mes(jornadas):
 
     acum = defaultdict(lambda: {
         "nombre": "", "dias_evaluados": 0,
-        "cantidad_tardanzas": 0, "minutos_tarde": 0,
+        "cantidad_tardanzas": 0, "cantidad_justificadas": 0, "minutos_tarde": 0,
         "archivo_origen": "", "procesado_en": ahora,
     })
 
@@ -305,8 +305,11 @@ def resumir_por_mes(jornadas):
         if j["estado_jornada"] in _DIAS_EVALUADOS:
             g["dias_evaluados"] += 1
         if j.get("es_tarde") == 1:
-            g["cantidad_tardanzas"] += 1
-            g["minutos_tarde"]      += j.get("minutos_tarde", 0)
+            if j.get("justificada"):
+                g["cantidad_justificadas"] += 1
+            else:
+                g["cantidad_tardanzas"] += 1
+                g["minutos_tarde"]      += j.get("minutos_tarde", 0)
 
     resumenes = []
     for (anio, mes, depto, legajo), g in acum.items():
@@ -318,6 +321,7 @@ def resumir_por_mes(jornadas):
             "nombre":             g["nombre"],
             "dias_evaluados":     g["dias_evaluados"],
             "cantidad_tardanzas": g["cantidad_tardanzas"],
+            "cantidad_justificadas": g["cantidad_justificadas"],
             "minutos_tarde":      g["minutos_tarde"],
             "estado_mensual":     obtener_estado_mensual(g["cantidad_tardanzas"]),
             "origen":             "CALCULO_AUTOMATICO",

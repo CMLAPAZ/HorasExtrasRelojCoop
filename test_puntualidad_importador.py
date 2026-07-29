@@ -14,12 +14,14 @@ from puntualidad_db import (
     consultar_jornadas_mes,
     consultar_resumen_mes,
     inicializar_base_puntualidad,
+    justificar_jornada,
 )
 from puntualidad_importador import (
     detectar_periodo,
     importar_archivo_puntualidad,
     importar_carpeta_puntualidad,
     leer_archivo_fichadas,
+    recalcular_resumen_mes,
 )
 
 
@@ -169,3 +171,42 @@ def test_importar_carpeta_continua_con_errores(tmp_base, tmp_archivos, cfg_vacia
 
     assert len(res["importados"]) == 1
     assert len(res["errores"]) == 1
+
+
+def test_recalcular_resumen_mes_no_afecta_otro_legajo(tmp_base, tmp_archivos, cfg_vacia):
+    filas = _rows(legajo="10", fecha="2026-01-05", entrada="06:10") + \
+        _rows(legajo="20", fecha="2026-01-05", entrada="06:10")
+    ruta = _csv(os.path.join(tmp_archivos, "enero.csv"), filas)
+    importar_archivo_puntualidad(tmp_base, ruta)
+
+    jid_10 = next(
+        j["id"] for j in consultar_jornadas_mes(tmp_base, 2026, 1) if j["legajo"] == "10"
+    )
+    justificar_jornada(tmp_base, jid_10, "Turno médico")
+    recalcular_resumen_mes(tmp_base, 2026, 1)
+
+    resumen = {r["legajo"]: r for r in consultar_resumen_mes(tmp_base, 2026, 1)}
+    assert resumen["10"]["cantidad_tardanzas"] == 0
+    assert resumen["10"]["cantidad_justificadas"] == 1
+    assert resumen["20"]["cantidad_tardanzas"] == 1
+    assert resumen["20"]["cantidad_justificadas"] == 0
+
+
+def test_reemplazar_mes_preserva_justificaciones(tmp_base, tmp_archivos, cfg_vacia):
+    ruta_tarde = _csv(os.path.join(tmp_archivos, "enero_tarde.csv"), _rows(entrada="06:10"))
+    importar_archivo_puntualidad(tmp_base, ruta_tarde)
+
+    jid = consultar_jornadas_mes(tmp_base, 2026, 1)[0]["id"]
+    justificar_jornada(tmp_base, jid, "Turno médico")
+
+    ruta_tarde2 = _csv(os.path.join(tmp_archivos, "enero_tarde2.csv"), _rows(entrada="06:12"))
+    importar_archivo_puntualidad(tmp_base, ruta_tarde2, reemplazar_mes=True)
+
+    jornadas = consultar_jornadas_mes(tmp_base, 2026, 1)
+    assert len(jornadas) == 1
+    assert jornadas[0]["justificada"] == 1
+    assert jornadas[0]["motivo_justificacion"] == "Turno médico"
+
+    resumen = consultar_resumen_mes(tmp_base, 2026, 1)
+    assert resumen[0]["cantidad_tardanzas"] == 0
+    assert resumen[0]["cantidad_justificadas"] == 1

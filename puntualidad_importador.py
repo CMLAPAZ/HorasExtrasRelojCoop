@@ -16,6 +16,7 @@ from puntualidad_db import (
     guardar_jornadas,
     guardar_resumenes_mensuales,
     inicializar_base_puntualidad,
+    reaplicar_justificaciones,
     registrar_importacion,
 )
 from puntualidad_service import (
@@ -128,11 +129,30 @@ def importar_archivo_puntualidad(
 
     meses_del_archivo = _meses_de(resumir_por_mes(jornadas))
 
+    # reemplazar_mes borra y recrea las jornadas del mes desde cero (nacen
+    # sin justificar) — se preservan acá las justificaciones existentes
+    # para reaplicarlas después de guardar_jornadas, y no perderlas en
+    # silencio ante un simple recalculo del mes.
+    justificaciones_previas = []
+    if reemplazar_mes:
+        for anio, mes in meses_del_archivo:
+            justificaciones_previas.extend(
+                {
+                    "anio": j["anio"], "mes": j["mes"], "legajo": j["legajo"],
+                    "fecha": j["fecha"], "motivo_justificacion": j["motivo_justificacion"],
+                }
+                for j in consultar_jornadas_mes(base_dir, anio, mes)
+                if j.get("justificada")
+            )
+
     jornadas_guardadas = guardar_jornadas(
         base_dir,
         jornadas,
         reemplazar_mes=reemplazar_mes,
     )
+
+    if justificaciones_previas:
+        reaplicar_justificaciones(base_dir, justificaciones_previas)
 
     # El resumen mensual se recalcula siempre a partir de TODAS las jornadas
     # ya guardadas de cada mes afectado (no solo las de este archivo): un mes
@@ -179,6 +199,20 @@ def importar_archivo_puntualidad(
         "meses_procesados": _meses_texto(meses),
         "reemplazar_mes": bool(reemplazar_mes),
     }
+
+
+def recalcular_resumen_mes(base_dir, anio, mes):
+    """
+    Recalcula y persiste el resumen mensual completo de un mes a partir de
+    TODAS las jornadas ya guardadas de ese mes (incluidas las justificadas).
+    Se usa tras justificar/desjustificar una tardanza puntual, para no
+    tener que reimportar el archivo original. Retorna la lista de
+    resúmenes guardados.
+    """
+    jornadas = consultar_jornadas_mes(base_dir, anio, mes)
+    resumenes = resumir_por_mes(jornadas)
+    guardar_resumenes_mensuales(base_dir, resumenes, reemplazar_mes=True)
+    return resumenes
 
 
 def importar_carpeta_puntualidad(

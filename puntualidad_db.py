@@ -48,6 +48,8 @@ def inicializar_base_puntualidad(base_dir):
                 origen           TEXT    NOT NULL,
                 archivo_origen   TEXT,
                 procesado_en     TEXT    NOT NULL,
+                justificada          INTEGER NOT NULL DEFAULT 0,
+                motivo_justificacion TEXT,
                 UNIQUE(anio, mes, legajo, fecha)
             )
         """)
@@ -66,6 +68,7 @@ def inicializar_base_puntualidad(base_dir):
                 origen              TEXT    NOT NULL,
                 archivo_origen      TEXT,
                 procesado_en        TEXT    NOT NULL,
+                cantidad_justificadas INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(anio, mes, legajo)
             )
         """)
@@ -82,6 +85,25 @@ def inicializar_base_puntualidad(base_dir):
                 procesado_en        TEXT    NOT NULL
             )
         """)
+
+        # Migraciones idempotentes para bases ya existentes (bases nuevas
+        # ya nacen con estas columnas via CREATE TABLE de arriba).
+        for col in (
+            "justificada INTEGER NOT NULL DEFAULT 0",
+            "motivo_justificacion TEXT",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE puntualidad_jornada ADD COLUMN {col}")
+            except Exception:
+                pass
+        try:
+            conn.execute(
+                "ALTER TABLE puntualidad_mes ADD COLUMN "
+                "cantidad_justificadas INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
+
         conn.commit()
     except Exception:
         conn.rollback()
@@ -162,8 +184,9 @@ def guardar_resumenes_mensuales(base_dir, resumenes, reemplazar_mes=False):
             INSERT OR IGNORE INTO puntualidad_mes
                 (anio, mes, departamento, legajo, nombre,
                  dias_evaluados, cantidad_tardanzas, minutos_tarde,
-                 estado_mensual, origen, archivo_origen, procesado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 estado_mensual, origen, archivo_origen, procesado_en,
+                 cantidad_justificadas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -172,6 +195,7 @@ def guardar_resumenes_mensuales(base_dir, resumenes, reemplazar_mes=False):
                     r.get("minutos_tarde", 0), r["estado_mensual"],
                     r["origen"], r.get("archivo_origen"),
                     r.get("procesado_en") or _ahora(),
+                    r.get("cantidad_justificadas", 0),
                 )
                 for r in resumenes
             ],
@@ -181,6 +205,101 @@ def guardar_resumenes_mensuales(base_dir, resumenes, reemplazar_mes=False):
     except Exception as e:
         conn.rollback()
         raise RuntimeError(f"Error al guardar resúmenes mensuales: {e}") from e
+    finally:
+        conn.close()
+
+
+def justificar_jornada(base_dir, jornada_id, motivo):
+    """
+    Marca una jornada de tardanza como justificada. Retorna
+    {"anio", "mes", "legajo", "departamento"} de la jornada afectada, o
+    None si el id no existe. Lanza ValueError si la jornada no es una
+    tardanza (es_tarde=0): no tiene sentido justificar un día puntual.
+    """
+    conn = _conectar(base_dir)
+    try:
+        row = conn.execute(
+            "SELECT anio, mes, legajo, departamento, es_tarde "
+            "FROM puntualidad_jornada WHERE id=?",
+            (jornada_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["es_tarde"] != 1:
+            raise ValueError(
+                f"La jornada {jornada_id} no es una tardanza; no se puede justificar."
+            )
+        conn.execute(
+            "UPDATE puntualidad_jornada SET justificada=1, motivo_justificacion=? "
+            "WHERE id=?",
+            ((motivo or "").strip(), jornada_id),
+        )
+        conn.commit()
+        return {k: row[k] for k in ("anio", "mes", "legajo", "departamento")}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def desjustificar_jornada(base_dir, jornada_id):
+    """Revierte la justificación de una jornada. Retorna
+    {"anio", "mes", "legajo", "departamento"}, o None si no existe."""
+    conn = _conectar(base_dir)
+    try:
+        row = conn.execute(
+            "SELECT anio, mes, legajo, departamento "
+            "FROM puntualidad_jornada WHERE id=?",
+            (jornada_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE puntualidad_jornada SET justificada=0, motivo_justificacion=NULL "
+            "WHERE id=?",
+            (jornada_id,),
+        )
+        conn.commit()
+        return dict(row)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def reaplicar_justificaciones(base_dir, registros):
+    """
+    Reaplica justificaciones preservadas de jornadas recreadas tras un
+    'reemplazar_mes' (que borra y recrea las jornadas del mes desde cero).
+    `registros` es una lista de dicts con
+    {anio, mes, legajo, fecha, motivo_justificacion}. Solo se reaplica si
+    la jornada recreada sigue siendo una tardanza (es_tarde=1) en esa
+    combinación anio+mes+legajo+fecha; si el recálculo hizo que ese día ya
+    no sea tarde, la justificación se descarta a propósito. Retorna la
+    cantidad de filas efectivamente reaplicadas.
+    """
+    if not registros:
+        return 0
+    conn = _conectar(base_dir)
+    try:
+        aplicadas = 0
+        for reg in registros:
+            cur = conn.execute(
+                "UPDATE puntualidad_jornada SET justificada=1, motivo_justificacion=? "
+                "WHERE anio=? AND mes=? AND legajo=? AND fecha=? AND es_tarde=1",
+                (
+                    reg.get("motivo_justificacion"), reg["anio"], reg["mes"],
+                    reg["legajo"], reg["fecha"],
+                ),
+            )
+            aplicadas += cur.rowcount
+        conn.commit()
+        return aplicadas
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -262,10 +381,11 @@ def consultar_acumulado_anual(base_dir, anio, departamento=None):
     try:
         sql = """
             SELECT legajo, nombre, departamento,
-                   SUM(dias_evaluados)     AS dias_evaluados,
-                   SUM(cantidad_tardanzas) AS cantidad_tardanzas,
-                   SUM(minutos_tarde)      AS minutos_tarde,
-                   COUNT(DISTINCT mes)     AS meses_incluidos
+                   SUM(dias_evaluados)      AS dias_evaluados,
+                   SUM(cantidad_tardanzas)  AS cantidad_tardanzas,
+                   SUM(minutos_tarde)       AS minutos_tarde,
+                   SUM(cantidad_justificadas) AS cantidad_justificadas,
+                   COUNT(DISTINCT mes)      AS meses_incluidos
             FROM puntualidad_mes
             WHERE anio=?
         """
@@ -285,10 +405,11 @@ def consultar_resumen_rango(base_dir, anio, mes_desde, mes_hasta, departamento=N
     try:
         sql = """
             SELECT legajo, nombre, departamento,
-                   SUM(dias_evaluados)     AS dias_evaluados,
-                   SUM(cantidad_tardanzas) AS cantidad_tardanzas,
-                   SUM(minutos_tarde)      AS minutos_tarde,
-                   COUNT(DISTINCT mes)     AS meses_incluidos
+                   SUM(dias_evaluados)      AS dias_evaluados,
+                   SUM(cantidad_tardanzas)  AS cantidad_tardanzas,
+                   SUM(minutos_tarde)       AS minutos_tarde,
+                   SUM(cantidad_justificadas) AS cantidad_justificadas,
+                   COUNT(DISTINCT mes)      AS meses_incluidos
             FROM puntualidad_mes
             WHERE anio=? AND mes BETWEEN ? AND ?
         """

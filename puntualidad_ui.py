@@ -15,9 +15,11 @@ from puntualidad_db import (
     consultar_resumen_rango,
     consultar_resumen_mes,
     consultar_tardanzas,
+    desjustificar_jornada,
     inicializar_base_puntualidad,
+    justificar_jornada,
 )
-from puntualidad_importador import importar_archivo_puntualidad
+from puntualidad_importador import importar_archivo_puntualidad, recalcular_resumen_mes
 from puntualidad_reporte import generar_informe_puntualidad_pdf
 from puntualidad_service import obtener_estado_anual
 
@@ -66,6 +68,7 @@ class PuntualidadApp:
         self.reemplazar_var = tk.BooleanVar(value=False)
         self.estado_var = tk.StringVar(value="Listo")
         self.estado_imgs = self._crear_estado_imgs()
+        self._detalle_rows = {}
 
         self._crear_ui()
         self.cargar_resumen()
@@ -201,16 +204,19 @@ class PuntualidadApp:
 
         self.tree_detalle = self._crear_tree(
             detalle_frame,
-            ("fecha", "programada", "entrada", "minutos", "estado", "observacion"),
+            ("fecha", "programada", "entrada", "minutos", "estado", "justificada", "observacion"),
             {
                 "fecha": ("Fecha", 110),
                 "programada": ("Prog.", 80),
                 "entrada": ("Entrada", 80),
                 "minutos": ("Min.", 70),
-                "estado": ("Estado", 130),
-                "observacion": ("Observacion", 520),
+                "estado": ("Estado", 110),
+                "justificada": ("Justificada", 220),
+                "observacion": ("Observacion", 300),
             },
         )
+        self.tree_detalle.tag_configure("justificada", foreground="#166534")
+        self.tree_detalle.bind("<Double-1>", self._abrir_dialogo_justificar)
 
         ttk.Label(self.root, textvariable=self.estado_var, anchor="w").pack(
             fill="x", padx=12, pady=(0, 8)
@@ -233,6 +239,8 @@ class PuntualidadApp:
             tree.column("nombre", anchor="w")
         if "observacion" in columnas:
             tree.column("observacion", anchor="w")
+        if "justificada" in columnas:
+            tree.column("justificada", anchor="w")
         tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         return tree
@@ -309,7 +317,11 @@ class PuntualidadApp:
                 rows = consultar_resumen_rango(self.base_dir, anio, mes, mes_hasta, departamento=depto)
             else:
                 rows = consultar_resumen_mes(self.base_dir, anio, mes, departamento=depto)
-            rows = [r for r in rows if int(r["cantidad_tardanzas"] or 0) > 0]
+            rows = [
+                r for r in rows
+                if int(r["cantidad_tardanzas"] or 0) > 0
+                or int(r.get("cantidad_justificadas") or 0) > 0
+            ]
         except Exception as exc:
             messagebox.showerror("Error", str(exc), parent=self.root)
             return
@@ -363,16 +375,92 @@ class PuntualidadApp:
             return
 
         self._limpiar(self.tree_detalle)
+        self._detalle_rows = {}
         for r in rows:
-            self.tree_detalle.insert("", "end", values=(
-                r["fecha"],
-                r["hora_programada"] or "",
-                r["hora_entrada"] or "",
-                r["minutos_tarde"],
-                r["estado_jornada"],
-                r["observacion"] or "",
-            ))
+            self._detalle_rows[str(r["id"])] = r
+            justificada = bool(r.get("justificada"))
+            texto_justif = ""
+            if justificada:
+                motivo = (r.get("motivo_justificacion") or "").strip()
+                texto_justif = f"Si - {motivo}" if motivo else "Si"
+            self.tree_detalle.insert(
+                "", "end", iid=str(r["id"]),
+                values=(
+                    r["fecha"],
+                    r["hora_programada"] or "",
+                    r["hora_entrada"] or "",
+                    r["minutos_tarde"],
+                    r["estado_jornada"],
+                    texto_justif,
+                    r["observacion"] or "",
+                ),
+                tags=("justificada",) if justificada else (),
+            )
         self.estado_var.set(f"Detalle cargado: legajo {legajo}, {len(rows)} llegadas tarde")
+
+    def _abrir_dialogo_justificar(self, _event=None):
+        sel = self.tree_detalle.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        r = self._detalle_rows.get(iid)
+        if not r:
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"Justificar tardanza - {r['nombre']} ({r['fecha']})")
+        win.transient(self.root)
+        win.resizable(False, False)
+
+        justificada_var = tk.BooleanVar(value=bool(r.get("justificada")))
+        motivo_var = tk.StringVar(value=r.get("motivo_justificacion") or "")
+
+        ttk.Label(win, text=f"{r['nombre']} - Legajo {r['legajo']} - {r['fecha']}").grid(
+            row=0, column=0, columnspan=2, padx=10, pady=(10, 4), sticky="w")
+        ttk.Checkbutton(win, text="Marcar como justificada", variable=justificada_var).grid(
+            row=1, column=0, columnspan=2, padx=10, pady=4, sticky="w")
+        ttk.Label(win, text="Motivo").grid(row=2, column=0, padx=10, pady=4, sticky="w")
+        ttk.Entry(win, textvariable=motivo_var, width=48).grid(
+            row=2, column=1, padx=(0, 10), pady=4)
+
+        def _guardar():
+            legajo = r["legajo"]
+            try:
+                if justificada_var.get():
+                    motivo = motivo_var.get().strip()
+                    if not motivo:
+                        messagebox.showwarning(
+                            "Falta motivo",
+                            "Ingresa un motivo para justificar la tardanza.",
+                            parent=win,
+                        )
+                        return
+                    info = justificar_jornada(self.base_dir, int(iid), motivo)
+                else:
+                    info = desjustificar_jornada(self.base_dir, int(iid))
+                if info:
+                    recalcular_resumen_mes(self.base_dir, info["anio"], info["mes"])
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=win)
+                return
+            win.destroy()
+            self.cargar_resumen()
+            self._reseleccionar_legajo(legajo)
+
+        btns = ttk.Frame(win)
+        btns.grid(row=3, column=0, columnspan=2, pady=(6, 10))
+        ttk.Button(btns, text="Guardar", command=_guardar).pack(side="left", padx=6)
+        ttk.Button(btns, text="Cancelar", command=win.destroy).pack(side="left", padx=6)
+        win.grab_set()
+
+    def _reseleccionar_legajo(self, legajo):
+        for item in self.tree_resumen.get_children():
+            vals = self.tree_resumen.item(item, "values")
+            if vals[1] == legajo:
+                self.tree_resumen.selection_set(item)
+                self.tree_resumen.see(item)
+                return
+        self._limpiar(self.tree_detalle)
 
     def imprimir_informe(self):
         try:
@@ -387,7 +475,11 @@ class PuntualidadApp:
                 resumenes = consultar_resumen_rango(self.base_dir, anio, mes, mes_hasta, departamento=depto)
             else:
                 resumenes = consultar_resumen_mes(self.base_dir, anio, mes, departamento=depto)
-            resumenes = [r for r in resumenes if int(r["cantidad_tardanzas"] or 0) > 0]
+            resumenes = [
+                r for r in resumenes
+                if int(r["cantidad_tardanzas"] or 0) > 0
+                or int(r.get("cantidad_justificadas") or 0) > 0
+            ]
             tardanzas = consultar_tardanzas(
                 self.base_dir, anio,
                 mes=mes if not anual and not rango else None,

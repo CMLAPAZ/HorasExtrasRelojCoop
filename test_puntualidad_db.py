@@ -26,6 +26,9 @@ from puntualidad_db import (
     mes_ya_procesado,
     eliminar_mes,
     registrar_importacion,
+    justificar_jornada,
+    desjustificar_jornada,
+    reaplicar_justificaciones,
 )
 
 NOW = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -335,3 +338,95 @@ def test_registrar_importacion_dos_registros(tmp_base):
     id1 = registrar_importacion(tmp_base, {"registros_leidos": 100, "procesado_en": NOW})
     id2 = registrar_importacion(tmp_base, {"registros_leidos": 200, "procesado_en": NOW})
     assert id2 > id1
+
+
+# ── Justificación de tardanzas ────────────────────────────────────────────────
+
+def _id_de(tmp_base, anio, mes, legajo, fecha):
+    fila = next(
+        j for j in consultar_jornadas_mes(tmp_base, anio, mes)
+        if j["legajo"] == legajo and j["fecha"] == fecha
+    )
+    return fila["id"]
+
+
+def test_justificar_jornada_marca_flag_y_motivo(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=True, minutos=8)])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+
+    info = justificar_jornada(tmp_base, jid, "Turno médico")
+
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["justificada"] == 1
+    assert fila["motivo_justificacion"] == "Turno médico"
+    assert info == {"anio": 2026, "mes": 1, "legajo": "10", "departamento": "redes"}
+
+
+def test_justificar_jornada_id_inexistente_retorna_none(tmp_base):
+    assert justificar_jornada(tmp_base, 999999, "motivo") is None
+
+
+def test_justificar_jornada_no_tardanza_lanza_valueerror(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=False)])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+    with pytest.raises(ValueError):
+        justificar_jornada(tmp_base, jid, "motivo")
+
+
+def test_desjustificar_jornada_revierte(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=True, minutos=8)])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+    justificar_jornada(tmp_base, jid, "Turno médico")
+
+    info = desjustificar_jornada(tmp_base, jid)
+
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["justificada"] == 0
+    assert fila["motivo_justificacion"] is None
+    assert info["legajo"] == "10"
+
+
+def test_desjustificar_jornada_id_inexistente_retorna_none(tmp_base):
+    assert desjustificar_jornada(tmp_base, 999999) is None
+
+
+def test_reaplicar_justificaciones_reaplica_por_clave_natural(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=True, minutos=8)])
+    registros = [{
+        "anio": 2026, "mes": 1, "legajo": "10", "fecha": "2026-01-05",
+        "motivo_justificacion": "Turno médico",
+    }]
+
+    aplicadas = reaplicar_justificaciones(tmp_base, registros)
+
+    assert aplicadas == 1
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["justificada"] == 1
+    assert fila["motivo_justificacion"] == "Turno médico"
+
+
+def test_reaplicar_justificaciones_no_aplica_si_ya_no_es_tardanza(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=False)])
+    registros = [{
+        "anio": 2026, "mes": 1, "legajo": "10", "fecha": "2026-01-05",
+        "motivo_justificacion": "Turno médico",
+    }]
+
+    aplicadas = reaplicar_justificaciones(tmp_base, registros)
+
+    assert aplicadas == 0
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["justificada"] == 0
+
+
+def test_reaplicar_justificaciones_lista_vacia_no_falla(tmp_base):
+    assert reaplicar_justificaciones(tmp_base, []) == 0
+
+
+def test_guardar_resumenes_mensuales_persiste_cantidad_justificadas(tmp_base):
+    resumen = _resumen(tardanzas=2)
+    resumen["cantidad_justificadas"] = 3
+    guardar_resumenes_mensuales(tmp_base, [resumen])
+
+    fila = consultar_resumen_mes(tmp_base, 2026, 1)[0]
+    assert fila["cantidad_justificadas"] == 3

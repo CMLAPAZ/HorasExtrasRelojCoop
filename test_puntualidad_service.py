@@ -592,3 +592,62 @@ def test_dias_evaluados_excluye_especiales():
     assert len(r) == 1
     assert r[0]["dias_evaluados"] == 3   # PUNTUAL + TARDE + INCOMPLETA
     assert r[0]["cantidad_tardanzas"] == 1
+
+
+# ─── resumir_por_mes: tardanzas justificadas ─────────────────────────────────
+
+def test_resumir_por_mes_excluye_tardanzas_justificadas():
+    jornadas = [
+        _jornada_manual(fecha="2026-01-05", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=8, justificada=False),
+        _jornada_manual(fecha="2026-01-06", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=10, justificada=True),
+        _jornada_manual(fecha="2026-01-07", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=12, justificada=True),
+        _jornada_manual(fecha="2026-01-08", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=7, justificada=True),
+        _jornada_manual(fecha="2026-01-09", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=9, justificada=False),
+    ]
+    r = resumir_por_mes(jornadas)
+    assert len(r) == 1
+    assert r[0]["cantidad_tardanzas"] == 2
+    assert r[0]["cantidad_justificadas"] == 3
+    assert r[0]["minutos_tarde"] == 8 + 9   # solo las no-justificadas
+
+
+def test_resumir_por_mes_dias_evaluados_no_cambia_con_justificacion():
+    jornadas = [
+        _jornada_manual(fecha="2026-01-05", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=8, justificada=True),
+        _jornada_manual(fecha="2026-01-06", estado_jornada="PUNTUAL"),
+    ]
+    r = resumir_por_mes(jornadas)
+    assert r[0]["dias_evaluados"] == 2
+    assert r[0]["cantidad_tardanzas"] == 0
+    assert r[0]["cantidad_justificadas"] == 1
+
+
+def test_resumir_por_mes_legajo_con_todo_justificado_aparece_con_cero():
+    jornadas = [
+        _jornada_manual(fecha="2026-01-05", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=8, justificada=True),
+        _jornada_manual(fecha="2026-01-06", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=6, justificada=True),
+    ]
+    r = resumir_por_mes(jornadas)
+    assert len(r) == 1
+    assert r[0]["cantidad_tardanzas"] == 0
+    assert r[0]["cantidad_justificadas"] == 2
+    assert r[0]["estado_mensual"] == "VERDE"
+
+
+def test_estado_mensual_baja_con_justificacion():
+    jornadas = [
+        _jornada_manual(fecha=f"2026-01-{d:02d}", estado_jornada="TARDE",
+                        es_tarde=1, minutos_tarde=6, justificada=just)
+        for d, just in zip(range(5, 10), [False, False, True, True, True])
+    ]
+    r = resumir_por_mes(jornadas)
+    assert r[0]["cantidad_tardanzas"] == 2
+    assert r[0]["estado_mensual"] == "VERDE"   # antes de justificar hubiera sido NARANJA
