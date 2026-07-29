@@ -4875,7 +4875,7 @@ def _portada_informe_mensual_francos(pdf, fam, mes):
     for txt in [
         "Un departamento por sección, nunca mezclados entre sí.",
         "Incluye los departamentos con fichadas cerrados en el mes (Redes, Administración) "
-        "y los que se cierran de forma manual (Guardias, Internet, Telefonía, Ingenieros).",
+        "y los que se cierran de forma manual (Guardias, Telefonía, Ingenieros).",
         "Por cada departamento: saldo de francos al cierre y detalle de cada franco tomado.",
         "No incluye horas trabajadas, OT50/OT100, comidas ni tardanzas — para eso está el "
         "\"Informe mensual combinado\" (horas de Redes/Administración).",
