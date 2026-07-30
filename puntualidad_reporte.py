@@ -92,21 +92,33 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
             pdf.cell(0, 5.5, linea[:110], new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
-    pdf.set_font(fam, "B", 9)
-    anchos = [23, 18, 76, 22, 23, 24]
-    titulos = ["Depto.", "Legajo", "Empleado", "Dias eval.", "Tardanzas", "Minutos"]
-    for ancho, titulo in zip(anchos, titulos):
-        pdf.cell(ancho, 7, titulo, border=1, align="C")
-    pdf.ln()
-    pdf.set_font(fam, "", 8)
+    # Tabla resumen separada por departamento -- nunca en una unica tabla
+    # mezclada, igual que el resto de los informes del sistema. resumenes
+    # ya viene ordenado por departamento (ORDER BY departamento, legajo en
+    # consultar_resumen_mes/consultar_resumen_rango/consultar_acumulado_anual).
+    resumenes_por_depto = {}
     for r in resumenes:
-        valores = [
-            str(r["departamento"]).upper(), str(r["legajo"]), str(r["nombre"]),
-            str(r["dias_evaluados"]), str(r["cantidad_tardanzas"]), str(r["minutos_tarde"]),
-        ]
-        for i, (ancho, valor) in enumerate(zip(anchos, valores)):
-            pdf.cell(ancho, 6, valor[:38], border=1, align="L" if i == 2 else "C")
+        resumenes_por_depto.setdefault(str(r["departamento"]).upper(), []).append(r)
+
+    anchos = [20, 93, 24, 24, 25]
+    titulos = ["Legajo", "Empleado", "Dias eval.", "Tardanzas", "Minutos"]
+    for depto_nombre, filas_depto in resumenes_por_depto.items():
+        pdf.set_font(fam, "B", 11)
+        pdf.cell(0, 7, depto_nombre, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(fam, "B", 9)
+        for ancho, titulo in zip(anchos, titulos):
+            pdf.cell(ancho, 7, titulo, border=1, align="C")
         pdf.ln()
+        pdf.set_font(fam, "", 8)
+        for r in filas_depto:
+            valores = [
+                str(r["legajo"]), str(r["nombre"]),
+                str(r["dias_evaluados"]), str(r["cantidad_tardanzas"]), str(r["minutos_tarde"]),
+            ]
+            for i, (ancho, valor) in enumerate(zip(anchos, valores)):
+                pdf.cell(ancho, 6, valor[:38], border=1, align="L" if i == 1 else "C")
+            pdf.ln()
+        pdf.ln(3)
 
     # Total general del periodo (siempre se muestra, sea de un mes o de
     # varios) -- neto de justificadas, igual que "cantidad_tardanzas" en
@@ -164,12 +176,20 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
         clave = (str(t["departamento"]), str(t["legajo"]), str(t["nombre"]))
         por_empleado.setdefault(clave, []).append(t)
 
+    depto_detalle_actual = None
     for (depto, legajo, nombre), filas in por_empleado.items():
+        if depto.upper() != depto_detalle_actual:
+            depto_detalle_actual = depto.upper()
+            pdf.ln(4)
+            if pdf.get_y() > 240:
+                pdf.add_page()
+            pdf.set_font(fam, "B", 12)
+            pdf.cell(0, 8, depto_detalle_actual, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(5)
         if pdf.get_y() > 245:
             pdf.add_page()
         pdf.set_font(fam, "B", 9)
-        pdf.cell(0, 6, f"{nombre} - Legajo {legajo} - {depto.upper()}", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, f"{nombre} - Legajo {legajo}", new_x="LMARGIN", new_y="NEXT")
         cols = [25, 22, 22, 18, 101]
         pdf.set_font(fam, "B", 8)
         for ancho, titulo in zip(cols, ["Fecha", "Programada", "Entrada", "Min.", "Observacion"]):

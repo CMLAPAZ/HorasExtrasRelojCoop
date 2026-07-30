@@ -178,6 +178,15 @@ def test_pdf_total_por_departamento_cuando_hay_mas_de_uno(tmp_path):
     assert "Total de tardanzas por departamento" in texto
     assert "REDES: 2 tardanzas" in texto
     assert "ADMINISTRACION: 1 tardanzas" in texto
+    # La tabla resumen va separada por departamento, nunca mezclada en una
+    # sola tabla con columna Depto.
+    assert "Depto." not in texto
+    pos_redes = texto.index("REDES")
+    pos_admin = texto.index("ADMINISTRACION")
+    pos_empleado_redes = texto.index("Empleado Redes")
+    pos_empleado_admin = texto.index("Empleado Admin")
+    assert pos_redes < pos_empleado_redes
+    assert pos_admin < pos_empleado_admin
 
 
 def test_pdf_sin_total_por_departamento_si_hay_uno_solo(tmp_path):
