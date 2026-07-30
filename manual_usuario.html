@@ -1232,6 +1232,7 @@ li{margin-bottom:5px;font-size:.9rem}
           <tr><td><strong>Resumen</strong></td><td>Tabla resumen de totales por empleado</td></tr>
           <tr><td><strong>Gráficos</strong></td><td>Estadísticas y gráficos de horas extra por empleado o período</td></tr>
           <tr><td><strong>Feriados</strong></td><td>Agregar o quitar feriados en la configuración del sistema</td></tr>
+          <tr><td><strong>Control de puntualidad</strong></td><td>Registrar y consultar llegadas tarde, justificarlas con motivo, e imprimir informes de tardanzas por empleado/departamento</td></tr>
         </tbody>
       </table>
     </div>
@@ -1244,7 +1245,24 @@ li{margin-bottom:5px;font-size:.9rem}
       <li><strong>Generar PDFs de liquidación en la PC:</strong> guarda los PDFs directamente en una carpeta local.</li>
       <li><strong>Gráficos estadísticos:</strong> visualización de tendencias de horas extra.</li>
       <li><strong>Gestión de feriados:</strong> editar los feriados que usa el sistema de cálculo.</li>
+      <li><strong>Control de puntualidad:</strong> importar tardanzas, justificarlas y ver alertas de exceso.</li>
     </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Control de puntualidad — justificar una tardanza</div>
+    <p style="font-size:.87rem;margin-bottom:10px">Desde el menú <strong>Operativo → Control de puntualidad</strong> se puede marcar una llegada tarde como justificada (por ejemplo, un turno médico), para que no cuente para la sanción del convenio pero quede registrada igual.</p>
+    <ul>
+      <li>En la pestaña <strong>Consultar</strong>, elegir el empleado en la tabla de resumen — se abre su detalle de tardanzas del período.</li>
+      <li>Doble click sobre la tardanza a justificar.</li>
+      <li>Tildar <strong>"Marcar como justificada"</strong> y escribir el motivo (obligatorio).</li>
+      <li>Guardar: la fila queda marcada en verde con el motivo, y el total de tardanzas del mes se recalcula al instante.</li>
+    </ul>
+    <div class="alert a-info">
+      <span class="a-ico">ℹ️</span>
+      <div class="a-body"><strong>Umbral de sanción del convenio</strong>
+      Más de 5 tardanzas en un mes o más de 13 en el año calendario se marcan en naranja/rojo en la tabla, y aparecen en una sección de "Alertas" al principio del informe PDF. Las tardanzas justificadas no cuentan para ese total, pero siguen apareciendo en el detalle con el motivo.</div>
+    </div>
   </div>
 
   <div class="card">
