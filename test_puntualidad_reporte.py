@@ -122,6 +122,22 @@ def test_pdf_total_por_mes_en_informe_de_rango(tmp_path):
     assert "Total del periodo: 2 tardanzas" in texto
 
 
+def test_pdf_total_general_del_periodo_en_informe_de_un_solo_mes(tmp_path):
+    resumenes = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "dias_evaluados": 20, "cantidad_tardanzas": 2, "minutos_tarde": 16,
+    }]
+    tardanzas = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "fecha": "2026-02-05", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+        "minutos_tarde": 8, "observacion": "Llegada tarde",
+    }]
+    salida = Path(tmp_path) / "informe.pdf"
+    generar_informe_puntualidad_pdf(str(Path(__file__).parent), str(salida), 2026, 2, resumenes, tardanzas)
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
+    assert "Total de tardanzas del periodo: 2" in texto
+
+
 def test_pdf_sin_total_por_mes_en_informe_de_un_solo_mes(tmp_path):
     resumenes = [{
         "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",

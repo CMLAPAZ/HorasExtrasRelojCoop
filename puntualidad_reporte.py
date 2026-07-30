@@ -108,6 +108,15 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
             pdf.cell(ancho, 6, valor[:38], border=1, align="L" if i == 2 else "C")
         pdf.ln()
 
+    # Total general del periodo (siempre se muestra, sea de un mes o de
+    # varios) -- neto de justificadas, igual que "cantidad_tardanzas" en
+    # cada fila del resumen.
+    total_general = sum(int(r.get("cantidad_tardanzas") or 0) for r in resumenes)
+    pdf.ln(3)
+    pdf.set_font(fam, "B", 9)
+    pdf.cell(0, 7, f"Total de tardanzas del periodo: {total_general}",
+             new_x="LMARGIN", new_y="NEXT")
+
     # Totales por mes (solo si el informe abarca mas de un mes) y por
     # departamento (solo si hay mas de uno) -- se calculan a partir del
     # detalle de tardanzas (neto de justificadas), no de los resumenes
