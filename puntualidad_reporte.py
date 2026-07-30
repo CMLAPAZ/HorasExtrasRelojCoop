@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Generacion PDF de informes de llegadas tarde."""
 import os
+from collections import defaultdict
 from datetime import datetime
 
 from fpdf import FPDF
@@ -106,6 +107,48 @@ def generar_informe_puntualidad_pdf(base_dir, ruta_salida, anio, mes, resumenes,
         for i, (ancho, valor) in enumerate(zip(anchos, valores)):
             pdf.cell(ancho, 6, valor[:38], border=1, align="L" if i == 2 else "C")
         pdf.ln()
+
+    # Totales por mes (solo si el informe abarca mas de un mes) y por
+    # departamento (solo si hay mas de uno) -- se calculan a partir del
+    # detalle de tardanzas (neto de justificadas), no de los resumenes
+    # agregados, porque en modo rango/anual esos ya vienen sumados y no
+    # distinguen mes ni permiten separar por depto de forma confiable.
+    por_mes = defaultdict(int)
+    por_depto = defaultdict(int)
+    for t in tardanzas:
+        if t.get("justificada"):
+            continue
+        mes_t = t.get("mes")
+        mes_t = int(mes_t) if mes_t is not None else int(str(t["fecha"])[5:7])
+        por_mes[mes_t] += 1
+        por_depto[str(t["departamento"]).upper()] += 1
+
+    if es_periodo_agregado:
+        pdf.ln(3)
+        pdf.set_font(fam, "B", 10)
+        pdf.cell(0, 7, "Total de tardanzas por mes", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(fam, "", 8)
+        if not por_mes:
+            pdf.cell(0, 6, "Sin tardanzas en el periodo.", new_x="LMARGIN", new_y="NEXT")
+        else:
+            for mes_n in sorted(por_mes):
+                pdf.cell(0, 5.5, f"- {MESES[mes_n]}: {por_mes[mes_n]} tardanzas",
+                         new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font(fam, "B", 8)
+            pdf.cell(0, 6, f"Total del periodo: {sum(por_mes.values())} tardanzas",
+                     new_x="LMARGIN", new_y="NEXT")
+
+    if len(por_depto) > 1:
+        pdf.ln(3)
+        pdf.set_font(fam, "B", 10)
+        pdf.cell(0, 7, "Total de tardanzas por departamento", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(fam, "", 8)
+        for depto_n in sorted(por_depto):
+            pdf.cell(0, 5.5, f"- {depto_n}: {por_depto[depto_n]} tardanzas",
+                     new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(fam, "B", 8)
+        pdf.cell(0, 6, f"Total del periodo: {sum(por_depto.values())} tardanzas",
+                 new_x="LMARGIN", new_y="NEXT")
 
     por_empleado = {}
     for t in tardanzas:

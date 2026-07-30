@@ -92,3 +92,89 @@ def test_pdf_alertas_modo_anual_usa_obtener_estado_anual(tmp_path):
     texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
     assert "ROJO" in texto
     assert "Empleado Rojo" in texto
+
+
+def test_pdf_total_por_mes_en_informe_de_rango(tmp_path):
+    resumenes = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "dias_evaluados": 40, "cantidad_tardanzas": 3, "minutos_tarde": 20,
+    }]
+    tardanzas = [
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+         "fecha": "2026-01-05", "mes": 1, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 8, "observacion": "Llegada tarde"},
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+         "fecha": "2026-02-10", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 8, "observacion": "Llegada tarde"},
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+         "fecha": "2026-02-12", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 4, "observacion": "Llegada tarde",
+         "justificada": True, "motivo_justificacion": "Turno médico"},
+    ]
+    salida = Path(tmp_path) / "informe.pdf"
+    generar_informe_puntualidad_pdf(
+        str(Path(__file__).parent), str(salida), 2026, 1, resumenes, tardanzas, mes_hasta=2
+    )
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
+    assert "Total de tardanzas por mes" in texto
+    assert "Enero: 1 tardanzas" in texto
+    assert "Febrero: 1 tardanzas" in texto  # la justificada de febrero no cuenta
+    assert "Total del periodo: 2 tardanzas" in texto
+
+
+def test_pdf_sin_total_por_mes_en_informe_de_un_solo_mes(tmp_path):
+    resumenes = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "dias_evaluados": 20, "cantidad_tardanzas": 1, "minutos_tarde": 8,
+    }]
+    tardanzas = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "fecha": "2026-02-05", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+        "minutos_tarde": 8, "observacion": "Llegada tarde",
+    }]
+    salida = Path(tmp_path) / "informe.pdf"
+    generar_informe_puntualidad_pdf(str(Path(__file__).parent), str(salida), 2026, 2, resumenes, tardanzas)
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
+    assert "Total de tardanzas por mes" not in texto
+
+
+def test_pdf_total_por_departamento_cuando_hay_mas_de_uno(tmp_path):
+    resumenes = [
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Redes",
+         "dias_evaluados": 20, "cantidad_tardanzas": 2, "minutos_tarde": 16},
+        {"departamento": "administracion", "legajo": "20", "nombre": "Empleado Admin",
+         "dias_evaluados": 20, "cantidad_tardanzas": 1, "minutos_tarde": 8},
+    ]
+    tardanzas = [
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Redes",
+         "fecha": "2026-02-03", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 8, "observacion": "Llegada tarde"},
+        {"departamento": "redes", "legajo": "10", "nombre": "Empleado Redes",
+         "fecha": "2026-02-04", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 8, "observacion": "Llegada tarde"},
+        {"departamento": "administracion", "legajo": "20", "nombre": "Empleado Admin",
+         "fecha": "2026-02-05", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+         "minutos_tarde": 8, "observacion": "Llegada tarde"},
+    ]
+    salida = Path(tmp_path) / "informe.pdf"
+    generar_informe_puntualidad_pdf(str(Path(__file__).parent), str(salida), 2026, 2, resumenes, tardanzas)
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
+    assert "Total de tardanzas por departamento" in texto
+    assert "REDES: 2 tardanzas" in texto
+    assert "ADMINISTRACION: 1 tardanzas" in texto
+
+
+def test_pdf_sin_total_por_departamento_si_hay_uno_solo(tmp_path):
+    resumenes = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "dias_evaluados": 20, "cantidad_tardanzas": 1, "minutos_tarde": 8,
+    }]
+    tardanzas = [{
+        "departamento": "redes", "legajo": "10", "nombre": "Empleado Prueba",
+        "fecha": "2026-02-05", "mes": 2, "hora_programada": "06:00", "hora_entrada": "06:08",
+        "minutos_tarde": 8, "observacion": "Llegada tarde",
+    }]
+    salida = Path(tmp_path) / "informe.pdf"
+    generar_informe_puntualidad_pdf(str(Path(__file__).parent), str(salida), 2026, 2, resumenes, tardanzas)
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(str(salida)).pages)
+    assert "Total de tardanzas por departamento" not in texto

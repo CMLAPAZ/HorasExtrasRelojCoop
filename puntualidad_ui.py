@@ -14,10 +14,13 @@ from puntualidad_db import (
     consultar_jornadas_mes,
     consultar_resumen_rango,
     consultar_resumen_mes,
+    consultar_sin_entrada,
     consultar_tardanzas,
+    convertir_sin_entrada_a_tardanza_manual,
     desjustificar_jornada,
     inicializar_base_puntualidad,
     justificar_jornada,
+    revertir_tardanza_manual,
 )
 from puntualidad_importador import importar_archivo_puntualidad, recalcular_resumen_mes
 from puntualidad_reporte import generar_informe_puntualidad_pdf
@@ -69,6 +72,7 @@ class PuntualidadApp:
         self.estado_var = tk.StringVar(value="Listo")
         self.estado_imgs = self._crear_estado_imgs()
         self._detalle_rows = {}
+        self._sin_entrada_rows = {}
 
         self._crear_ui()
         self.cargar_resumen()
@@ -184,8 +188,10 @@ class PuntualidadApp:
 
         resumen_frame = ttk.Frame(paned)
         detalle_frame = ttk.Frame(paned)
+        sin_entrada_frame = ttk.Frame(paned)
         paned.add(resumen_frame, weight=3)
         paned.add(detalle_frame, weight=2)
+        paned.add(sin_entrada_frame, weight=2)
 
         self.tree_resumen = self._crear_tree(
             resumen_frame,
@@ -217,6 +223,23 @@ class PuntualidadApp:
         )
         self.tree_detalle.tag_configure("justificada", foreground="#166534")
         self.tree_detalle.bind("<Double-1>", self._abrir_dialogo_justificar)
+
+        ttk.Label(
+            sin_entrada_frame,
+            text="Días sin fichada de entrada (doble click para marcar tardanza manual)",
+            font=("", 9, "bold"),
+        ).pack(anchor="w", padx=4, pady=(2, 4))
+        self.tree_sin_entrada = self._crear_tree(
+            sin_entrada_frame,
+            ("fecha", "legajo", "nombre", "departamento"),
+            {
+                "fecha": ("Fecha", 110),
+                "legajo": ("Legajo", 80),
+                "nombre": ("Nombre", 280),
+                "departamento": ("Departamento", 150),
+            },
+        )
+        self.tree_sin_entrada.bind("<Double-1>", self._abrir_dialogo_tardanza_manual)
 
         ttk.Label(self.root, textvariable=self.estado_var, anchor="w").pack(
             fill="x", padx=12, pady=(0, 8)
@@ -322,12 +345,26 @@ class PuntualidadApp:
                 if int(r["cantidad_tardanzas"] or 0) > 0
                 or int(r.get("cantidad_justificadas") or 0) > 0
             ]
+            sin_entrada_rows = consultar_sin_entrada(
+                self.base_dir, anio,
+                mes=mes if not anual and not rango else None,
+                departamento=depto,
+                mes_desde=mes if rango else None,
+                mes_hasta=mes_hasta if rango else None,
+            )
         except Exception as exc:
             messagebox.showerror("Error", str(exc), parent=self.root)
             return
 
         self._limpiar(self.tree_resumen)
         self._limpiar(self.tree_detalle)
+        self._limpiar(self.tree_sin_entrada)
+        self._sin_entrada_rows = {}
+        for r in sin_entrada_rows:
+            self._sin_entrada_rows[str(r["id"])] = r
+            self.tree_sin_entrada.insert("", "end", iid=str(r["id"]), values=(
+                r["fecha"], r["legajo"], r["nombre"], str(r["departamento"]).upper(),
+            ))
         for r in rows:
             estado = (
                 obtener_estado_anual(r["cantidad_tardanzas"])
@@ -443,6 +480,80 @@ class PuntualidadApp:
             except Exception as exc:
                 messagebox.showerror("Error", str(exc), parent=win)
                 return
+            win.destroy()
+            self.cargar_resumen()
+            self._reseleccionar_legajo(legajo)
+
+        def _revertir():
+            legajo = r["legajo"]
+            try:
+                info = revertir_tardanza_manual(self.base_dir, int(iid))
+                if info:
+                    recalcular_resumen_mes(self.base_dir, info["anio"], info["mes"])
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=win)
+                return
+            win.destroy()
+            self.cargar_resumen()
+            self._reseleccionar_legajo(legajo)
+
+        btns = ttk.Frame(win)
+        btns.grid(row=3, column=0, columnspan=2, pady=(6, 10))
+        ttk.Button(btns, text="Guardar", command=_guardar).pack(side="left", padx=6)
+        ttk.Button(btns, text="Cancelar", command=win.destroy).pack(side="left", padx=6)
+        if r.get("origen") == "MANUAL":
+            ttk.Button(btns, text="Revertir (fue sin fichada)", command=_revertir).pack(
+                side="left", padx=6)
+        win.grab_set()
+
+    def _abrir_dialogo_tardanza_manual(self, _event=None):
+        sel = self.tree_sin_entrada.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        r = self._sin_entrada_rows.get(iid)
+        if not r:
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"Marcar tardanza manual - {r['nombre']} ({r['fecha']})")
+        win.transient(self.root)
+        win.resizable(False, False)
+
+        justificar_var = tk.BooleanVar(value=False)
+        motivo_var = tk.StringVar(value="")
+
+        ttk.Label(
+            win,
+            text=f"{r['nombre']} - Legajo {r['legajo']} - {r['fecha']}\n"
+                 "No tiene fichada de entrada. Se va a registrar como llegada tarde.",
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 4), sticky="w")
+        ttk.Checkbutton(win, text="Justificar (no suma a la sanción)", variable=justificar_var).grid(
+            row=1, column=0, columnspan=2, padx=10, pady=4, sticky="w")
+        ttk.Label(win, text="Motivo").grid(row=2, column=0, padx=10, pady=4, sticky="w")
+        ttk.Entry(win, textvariable=motivo_var, width=48).grid(
+            row=2, column=1, padx=(0, 10), pady=4)
+
+        def _guardar():
+            try:
+                motivo = None
+                if justificar_var.get():
+                    motivo = motivo_var.get().strip()
+                    if not motivo:
+                        messagebox.showwarning(
+                            "Falta motivo",
+                            "Ingresa un motivo para justificar la tardanza.",
+                            parent=win,
+                        )
+                        return
+                info = convertir_sin_entrada_a_tardanza_manual(self.base_dir, int(iid), motivo)
+                if info:
+                    recalcular_resumen_mes(self.base_dir, info["anio"], info["mes"])
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=win)
+                return
+            legajo = r["legajo"]
             win.destroy()
             self.cargar_resumen()
             self._reseleccionar_legajo(legajo)

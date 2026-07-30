@@ -17,6 +17,7 @@ from puntualidad_db import (
     guardar_resumenes_mensuales,
     inicializar_base_puntualidad,
     reaplicar_justificaciones,
+    reaplicar_tardanzas_manuales,
     registrar_importacion,
 )
 from puntualidad_service import (
@@ -130,20 +131,26 @@ def importar_archivo_puntualidad(
     meses_del_archivo = _meses_de(resumir_por_mes(jornadas))
 
     # reemplazar_mes borra y recrea las jornadas del mes desde cero (nacen
-    # sin justificar) — se preservan acá las justificaciones existentes
-    # para reaplicarlas después de guardar_jornadas, y no perderlas en
-    # silencio ante un simple recalculo del mes.
+    # sin justificar y sin conversion manual) — se preservan acá las
+    # justificaciones y las conversiones manuales (sin fichada -> tardanza)
+    # existentes para reaplicarlas después de guardar_jornadas, y no
+    # perderlas en silencio ante un simple recalculo del mes.
     justificaciones_previas = []
+    manuales_previas = []
     if reemplazar_mes:
         for anio, mes in meses_del_archivo:
-            justificaciones_previas.extend(
-                {
-                    "anio": j["anio"], "mes": j["mes"], "legajo": j["legajo"],
-                    "fecha": j["fecha"], "motivo_justificacion": j["motivo_justificacion"],
-                }
-                for j in consultar_jornadas_mes(base_dir, anio, mes)
-                if j.get("justificada")
-            )
+            for j in consultar_jornadas_mes(base_dir, anio, mes):
+                if j.get("origen") == "MANUAL":
+                    manuales_previas.append({
+                        "anio": j["anio"], "mes": j["mes"], "legajo": j["legajo"],
+                        "fecha": j["fecha"], "justificada": j.get("justificada") or 0,
+                        "motivo_justificacion": j.get("motivo_justificacion"),
+                    })
+                elif j.get("justificada"):
+                    justificaciones_previas.append({
+                        "anio": j["anio"], "mes": j["mes"], "legajo": j["legajo"],
+                        "fecha": j["fecha"], "motivo_justificacion": j["motivo_justificacion"],
+                    })
 
     jornadas_guardadas = guardar_jornadas(
         base_dir,
@@ -151,6 +158,8 @@ def importar_archivo_puntualidad(
         reemplazar_mes=reemplazar_mes,
     )
 
+    if manuales_previas:
+        reaplicar_tardanzas_manuales(base_dir, manuales_previas)
     if justificaciones_previas:
         reaplicar_justificaciones(base_dir, justificaciones_previas)
 

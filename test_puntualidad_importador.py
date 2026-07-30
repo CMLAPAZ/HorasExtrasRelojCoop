@@ -13,6 +13,7 @@ import pytest
 from puntualidad_db import (
     consultar_jornadas_mes,
     consultar_resumen_mes,
+    convertir_sin_entrada_a_tardanza_manual,
     inicializar_base_puntualidad,
     justificar_jornada,
 )
@@ -206,6 +207,41 @@ def test_reemplazar_mes_preserva_justificaciones(tmp_base, tmp_archivos, cfg_vac
     assert len(jornadas) == 1
     assert jornadas[0]["justificada"] == 1
     assert jornadas[0]["motivo_justificacion"] == "Turno médico"
+
+    resumen = consultar_resumen_mes(tmp_base, 2026, 1)
+    assert resumen[0]["cantidad_tardanzas"] == 0
+    assert resumen[0]["cantidad_justificadas"] == 1
+
+
+def _rows_solo_salida(legajo="10", fecha="2026-01-05", salida="13:00"):
+    """Una fichada con SALIDA pero sin ENTRADA -> genera estado SIN_ENTRADA."""
+    return [{
+        "Nro. de usuario": legajo,
+        "Fecha/Hora": f"{fecha} {salida}",
+        "Tipo de registro": "SALIDA",
+        "Departamento": "redes",
+        "Nombre": f"Emp {legajo}",
+    }]
+
+
+def test_reemplazar_mes_preserva_tardanza_manual(tmp_base, tmp_archivos, cfg_vacia):
+    ruta = _csv(os.path.join(tmp_archivos, "enero.csv"), _rows_solo_salida())
+    importar_archivo_puntualidad(tmp_base, ruta)
+
+    jornadas = consultar_jornadas_mes(tmp_base, 2026, 1)
+    assert len(jornadas) == 1
+    assert jornadas[0]["estado_jornada"] == "SIN_ENTRADA"
+    convertir_sin_entrada_a_tardanza_manual(tmp_base, jornadas[0]["id"], "Ausencia avisada")
+
+    ruta2 = _csv(os.path.join(tmp_archivos, "enero2.csv"), _rows_solo_salida(salida="13:05"))
+    importar_archivo_puntualidad(tmp_base, ruta2, reemplazar_mes=True)
+
+    jornadas = consultar_jornadas_mes(tmp_base, 2026, 1)
+    assert len(jornadas) == 1
+    assert jornadas[0]["es_tarde"] == 1
+    assert jornadas[0]["origen"] == "MANUAL"
+    assert jornadas[0]["justificada"] == 1
+    assert jornadas[0]["motivo_justificacion"] == "Ausencia avisada"
 
     resumen = consultar_resumen_mes(tmp_base, 2026, 1)
     assert resumen[0]["cantidad_tardanzas"] == 0

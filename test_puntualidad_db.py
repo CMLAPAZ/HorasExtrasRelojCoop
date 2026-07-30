@@ -29,6 +29,10 @@ from puntualidad_db import (
     justificar_jornada,
     desjustificar_jornada,
     reaplicar_justificaciones,
+    consultar_sin_entrada,
+    convertir_sin_entrada_a_tardanza_manual,
+    revertir_tardanza_manual,
+    reaplicar_tardanzas_manuales,
 )
 
 NOW = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -56,6 +60,20 @@ def _jornada(legajo="10", fecha="2026-01-05", anio=2026, mes=1,
         "estado_jornada": "TARDE" if tardanza else "PUNTUAL",
         "observacion": "",
         "origen": "TEST",
+        "archivo_origen": "test.xlsx",
+        "procesado_en": NOW,
+    }
+
+
+def _jornada_sin_entrada(legajo="10", fecha="2026-01-05", anio=2026, mes=1, depto="redes"):
+    return {
+        "fecha": fecha, "anio": anio, "mes": mes, "departamento": depto,
+        "legajo": legajo, "nombre": f"Empleado {legajo}",
+        "hora_programada": None, "hora_entrada": None,
+        "minutos_tarde": 0, "es_tarde": 0,
+        "estado_jornada": "SIN_ENTRADA",
+        "observacion": "Sin entrada válida",
+        "origen": "CALCULO_AUTOMATICO",
         "archivo_origen": "test.xlsx",
         "procesado_en": NOW,
     }
@@ -430,3 +448,116 @@ def test_guardar_resumenes_mensuales_persiste_cantidad_justificadas(tmp_base):
 
     fila = consultar_resumen_mes(tmp_base, 2026, 1)[0]
     assert fila["cantidad_justificadas"] == 3
+
+
+# ── Tardanza manual por falta de fichada de entrada ───────────────────────────
+
+def test_consultar_sin_entrada_filtra_por_estado(tmp_base):
+    guardar_jornadas(tmp_base, [
+        _jornada_sin_entrada(legajo="10", fecha="2026-01-05"),
+        _jornada(legajo="20", fecha="2026-01-05", tardanza=True, minutos=8),
+    ])
+    rows = consultar_sin_entrada(tmp_base, 2026, mes=1)
+    assert len(rows) == 1
+    assert rows[0]["legajo"] == "10"
+    assert rows[0]["estado_jornada"] == "SIN_ENTRADA"
+
+
+def test_convertir_sin_entrada_a_tardanza_manual_sin_justificar(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada_sin_entrada()])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+
+    info = convertir_sin_entrada_a_tardanza_manual(tmp_base, jid)
+
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["es_tarde"] == 1
+    assert fila["estado_jornada"] == "TARDE"
+    assert fila["origen"] == "MANUAL"
+    assert fila["justificada"] == 0
+    assert fila["motivo_justificacion"] is None
+    assert info == {"anio": 2026, "mes": 1, "legajo": "10", "departamento": "redes"}
+
+
+def test_convertir_sin_entrada_a_tardanza_manual_justificada(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada_sin_entrada()])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+
+    convertir_sin_entrada_a_tardanza_manual(tmp_base, jid, "Ausencia avisada")
+
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["es_tarde"] == 1
+    assert fila["justificada"] == 1
+    assert fila["motivo_justificacion"] == "Ausencia avisada"
+
+
+def test_convertir_sin_entrada_id_inexistente_retorna_none(tmp_base):
+    assert convertir_sin_entrada_a_tardanza_manual(tmp_base, 999999) is None
+
+
+def test_convertir_sin_entrada_no_aplica_a_tardanza_normal(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=True, minutos=8)])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+    with pytest.raises(ValueError):
+        convertir_sin_entrada_a_tardanza_manual(tmp_base, jid)
+
+
+def test_revertir_tardanza_manual_restaura_sin_entrada(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada_sin_entrada()])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+    convertir_sin_entrada_a_tardanza_manual(tmp_base, jid, "Ausencia avisada")
+
+    info = revertir_tardanza_manual(tmp_base, jid)
+
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["es_tarde"] == 0
+    assert fila["estado_jornada"] == "SIN_ENTRADA"
+    assert fila["origen"] == "CALCULO_AUTOMATICO"
+    assert fila["justificada"] == 0
+    assert fila["motivo_justificacion"] is None
+    assert info["legajo"] == "10"
+
+
+def test_revertir_tardanza_manual_id_inexistente_retorna_none(tmp_base):
+    assert revertir_tardanza_manual(tmp_base, 999999) is None
+
+
+def test_revertir_tardanza_manual_no_aplica_a_tardanza_automatica(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=True, minutos=8)])
+    jid = _id_de(tmp_base, 2026, 1, "10", "2026-01-05")
+    with pytest.raises(ValueError):
+        revertir_tardanza_manual(tmp_base, jid)
+
+
+def test_reaplicar_tardanzas_manuales_reaplica_por_clave_natural(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada_sin_entrada()])
+    registros = [{
+        "anio": 2026, "mes": 1, "legajo": "10", "fecha": "2026-01-05",
+        "justificada": 1, "motivo_justificacion": "Ausencia avisada",
+    }]
+
+    aplicadas = reaplicar_tardanzas_manuales(tmp_base, registros)
+
+    assert aplicadas == 1
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["es_tarde"] == 1
+    assert fila["origen"] == "MANUAL"
+    assert fila["justificada"] == 1
+    assert fila["motivo_justificacion"] == "Ausencia avisada"
+
+
+def test_reaplicar_tardanzas_manuales_no_aplica_si_ya_no_es_sin_entrada(tmp_base):
+    guardar_jornadas(tmp_base, [_jornada(tardanza=False)])
+    registros = [{
+        "anio": 2026, "mes": 1, "legajo": "10", "fecha": "2026-01-05",
+        "justificada": 0, "motivo_justificacion": None,
+    }]
+
+    aplicadas = reaplicar_tardanzas_manuales(tmp_base, registros)
+
+    assert aplicadas == 0
+    fila = consultar_jornadas_mes(tmp_base, 2026, 1)[0]
+    assert fila["estado_jornada"] == "PUNTUAL"
+
+
+def test_reaplicar_tardanzas_manuales_lista_vacia_no_falla(tmp_base):
+    assert reaplicar_tardanzas_manuales(tmp_base, []) == 0

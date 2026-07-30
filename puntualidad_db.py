@@ -304,6 +304,118 @@ def reaplicar_justificaciones(base_dir, registros):
         conn.close()
 
 
+_OBS_TARDANZA_MANUAL = "Tardanza manual (sin fichada de entrada)"
+
+
+def convertir_sin_entrada_a_tardanza_manual(base_dir, jornada_id, motivo_justificacion=None):
+    """
+    Convierte una jornada SIN_ENTRADA en una tardanza manual (es_tarde=1).
+    Si se pasa motivo_justificacion (no vacío), la tardanza nace ya
+    justificada; si no, cuenta normalmente para la sanción. Retorna
+    {anio, mes, legajo, departamento} o None si el id no existe. Lanza
+    ValueError si la jornada no está en estado SIN_ENTRADA.
+    """
+    conn = _conectar(base_dir)
+    try:
+        row = conn.execute(
+            "SELECT anio, mes, legajo, departamento, estado_jornada "
+            "FROM puntualidad_jornada WHERE id=?",
+            (jornada_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["estado_jornada"] != "SIN_ENTRADA":
+            raise ValueError(
+                f"La jornada {jornada_id} no está sin fichada de entrada; "
+                "no se puede convertir en tardanza manual."
+            )
+        motivo = (motivo_justificacion or "").strip()
+        conn.execute(
+            "UPDATE puntualidad_jornada SET es_tarde=1, estado_jornada='TARDE', "
+            "origen='MANUAL', observacion=?, justificada=?, motivo_justificacion=? "
+            "WHERE id=?",
+            (_OBS_TARDANZA_MANUAL, 1 if motivo else 0, motivo or None, jornada_id),
+        )
+        conn.commit()
+        return {k: row[k] for k in ("anio", "mes", "legajo", "departamento")}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def revertir_tardanza_manual(base_dir, jornada_id):
+    """
+    Revierte una tardanza manual a su estado original SIN_ENTRADA. Solo
+    aplica a jornadas creadas por convertir_sin_entrada_a_tardanza_manual
+    (origen='MANUAL'). Retorna {anio, mes, legajo, departamento} o None si
+    no existe. Lanza ValueError si la jornada no es una tardanza manual.
+    """
+    conn = _conectar(base_dir)
+    try:
+        row = conn.execute(
+            "SELECT anio, mes, legajo, departamento, origen "
+            "FROM puntualidad_jornada WHERE id=?",
+            (jornada_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["origen"] != "MANUAL":
+            raise ValueError(
+                f"La jornada {jornada_id} no es una tardanza cargada manualmente."
+            )
+        conn.execute(
+            "UPDATE puntualidad_jornada SET es_tarde=0, estado_jornada='SIN_ENTRADA', "
+            "origen='CALCULO_AUTOMATICO', observacion='Sin entrada válida', "
+            "justificada=0, motivo_justificacion=NULL WHERE id=?",
+            (jornada_id,),
+        )
+        conn.commit()
+        return {k: row[k] for k in ("anio", "mes", "legajo", "departamento")}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def reaplicar_tardanzas_manuales(base_dir, registros):
+    """
+    Reaplica conversiones manuales (SIN_ENTRADA -> TARDE) preservadas tras
+    un 'reemplazar_mes'. `registros` es una lista de dicts con
+    {anio, mes, legajo, fecha, justificada, motivo_justificacion}. Solo se
+    reaplica si la jornada recreada sigue en estado SIN_ENTRADA; si el
+    recálculo produjo una fichada real para ese día, la conversión manual
+    queda obsoleta y se descarta a propósito. Retorna la cantidad de filas
+    efectivamente reaplicadas.
+    """
+    if not registros:
+        return 0
+    conn = _conectar(base_dir)
+    try:
+        aplicadas = 0
+        for reg in registros:
+            cur = conn.execute(
+                "UPDATE puntualidad_jornada SET es_tarde=1, estado_jornada='TARDE', "
+                "origen='MANUAL', observacion=?, justificada=?, motivo_justificacion=? "
+                "WHERE anio=? AND mes=? AND legajo=? AND fecha=? AND estado_jornada='SIN_ENTRADA'",
+                (
+                    _OBS_TARDANZA_MANUAL, 1 if reg.get("justificada") else 0,
+                    reg.get("motivo_justificacion"),
+                    reg["anio"], reg["mes"], reg["legajo"], reg["fecha"],
+                ),
+            )
+            aplicadas += cur.rowcount
+        conn.commit()
+        return aplicadas
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def registrar_importacion(base_dir, datos_importacion):
     """Registra una importación. Retorna el id del registro creado."""
     conn = _conectar(base_dir)
@@ -429,6 +541,32 @@ def consultar_tardanzas(base_dir, anio, mes=None, departamento=None, legajo=None
     conn = _conectar(base_dir)
     try:
         sql = "SELECT * FROM puntualidad_jornada WHERE anio=? AND es_tarde=1"
+        params = [anio]
+        if mes is not None:
+            sql += " AND mes=?"
+            params.append(mes)
+        elif mes_desde is not None and mes_hasta is not None:
+            sql += " AND mes BETWEEN ? AND ?"
+            params.extend([mes_desde, mes_hasta])
+        if departamento:
+            sql += " AND departamento=?"
+            params.append(departamento)
+        if legajo is not None:
+            sql += " AND legajo=?"
+            params.append(str(legajo))
+        sql += " ORDER BY departamento, nombre, fecha"
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def consultar_sin_entrada(base_dir, anio, mes=None, departamento=None, legajo=None,
+                           mes_desde=None, mes_hasta=None):
+    """Retorna jornadas sin fichada de entrada (estado_jornada='SIN_ENTRADA'),
+    candidatas a convertirse en tardanza manual."""
+    conn = _conectar(base_dir)
+    try:
+        sql = "SELECT * FROM puntualidad_jornada WHERE anio=? AND estado_jornada='SIN_ENTRADA'"
         params = [anio]
         if mes is not None:
             sql += " AND mes=?"
