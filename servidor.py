@@ -3100,7 +3100,17 @@ def _recalcular_cadena_completa_legajo(conn, legajo):
     (_delta_francos_cierre, la misma fuente inmutable que usa el chequeo
     pareado). Compara el resultado contra el valor actual en vivo de
     francos_saldo_inicial. Retorna None si el legajo no tiene ningún cierre
-    en periodo_empleados (no aplica, ej. deptos sin fichadas)."""
+    en periodo_empleados (no aplica, ej. deptos sin fichadas).
+
+    Si el saldo actual en vivo fue actualizado por un mecanismo MÁS
+    RECIENTE que el último cierre de `periodos` conocido (ej. un cierre
+    manual de `cierres_francos` para Ingenieros/Guardias/Telefonía después
+    de que ese legajo dejó de procesarse por fichadas, o un ajuste manual
+    posterior), la cadena de `periodos` quedó obsoleta y NO es la fuente de
+    verdad vigente -- se marca "no_aplicable" en vez de comparar contra
+    datos ya superados (evita pisar un saldo correcto con uno recalculado
+    de una cadena vieja, como pasó con los legajos 100/101 al migrar a
+    Ingenieros)."""
     rows = [dict(r) for r in conn.execute("""
         SELECT DISTINCT p.id, p.cerrado_en, p.saldo_anterior, pe.departamento, pe.nombre
         FROM periodos p
@@ -3117,15 +3127,70 @@ def _recalcular_cadena_completa_legajo(conn, legajo):
         except Exception:
             return {}
 
-    base = _sa_legajo(rows[0]["saldo_anterior"])
-    running = base.get("saldo", 0)
-    gen_extra_prev = base.get("gen_extra_al_corte", 0)
+    # empleados_extra es la fuente maestra de deptos SIN fichadas (Guardias,
+    # Internet, Telefonía, Ingenieros). Si el legajo está activo ahí, su
+    # departamento actual es ese -- aunque tenga cierres viejos de "periodos"
+    # de una época anterior (ej. 100/101 procesados como Redes antes de
+    # pasar a Ingenieros en julio 2026), esos cierres viejos ya no
+    # corresponden al departamento vigente y no deben usarse para recalcular
+    # su saldo actual.
+    depto_extra_row = conn.execute(
+        "SELECT departamento FROM empleados_extra WHERE legajo=? AND activo=1", (legajo,)
+    ).fetchone()
 
     saldo_actual_row = conn.execute(
-        "SELECT saldo, gen_extra_al_corte, nombre FROM francos_saldo_inicial WHERE legajo=?",
+        "SELECT saldo, gen_extra_al_corte, nombre, cargado_en FROM francos_saldo_inicial "
+        "WHERE legajo=?",
         (legajo,)
     ).fetchone()
     saldo_actual_declarado = saldo_actual_row["saldo"] if saldo_actual_row else None
+
+    if depto_extra_row:
+        return {
+            "legajo": legajo,
+            "nombre": (saldo_actual_row["nombre"] if saldo_actual_row else None)
+                      or rows[-1].get("nombre", ""),
+            "departamento": _nombre_departamento_visible(depto_extra_row["departamento"] or ""),
+            "saldo_actual_declarado": saldo_actual_declarado,
+            "saldo_recalculado_completo": None,
+            "diferencia": None,
+            "no_aplicable": True,
+            "motivo_no_aplicable": (
+                "Este legajo pertenece hoy a un departamento sin fichadas "
+                f"({_nombre_departamento_visible(depto_extra_row['departamento'] or '')}), "
+                "gestionado por cierre manual (cierres_francos). Tiene cierres viejos de "
+                "'periodos' de una época anterior (otro departamento) que ya no corresponden "
+                "al departamento vigente -- no se usan para recalcular su saldo actual."
+            ),
+            "ultimo_cierre_id": rows[-1]["id"],
+            "cantidad_cierres": len(rows),
+        }
+
+    ultimo_cierre_periodos = rows[-1]["cerrado_en"] or ""
+    cargado_en_actual = (saldo_actual_row["cargado_en"] or "") if saldo_actual_row else ""
+    if saldo_actual_row and cargado_en_actual > ultimo_cierre_periodos:
+        return {
+            "legajo": legajo,
+            "nombre": saldo_actual_row["nombre"] or rows[-1].get("nombre", ""),
+            "departamento": rows[-1].get("departamento", ""),
+            "saldo_actual_declarado": saldo_actual_declarado,
+            "saldo_recalculado_completo": None,
+            "diferencia": None,
+            "no_aplicable": True,
+            "motivo_no_aplicable": (
+                "El saldo actual fue actualizado el "
+                f"{cargado_en_actual} por un mecanismo más reciente que el último "
+                f"cierre de 'periodos' conocido ({ultimo_cierre_periodos}) -- por ej. "
+                "un cierre manual de Ingenieros/Guardias/Telefonía, o un ajuste manual. "
+                "La cadena de 'periodos' quedó obsoleta para este legajo."
+            ),
+            "ultimo_cierre_id": rows[-1]["id"],
+            "cantidad_cierres": len(rows),
+        }
+
+    base = _sa_legajo(rows[0]["saldo_anterior"])
+    running = base.get("saldo", 0)
+    gen_extra_prev = base.get("gen_extra_al_corte", 0)
 
     for i, r in enumerate(rows):
         delta = _delta_francos_cierre(conn, r["id"], {legajo}).get(
@@ -3161,18 +3226,27 @@ def _recalcular_cadena_completa_legajo(conn, legajo):
 
 def _auditoria_completa_saldos_francos(conn):
     """Corre _recalcular_cadena_completa_legajo para todos los legajos con
-    al menos un cierre en periodo_empleados. Devuelve (resultados, con_diferencia)."""
+    al menos un cierre en periodo_empleados. Devuelve
+    (resultados, con_diferencia, no_aplicables) -- no_aplicables son legajos
+    cuyo saldo actual ya no depende de la cadena de 'periodos' (departamento
+    sin fichadas vigente, o actualizado por un mecanismo más reciente); se
+    reportan aparte para transparencia, pero nunca se corrigen."""
     legajos = [r["legajo"] for r in conn.execute(
         "SELECT DISTINCT legajo FROM periodo_empleados"
     ).fetchall()]
     resultados = []
+    no_aplicables = []
     for leg in legajos:
         r = _recalcular_cadena_completa_legajo(conn, leg)
-        if r:
+        if not r:
+            continue
+        if r.get("no_aplicable"):
+            no_aplicables.append(r)
+        else:
             resultados.append(r)
     con_diferencia = [r for r in resultados if r["diferencia"]]
     con_diferencia.sort(key=lambda r: -abs(r["diferencia"]))
-    return resultados, con_diferencia
+    return resultados, con_diferencia, no_aplicables
 
 
 @app.route("/admin/auditoria-completa-saldos-francos")
@@ -3187,11 +3261,13 @@ def admin_auditoria_completa_saldos_francos():
     cierres tenga en su historial. No escribe nada."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
     with _get_db() as conn:
-        resultados, con_diferencia = _auditoria_completa_saldos_francos(conn)
+        resultados, con_diferencia, no_aplicables = _auditoria_completa_saldos_francos(conn)
     return jsonify({
         "total_legajos_revisados": len(resultados),
         "total_con_diferencia": len(con_diferencia),
         "con_diferencia": con_diferencia,
+        "total_no_aplicables": len(no_aplicables),
+        "no_aplicables": no_aplicables,
     })
 
 
@@ -3210,17 +3286,22 @@ def admin_corregir_cadena_completa_saldos_francos():
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
 
     with _get_db() as conn:
-        _resultados, con_diferencia = _auditoria_completa_saldos_francos(conn)
+        _resultados, con_diferencia, no_aplicables = _auditoria_completa_saldos_francos(conn)
 
     if request.args.get("confirmar") != "si":
         return jsonify({
             "aplicado": False,
             "total_con_diferencia": len(con_diferencia),
             "con_diferencia": con_diferencia,
+            "total_no_aplicables": len(no_aplicables),
+            "no_aplicables": no_aplicables,
         })
 
     if not con_diferencia:
-        return jsonify({"aplicado": True, "mensaje": "Nada para corregir.", "con_diferencia": []})
+        return jsonify({
+            "aplicado": True, "mensaje": "Nada para corregir.", "con_diferencia": [],
+            "total_no_aplicables": len(no_aplicables), "no_aplicables": no_aplicables,
+        })
 
     DATOS_DIR.mkdir(exist_ok=True)
     backup_path = DATOS_DIR / f"cierres_backup_pre_cadena_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
@@ -3240,7 +3321,10 @@ def admin_corregir_cadena_completa_saldos_francos():
             r["corregido"] = True
         conn.commit()
 
-    return jsonify({"aplicado": True, "backup": str(backup_path), "con_diferencia": con_diferencia})
+    return jsonify({
+        "aplicado": True, "backup": str(backup_path), "con_diferencia": con_diferencia,
+        "total_no_aplicables": len(no_aplicables), "no_aplicables": no_aplicables,
+    })
 
 
 @app.route("/admin/reemplazar-csv-semana/<int:n>", methods=["GET", "POST"])

@@ -110,7 +110,7 @@ def test_auditoria_detecta_solo_el_legajo_con_cadena_rota(db_temporal):
     conn.close()
 
     conn = _conn(db_temporal)
-    resultados, con_diferencia = servidor._auditoria_completa_saldos_francos(conn)
+    resultados, con_diferencia, no_aplicables = servidor._auditoria_completa_saldos_francos(conn)
     conn.close()
 
     por_legajo = {r["legajo"]: r for r in resultados}
@@ -120,6 +120,71 @@ def test_auditoria_detecta_solo_el_legajo_con_cadena_rota(db_temporal):
 
     legajos_con_diferencia = {r["legajo"] for r in con_diferencia}
     assert legajos_con_diferencia == {"20"}
+    assert no_aplicables == []
+
+
+def test_legajo_de_depto_sin_fichadas_no_se_toca(db_temporal):
+    """Reproduce el bug real: un legajo (ej. 100-Mancioni) tiene un cierre
+    viejo de 'periodos' de una época anterior (cuando todavía se procesaba
+    por fichadas), pero HOY pertenece a un departamento sin fichadas
+    (Ingenieros/Guardias/Internet/Telefonía, tabla empleados_extra) y su
+    saldo se gestiona por cierre manual. La auditoría no debe recalcularlo
+    ni la corrección debe tocarlo, aunque su viejo cierre de periodos no
+    coincida con el saldo actual."""
+    conn = _conn(db_temporal)
+    _crear_cierre(conn, "2026-06-01 10:00:00", {"100": {"saldo": 0, "gen_extra_al_corte": 0}},
+                  [("100", "Mancioni Martin", "redes", 4, 0)])
+    # Saldo actual real, fijado DESPUES por el cierre manual de Ingenieros
+    # (no coincide con lo que daría el cierre viejo de Redes: 0+4=4).
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en, "
+        "tomados_al_corte, gen_extra_al_corte, fecha_corte) VALUES (?,?,?,?,?,?,?,?)",
+        ("100", "Mancioni Martin", 5, "Cierre manual francos Ingenieros al 2026-07-08",
+         "2026-07-22 12:50:05", 1, 1, "2026-07-08"),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+        ("100", "Mancioni Martin", "Ingenieros"),
+    )
+    conn.commit()
+    conn.close()
+
+    conn = _conn(db_temporal)
+    resultados, con_diferencia, no_aplicables = servidor._auditoria_completa_saldos_francos(conn)
+    conn.close()
+
+    assert not any(r["legajo"] == "100" for r in resultados)
+    assert not any(r["legajo"] == "100" for r in con_diferencia)
+    assert any(r["legajo"] == "100" for r in no_aplicables)
+
+
+def test_correccion_no_toca_legajo_de_depto_sin_fichadas(db_temporal, client):
+    conn = _conn(db_temporal)
+    _crear_cierre(conn, "2026-06-01 10:00:00", {"100": {"saldo": 0, "gen_extra_al_corte": 0}},
+                  [("100", "Mancioni Martin", "redes", 4, 0)])
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en, "
+        "tomados_al_corte, gen_extra_al_corte, fecha_corte) VALUES (?,?,?,?,?,?,?,?)",
+        ("100", "Mancioni Martin", 5, "Cierre manual francos Ingenieros al 2026-07-08",
+         "2026-07-22 12:50:05", 1, 1, "2026-07-08"),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+        ("100", "Mancioni Martin", "Ingenieros"),
+    )
+    conn.commit()
+    conn.close()
+
+    resp = client.get("/admin/corregir-cadena-completa-saldos-francos?confirmar=si")
+    data = resp.get_json()
+    assert data["total_no_aplicables"] == 1
+
+    conn = _conn(db_temporal)
+    saldo = conn.execute(
+        "SELECT saldo FROM francos_saldo_inicial WHERE legajo='100'"
+    ).fetchone()["saldo"]
+    conn.close()
+    assert saldo == 5, "no debe pisar el saldo del cierre manual de Ingenieros"
 
 
 def test_correccion_dry_run_no_escribe_nada(db_temporal, client):
