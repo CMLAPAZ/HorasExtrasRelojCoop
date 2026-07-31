@@ -3066,13 +3066,26 @@ def admin_verificar_cadena_saldos_francos():
                     continue
                 cierres_revisados += 1
                 deltas = _delta_francos_cierre(conn, pid_actual, legajos_comunes)
+                cerrado_en_actual = cierres[pid_actual]["cerrado_en"]
+                cerrado_en_sig = cierres[pid_sig]["cerrado_en"]
                 for leg in sorted(legajos_comunes):
                     base = sa_actual[leg]
                     despues = sa_sig[leg]
                     d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
                     gen_extra_delta = despues.get("gen_extra_al_corte", 0) - base.get("gen_extra_al_corte", 0)
+                    # Devoluciones de francos ya cerrados anulados en la ventana
+                    # entre estos dos cierres -- _devolver_saldo_franco_anulado()
+                    # las suma directo a francos_saldo_inicial.saldo en tiempo
+                    # real, fuera del ciclo de cierre; sin esto, una devolución
+                    # legítima se reporta como un desajuste falso.
+                    devolucion = conn.execute(
+                        "SELECT COALESCE(SUM(dias),0) as total FROM francos_anulaciones_cerrados "
+                        "WHERE legajo=? AND anulado_en > ? AND anulado_en <= ?",
+                        (leg, cerrado_en_actual, cerrado_en_sig)
+                    ).fetchone()["total"]
                     saldo_final_recalculado = (
-                        base.get("saldo", 0) + d["generados_periodo"] + gen_extra_delta - d["tomados_periodo"]
+                        base.get("saldo", 0) + d["generados_periodo"] + gen_extra_delta
+                        - d["tomados_periodo"] + devolucion
                     )
                     if saldo_final_recalculado != despues.get("saldo", 0):
                         desajustes.append({
@@ -3191,6 +3204,7 @@ def _recalcular_cadena_completa_legajo(conn, legajo):
     base = _sa_legajo(rows[0]["saldo_anterior"])
     running = base.get("saldo", 0)
     gen_extra_prev = base.get("gen_extra_al_corte", 0)
+    ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     for i, r in enumerate(rows):
         delta = _delta_francos_cierre(conn, r["id"], {legajo}).get(
@@ -3207,6 +3221,20 @@ def _recalcular_cadena_completa_legajo(conn, legajo):
         gen_extra_delta = gen_extra_after - gen_extra_prev
         running = running + delta["generados_periodo"] + gen_extra_delta - delta["tomados_periodo"]
         gen_extra_prev = gen_extra_after
+
+        # Devoluciones de francos ya cerrados que se anularon en la ventana
+        # entre este cierre y el siguiente (o hasta hoy, si es el último).
+        # _devolver_saldo_franco_anulado() suma esos días directo a
+        # francos_saldo_inicial.saldo en tiempo real, fuera del ciclo de
+        # cierre -- sin sumarlos acá, cualquier devolución legítima se
+        # reporta como una "diferencia" falsa.
+        ventana_hasta = rows[i + 1]["cerrado_en"] if i + 1 < len(rows) else ahora_str
+        devolucion = conn.execute(
+            "SELECT COALESCE(SUM(dias),0) as total FROM francos_anulaciones_cerrados "
+            "WHERE legajo=? AND anulado_en > ? AND anulado_en <= ?",
+            (legajo, r["cerrado_en"] or "", ventana_hasta or ahora_str)
+        ).fetchone()["total"]
+        running += devolucion
 
     nombre = (saldo_actual_row["nombre"] if saldo_actual_row else None) or rows[-1].get("nombre", "")
 

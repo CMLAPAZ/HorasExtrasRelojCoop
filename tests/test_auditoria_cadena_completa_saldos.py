@@ -123,6 +123,49 @@ def test_auditoria_detecta_solo_el_legajo_con_cadena_rota(db_temporal):
     assert no_aplicables == []
 
 
+def _anular_franco_cerrado(conn, legajo, nombre, dias, anulado_en, periodo_origen_id=None):
+    conn.execute("""
+        INSERT INTO francos_anulaciones_cerrados
+          (francos_tomados_id, legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
+           fechas_sueltas, dias, motivo, usuario, anulado_en, periodo_origen_id, periodo_aplicado_id)
+        VALUES (0,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+    """, (legajo, nombre, "redes", "UNICO", "2026-06-15", "2026-06-15", "[]", dias,
+          "test devolucion", "test", anulado_en, periodo_origen_id))
+    conn.commit()
+
+
+def test_devolucion_de_franco_anulado_no_se_reporta_como_diferencia(db_temporal):
+    """Reproduce el caso real (Labanca/143, Barrientos/145): el cierre 1
+    genera 3 (saldo_anterior=5 -> deja 8), pero entre el cierre 1 y el 2 se
+    anula un franco que ya estaba 'Cerrado' y se devuelven 5 días
+    directamente a francos_saldo_inicial.saldo (_devolver_saldo_franco_anulado,
+    fuera del ciclo de cierre) -> el cierre 2 declara correctamente 13
+    (8+5), no 8. Sin la devolución, esto se vería como una cadena rota de
+    +5 -- la auditoría no debe reportarlo como diferencia."""
+    conn = _conn(db_temporal)
+    pid1 = _crear_cierre(
+        conn, "2026-06-01 10:00:00", {"30": {"saldo": 5, "gen_extra_al_corte": 0}},
+        [("30", "Empleado Devolucion", "redes", 3, 0)]
+    )
+    # Devolución ocurre DESPUES del cierre 1 y ANTES del cierre 2.
+    _anular_franco_cerrado(conn, "30", "Empleado Devolucion", 5, "2026-06-15 09:00:00", pid1)
+    _crear_cierre(
+        conn, "2026-07-01 10:00:00", {"30": {"saldo": 13, "gen_extra_al_corte": 0}},  # 8 + 5 devueltos
+        [("30", "Empleado Devolucion", "redes", 2, 0)]
+    )
+    _set_saldo_inicial(conn, "30", "Empleado Devolucion", 15)  # 13 + 2 generados en cierre 2
+    conn.close()
+
+    conn = _conn(db_temporal)
+    resultados, con_diferencia, no_aplicables = servidor._auditoria_completa_saldos_francos(conn)
+    conn.close()
+
+    fila = next(r for r in resultados if r["legajo"] == "30")
+    assert fila["saldo_recalculado_completo"] == 15
+    assert fila["diferencia"] == 0
+    assert not any(r["legajo"] == "30" for r in con_diferencia)
+
+
 def test_legajo_de_depto_sin_fichadas_no_se_toca(db_temporal):
     """Reproduce el bug real: un legajo (ej. 100-Mancioni) tiene un cierre
     viejo de 'periodos' de una época anterior (cuando todavía se procesaba
@@ -247,3 +290,25 @@ def test_correccion_confirmada_corrige_solo_el_legajo_afectado(db_temporal, clie
     assert "cadena completa" in fila_roto["nota"].lower()
     assert fila_sano["saldo"] == 10, "el legajo sano no debe tocarse"
     assert periodo_intacto["estado"] == "ACTIVO", "no debe anularse ningun cierre"
+
+
+def test_verificar_cadena_pareada_tampoco_reporta_devolucion_como_desajuste(db_temporal, client):
+    """El chequeo pareado original (/admin/verificar-cadena-saldos-francos)
+    debe tener el mismo fix: una devolucion legitima entre dos cierres no
+    debe aparecer en 'desajustes'."""
+    conn = _conn(db_temporal)
+    pid1 = _crear_cierre(
+        conn, "2026-06-01 10:00:00", {"30": {"saldo": 5, "gen_extra_al_corte": 0}},
+        [("30", "Empleado Devolucion", "redes", 3, 0)]
+    )
+    _anular_franco_cerrado(conn, "30", "Empleado Devolucion", 5, "2026-06-15 09:00:00", pid1)
+    _crear_cierre(
+        conn, "2026-07-01 10:00:00", {"30": {"saldo": 13, "gen_extra_al_corte": 0}},
+        [("30", "Empleado Devolucion", "redes", 2, 0)]
+    )
+    conn.close()
+
+    resp = client.get("/admin/verificar-cadena-saldos-francos")
+    data = resp.get_json()
+    assert data["cadena_sana"] is True
+    assert data["desajustes"] == []
