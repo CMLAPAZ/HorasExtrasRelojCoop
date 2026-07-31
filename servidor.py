@@ -3427,6 +3427,98 @@ def admin_ver_francos_semana_parcial():
     })
 
 
+@app.route("/admin/desglose-generados/<legajo>")
+def admin_desglose_generados(legajo):
+    """Solo lectura: desglosa, componente por componente, de dónde sale el
+    número "Generados" que muestra /francos para un legajo puntual --
+    gen_periodos_por_emp (cierres ya absorbidos según fecha_corte), gen_extra
+    (deptos sin fichadas) y gen_parcial (período activo en vivo vía
+    _calcular_periodo). Pensada para diagnosticar sin adivinar si "Generados"
+    está sumando de más (ej. un cierre ya reflejado en saldo_inicial +
+    el mismo cierre otra vez desde el período activo)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo = str(legajo)
+
+    with _get_db() as conn:
+        ini_row = conn.execute(
+            "SELECT * FROM francos_saldo_inicial WHERE legajo=?", (legajo,)
+        ).fetchone()
+        inicial = dict(ini_row) if ini_row else None
+        fecha_corte = (inicial.get("fecha_corte") if inicial else None) or "2026-05-21"
+
+        periodos_legajo = conn.execute(
+            "SELECT p.id as periodo_id, p.cerrado_en, p.fecha_desde, p.fecha_hasta, "
+            "p.estado, pe.francos, pe.departamento "
+            "FROM periodo_empleados pe JOIN periodos p ON pe.periodo_id = p.id "
+            "WHERE pe.legajo=? ORDER BY p.fecha_hasta, p.id",
+            (legajo,)
+        ).fetchall()
+        periodos_detalle = []
+        gen_periodos_total = 0
+        for row in periodos_legajo:
+            activo = (row["estado"] or "ACTIVO") != "ANULADO"
+            cuenta = activo and (row["fecha_hasta"] or "") > fecha_corte
+            if cuenta:
+                gen_periodos_total += row["francos"] or 0
+            periodos_detalle.append({
+                "periodo_id": row["periodo_id"], "cerrado_en": row["cerrado_en"],
+                "fecha_desde": row["fecha_desde"], "fecha_hasta": row["fecha_hasta"],
+                "departamento": row["departamento"], "estado": row["estado"] or "ACTIVO",
+                "francos": row["francos"], "cuenta_en_generados": cuenta,
+                "motivo_no_cuenta": None if cuenta else (
+                    "ANULADO" if not activo else f"fecha_hasta <= fecha_corte ({fecha_corte})"
+                ),
+            })
+
+        gen_manual = (conn.execute(
+            "SELECT COALESCE(SUM(dias),0) as t FROM francos_generados WHERE legajo=?", (legajo,)
+        ).fetchone()["t"])
+        gen_manual_sem = (conn.execute(
+            "SELECT COALESCE(SUM(dias),0) as t FROM francos_semana_manual WHERE legajo=?", (legajo,)
+        ).fetchone()["t"])
+        ge_corte = (inicial.get("gen_extra_al_corte") if inicial else 0) or 0
+        gen_extra_total = gen_manual + gen_manual_sem
+        gen_extra_contado = max(0, gen_extra_total - ge_corte)
+
+        parcial_legajo = conn.execute(
+            "SELECT * FROM francos_semana_parcial WHERE legajo=? ORDER BY semana_num", (legajo,)
+        ).fetchall()
+
+    emp = next((e for e in _empleados_conocidos() if e["legajo"] == legajo), None)
+    depto = emp["departamento"] if emp else None
+    depto_norm = _normalizar_departamento_web(depto) if depto else None
+
+    gen_parcial_detalle = None
+    gen_parcial_total = 0
+    if depto_norm:
+        entradas = [e for e in _calcular_periodo(0, 999999, depto_norm) if e["legajo"] == legajo]
+        gen_parcial_total = sum(e.get("francos") or 0 for e in entradas)
+        gen_parcial_detalle = [
+            {"semanas": e.get("semanas"), "francos": e.get("francos"), "dias": e.get("dias")}
+            for e in entradas
+        ]
+
+    saldos_actual = next((s for s in _calcular_saldos() if str(s["legajo"]) == legajo), None)
+
+    return jsonify({
+        "legajo": legajo,
+        "nombre": emp["nombre"] if emp else None,
+        "departamento": depto,
+        "fecha_corte": fecha_corte,
+        "saldo_inicial_row": inicial,
+        "periodos_del_legajo": periodos_detalle,
+        "gen_periodos_por_emp_total": gen_periodos_total,
+        "gen_extra_total_historico": gen_extra_total,
+        "gen_extra_al_corte": ge_corte,
+        "gen_extra_contado": gen_extra_contado,
+        "francos_semana_parcial_residual": [dict(r) for r in parcial_legajo],
+        "gen_parcial_calculado_en_vivo": gen_parcial_total,
+        "gen_parcial_detalle": gen_parcial_detalle,
+        "generados_total_esperado": gen_periodos_total + gen_extra_contado + gen_parcial_total,
+        "saldo_actual_en_pantalla": saldos_actual,
+    })
+
+
 @app.route("/admin/auditoria-completa-saldos-francos")
 def admin_auditoria_completa_saldos_francos():
     """Solo lectura: para TODOS los legajos con al menos un cierre en el
