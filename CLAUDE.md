@@ -713,6 +713,56 @@ También se agregó:
   `/admin/semanas-de-periodo`) para corregir un cierre puntual sin anularlo.
 - Tests: `tests/test_ciclo_cierre_anular_recerrar_francos.py`.
 
+## Implementado en sesión 31/07/2026 — bug de "Generados" duplicado en saldos (Redes)
+
+Los 27 empleados de Redes mostraban el doble en la columna "Generados" de
+`/francos` (ej. Castrillón +6 en vez de +3). Se investigaron y corrigieron
+dos causas reales, en dos pasos:
+
+1. **`_calcular_saldos()` leía la tabla-snapshot `francos_semana_parcial`**
+   para el "generado del período activo aún sin cerrar" — esa tabla podía
+   quedar con filas residuales de semanas ya absorbidas por un cierre.
+   Fix: se reemplazó por un cálculo en vivo con `_calcular_periodo()`, la
+   misma función que ya usa (y siempre estuvo bien en) la pantalla de
+   Períodos — así Saldos y Períodos no pueden desincronizarse. Commit `797ec22`.
+2. **Causa real, más profunda**: `_resolver_semana_confirmacion()` reamarra
+   por fecha una confirmación archivada de un cierre YA cerrado (no
+   anulado) cuando una semana nueva activa se solapa en su rango de fechas
+   con ese cierre viejo (ver su docstring y el de `_archivos_confirmacion()`
+   — ese mecanismo solo excluye explícitamente a cierres ANULADOS). El día
+   quedaba "readoptado" como si fuera del período en curso y `_calcular_periodo()`
+   lo volvía a sumar, aunque ya estaba absorbido en el saldo por la
+   actualización automática al cerrar. Fix: `_calcular_saldos()` ahora
+   cuenta día por día dentro de `gen_parcial` y descarta cualquier franco
+   con fecha `<=` al `fecha_corte` de CADA empleado — mismo criterio que ya
+   usaba `gen_periodos_por_emp`. Commit `bbbf87c`. Confirmado por la
+   usuaria en producción: Castrillón pasó a +3 y el subtotal de Redes dio
+   286 (el valor esperado del cierre #4).
+
+Herramienta nueva de diagnóstico (solo lectura, no toca nada):
+`GET /admin/desglose-generados/<legajo>` — desglosa componente por
+componente de dónde sale "Generados" para un legajo puntual (cada período
+cerrado con motivo si no cuenta, lo generado manual, el cálculo en vivo con
+detalle de días, y cualquier residuo en `francos_semana_parcial`). Útil para
+cualquier futuro reclamo de "el saldo no me cierra" sin tener que adivinar.
+
+**Nota de diseño para el futuro:** el mecanismo de reamarre-por-fecha en
+`_resolver_semana_confirmacion()` sigue existiendo — el fix de este
+incidente lo neutralizó solo para el cálculo de saldos (filtrando por
+`fecha_corte`). Si aparece un síntoma similar (totales de más) en la
+pantalla de Períodos o en algún informe que use `_calcular_periodo()`/
+`_leer_historial()` directamente, empezar la investigación por ahí.
+
+Tests: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
+`test_calcular_saldos_no_duplica_generados_con_parcial_residual_de_periodo_ya_cerrado`
+y `test_calcular_saldos_no_duplica_generados_con_confirmacion_archivada_readoptada_por_fecha`
+(este último reproduce el mecanismo real de readopción, no solo residuos de tabla).
+
+El botón "Guardar Franco" del panel supervisor (`/semanas/<n>/guardar-francos`,
+`/semanas/guardar-francos-todos`) sigue escribiendo en `francos_semana_parcial`
+sin error, pero esa tabla quedó huérfana — ya no la lee ningún cálculo de
+saldo, solo las rutas de diagnóstico. Pendiente decidir si se deprecia.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
