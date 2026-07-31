@@ -8,11 +8,13 @@ próximo cierre del mismo departamento.
 _delta_francos_cierre calcula el delta propio de UN cierre puntual (solo lo
 que quedó grabado en periodo_empleados.francos y francos_cierre_detalle bajo
 ese periodo_id) -- a diferencia de _calcular_saldos(), que es el saldo "en
-vivo" global usado para pantallas/reportes y que también suma
-francos_semana_parcial de cualquier semana/depto en curso sin cerrar. Usar
-_calcular_saldos() para grabar el saldo de un cierre puntual mezcla datos de
-otro período/mes en curso -- ver CLAUDE.md y el plan de rediseño de cierre de
-francos.
+vivo" global usado para pantallas/reportes y que calcula los generados del
+período activo en vivo con _calcular_periodo() (misma fuente que la pantalla
+de Períodos), no leyendo la tabla-snapshot francos_semana_parcial -- esa
+tabla podía quedar con filas residuales de semanas ya cerradas y duplicar en
+pantalla lo que el cierre ya había dejado en el saldo. Usar _calcular_saldos()
+para grabar el saldo de un cierre puntual mezcla datos de otro período/mes en
+curso -- ver CLAUDE.md y el plan de rediseño de cierre de francos.
 """
 import sqlite3
 
@@ -105,12 +107,54 @@ def test_delta_francos_cierre_ignora_parciales_de_otro_mes_en_curso(db_temporal)
     assert delta[leg]["generados_periodo"] == 0
     assert delta[leg]["tomados_periodo"] == 0
 
-    # Para contraste: _calcular_saldos() (la vista global "en vivo") sí
-    # incluye ese parcial -- por eso no hay que usarla para grabar el saldo
-    # de un cierre puntual.
+    # Para contraste: _calcular_saldos() (la vista global "en vivo") ya no
+    # lee francos_semana_parcial en absoluto -- calcula los generados del
+    # período activo en vivo con _calcular_periodo(), igual que la pantalla
+    # de Períodos. La fila insertada arriba en la tabla-snapshot (sin
+    # ninguna confirmación/sesión real detrás) no debe generar ningún
+    # "Generado" fantasma.
     saldos = servidor._calcular_saldos()
     saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
-    assert saldo_leg["generados"] >= 1
+    assert saldo_leg["generados"] == 0
+
+
+def test_calcular_saldos_no_duplica_generados_con_parcial_residual_de_periodo_ya_cerrado(db_temporal):
+    """Reproduce el bug real de producción (31/07/2026): un cierre ya
+    absorbió los francos generados de sus semanas en periodo_empleados, pero
+    francos_semana_parcial de esas mismas semanas no se había borrado (o
+    quedó un residuo). _calcular_saldos() sumaba periodo_empleados.francos
+    + esa fila residual, duplicando el "Generados" mostrado en pantalla para
+    los 27 empleados de Redes por igual. Ahora _calcular_saldos() no lee
+    francos_semana_parcial en absoluto -- calcula el período activo en vivo
+    con _calcular_periodo(), así que un residuo en esa tabla-snapshot no
+    puede volver a inflar el saldo."""
+    conn = _conn(db_temporal)
+    leg, nombre = "121", "CASTRILLON"
+
+    # fecha_corte anterior a la fecha_hasta del cierre (2026-01-01/07), para
+    # que ese cierre efectivamente cuente en gen_periodos_por_emp.
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, fecha_corte, cargado_en) "
+        "VALUES (?,?,0,?,?)",
+        (leg, nombre, "2025-12-01", "2025-12-01 00:00:00"),
+    )
+    conn.commit()
+
+    # Cierre ya realizado: dejó 3 francos generados en periodo_empleados.
+    _crear_periodo(conn, "2026-07-03T15:18:04.000000", "Redes", leg, nombre, francos=3)
+
+    # Residuo de francos_semana_parcial de esas mismas semanas, que en el
+    # incidente real no se había limpiado al cerrar.
+    conn.execute(
+        "INSERT INTO francos_semana_parcial (legajo, nombre, departamento, semana_num, dias, guardado_en) "
+        "VALUES (?,?,?,?,?,?)",
+        (leg, nombre, "Redes", 1, 3, "2026-07-01 10:00:00"),
+    )
+    conn.commit()
+
+    saldos = servidor._calcular_saldos()
+    saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
+    assert saldo_leg["generados"] == 3
 
 
 def test_delta_francos_cierre_solo_cuenta_lo_propio_del_pid(db_temporal):

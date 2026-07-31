@@ -6910,7 +6910,6 @@ def _calcular_saldos():
         ).fetchall()
 
         gen_manual_raw   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_generados GROUP BY legajo")}
-        gen_parcial      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_parcial GROUP BY legajo")}
         gen_manual_sem   = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_semana_manual GROUP BY legajo")}
         tomados_raw      = {r["legajo"]: (r["total"] or 0) for r in conn.execute("SELECT legajo, SUM(dias) as total FROM francos_tomados WHERE COALESCE(estado,'') != 'Anulado' GROUP BY legajo")}
 
@@ -6922,8 +6921,25 @@ def _calcular_saldos():
         if (row["fecha_hasta"] or "") > corte:
             gen_periodos_por_emp[leg] = gen_periodos_por_emp.get(leg, 0) + (row["francos"] or 0)
 
+    # Generados del período activo (todavía sin cerrar): en vivo, con la
+    # misma función que usa la pantalla de Períodos (_calcular_periodo),
+    # en vez de la tabla-snapshot francos_semana_parcial -- esa tabla podía
+    # quedar con filas residuales de semanas ya cerradas (duplicando lo que
+    # el cierre ya dejó en el saldo). Calculando siempre en vivo, esta
+    # pantalla nunca puede desincronizarse de lo que muestra Períodos.
+    empleados_conocidos_cache = _empleados_conocidos()
+    deptos_activos = sorted({
+        e["departamento"] for e in empleados_conocidos_cache if e.get("departamento")
+    })
+    gen_parcial = {}
+    for depto in deptos_activos:
+        depto_norm = _normalizar_departamento_web(depto)
+        for e in _calcular_periodo(0, 999999, depto_norm):
+            leg = e["legajo"]
+            gen_parcial[leg] = gen_parcial.get(leg, 0) + (e.get("francos") or 0)
+
     resultado = []
-    for emp in _empleados_conocidos():
+    for emp in empleados_conocidos_cache:
         leg  = emp["legajo"]
         ini  = iniciales.get(leg, {"saldo": 0, "tomados_al_corte": 0, "gen_extra_al_corte": 0, "fecha_corte": "2026-05-21"})
         si   = ini["saldo"]
