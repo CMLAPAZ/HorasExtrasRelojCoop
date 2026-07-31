@@ -487,9 +487,11 @@ function renderTabla() {
     html += `<tr class="depto-header"><td colspan="9">${depto} — ${empleados.length} empleado(s)</td></tr>`;
 
     empleados.forEach(e => {
-      sub50        += parseHM(e.ot50   || '0h');
-      sub100       += parseHM(e.ot100  || '0h');
-      subComidas   += e.comidas   || 0;
+      if (!e.excluido_ot) {
+        sub50      += parseHM(e.ot50   || '0h');
+        sub100     += parseHM(e.ot100  || '0h');
+        subComidas += e.comidas   || 0;
+      }
       subFrancos   += e.francos   || 0;
       subTardanzas += e.tardanzas || 0;
       const empSemSet = new Set(e.semanas || []);

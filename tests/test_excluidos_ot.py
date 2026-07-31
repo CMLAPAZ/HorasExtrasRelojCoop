@@ -20,9 +20,13 @@ Casos verificados:
 """
 import io
 from datetime import date, timedelta
+from io import BytesIO
 
 import pytest
+from pypdf import PdfReader
+
 import servidor
+from pdf_generator import generar_pdf_resumen, generar_pdf_general
 
 
 # ──────────────────────────────────────────────────────────────
@@ -336,3 +340,53 @@ def test_recalcular_totales_token_ot_real():
     assert d["totales"]["comidas"] == 1
     assert d["totales"]["francos"] == 1
     assert d["totales"]["tardanzas"] == 1
+
+
+# ──────────────────────────────────────────────────────────────
+# 10. Totales de horas/comidas del depto excluyen a excluido_ot;
+#     francos y tardanzas de ese empleado SI se siguen sumando.
+# ──────────────────────────────────────────────────────────────
+
+def _registros(normales, cincuenta, cien, comida, franco, tarde):
+    return [{
+        "Fecha": "2026-06-02", "Normales": normales, "50%": cincuenta, "100%": cien,
+        "COMIDA": comida, "FRANCO": franco, "Tarde": tarde, "Observaciones": "",
+    }]
+
+
+def test_generar_pdf_resumen_excluye_horas_y_comidas_del_total():
+    data = [
+        {"legajo": "10", "nombre": "Excluido Prueba", "departamento": "Administracion",
+         "registros": _registros("07:00:00", "05:00:00", "00:00:00", 9, 1, 1),
+         "excluido_ot": True},
+        {"legajo": "7", "nombre": "Normal Prueba", "departamento": "Administracion",
+         "registros": _registros("07:00:00", "01:00:00", "00:00:00", 2, 1, 0),
+         "excluido_ot": False},
+    ]
+    pdf_bytes = generar_pdf_resumen(data, "Junio 2026")
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "05:00:00" in texto, "la hora individual del excluido debe seguir viéndose"
+    assert "TOTALES" in texto
+    # El total de 50% sumado (bug) daría 06:00:00 (5h excluido + 1h normal); no debe aparecer.
+    assert "06:00:00" not in texto
+    # El total de comidas sumado (bug) daría 11; no debe aparecer.
+    assert "11" not in texto
+
+
+def test_generar_pdf_general_total_departamento_excluye_horas_y_comidas():
+    data = [
+        {"legajo": "10", "nombre": "Excluido Prueba", "departamento": "Administracion",
+         "registros": _registros("07:00:00", "05:00:00", "00:00:00", 9, 1, 1),
+         "excluido_ot": True},
+        {"legajo": "7", "nombre": "Normal Prueba", "departamento": "Administracion",
+         "registros": _registros("07:00:00", "01:00:00", "00:00:00", 2, 1, 0),
+         "excluido_ot": False},
+    ]
+    pdf_bytes = generar_pdf_general(data, "Junio 2026", feriados=set())
+    texto = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "TOTAL GENERAL DEL DEPARTAMENTO" in texto
+    assert "Horas 50%: 01:00:00" in texto, "el total del depto debe ser solo el del no excluido (1h)"
+    assert "Comidas: 2" in texto, "las comidas del excluido no deben sumar al total del depto"
+    assert "Francos: 2" in texto, "los francos SI deben seguir sumando aunque este excluido de OT"

@@ -424,9 +424,12 @@ def generar_pdf_general(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
             empleado.get("nombre",""),
             empleado.get("departamento","")
         )
+        excl = empleado.get("excluido_ot", False)
         totales_emp = pdf.tabla_registros(empleado.get("registros",[]),
-                            excluido_ot=empleado.get("excluido_ot", False))
+                            excluido_ot=excl)
         for k in totales_depto:
+            if excl and k in ("norm", "ot50", "ot100", "com"):
+                continue
             totales_depto[k] += totales_emp[k]
 
     if datos_filtrados:
@@ -494,10 +497,11 @@ def generar_pdf_resumen(data, mes, salida=None, feriados=None, grosor_lunes=0.6)
             e_fr   += int(r.get("FRANCO",0))
             e_tar  += int(r.get("Tarde",0))
 
-        tot_norm += e_norm
-        tot_50   += e_50
-        tot_100  += e_100
-        tot_com  += e_com
+        if not excl:
+            tot_norm += e_norm
+            tot_50   += e_50
+            tot_100  += e_100
+            tot_com  += e_com
         tot_fr   += e_fr
         tot_tar  += e_tar
 

@@ -4485,8 +4485,11 @@ def _generar_pdf_cierre_completo(pid):
                     pdf.set_line_width(0.2)
                     pdf.ln(5)
             pdf.encabezado_empleado(emp["legajo"], emp["nombre"], emp.get("departamento", ""))
-            totales_emp = pdf.tabla_registros(emp.get("registros", []), excluido_ot=emp.get("excluido_ot", False))
+            excl = emp.get("excluido_ot", False)
+            totales_emp = pdf.tabla_registros(emp.get("registros", []), excluido_ot=excl)
             for k in totales_depto:
+                if excl and k in ("norm", "ot50", "ot100", "com"):
+                    continue
                 totales_depto[k] += totales_emp[k]
 
         if emps_sorted:
@@ -4507,6 +4510,7 @@ def _generar_pdf_cierre_completo(pid):
         cabecera_tabla(COLS_R, ANCH_R)
 
         emps_db_incl = [e for e in emps_db if str(e["legajo"]) not in LEGAJOS_EXCLUIR_INFORMES]
+        excluidos_ot_pdf = _cargar_excluidos_ot()
         tot_ot50 = tot_ot100 = timedelta(0)
         tot_com = tot_fr = tot_tard = tot_conf = 0
         for e in sorted(emps_db_incl, key=lambda x: int(x["legajo"]) if str(x["legajo"]).isdigit() else 0):
@@ -4517,8 +4521,11 @@ def _generar_pdf_cierre_completo(pid):
             fr    = e.get("francos", 0) or 0
             tard  = e.get("tardanzas", 0) or 0
             conf  = bool(e.get("confirmado"))
-            tot_ot50  += ot50; tot_ot100 += ot100
-            tot_com   += com;  tot_fr    += fr; tot_tard += tard
+            excl_pdf = str(e["legajo"]) in excluidos_ot_pdf
+            if not excl_pdf:
+                tot_ot50 += ot50; tot_ot100 += ot100
+                tot_com  += com
+            tot_fr += fr; tot_tard += tard
             if conf: tot_conf += 1
             pdf.cell(ANCH_R[0], 6, str(e["legajo"]), 1, 0, "C")
             pdf.cell(ANCH_R[1], 6, e.get("nombre", ""), 1, 0, "L")
