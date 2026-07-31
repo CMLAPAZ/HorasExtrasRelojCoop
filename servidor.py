@@ -3488,13 +3488,23 @@ def admin_desglose_generados(legajo):
     depto = emp["departamento"] if emp else None
     depto_norm = _normalizar_departamento_web(depto) if depto else None
 
+    corte_fecha = _parse_fecha(str(fecha_corte)[:10])
     gen_parcial_detalle = None
     gen_parcial_total = 0
+    dias_excluidos_por_corte = []
     if depto_norm:
         entradas = [e for e in _calcular_periodo(0, 999999, depto_norm) if e["legajo"] == legajo]
-        gen_parcial_total = sum(e.get("francos") or 0 for e in entradas)
+        for e in entradas:
+            for dia in e.get("dias", []):
+                if not dia.get("franco"):
+                    continue
+                f = _parse_fecha(dia.get("fecha", ""))
+                if f and corte_fecha and f <= corte_fecha:
+                    dias_excluidos_por_corte.append(dia.get("fecha"))
+                else:
+                    gen_parcial_total += 1
         gen_parcial_detalle = [
-            {"semanas": e.get("semanas"), "francos": e.get("francos"), "dias": e.get("dias")}
+            {"semanas": e.get("semanas"), "francos_sin_filtrar": e.get("francos"), "dias": e.get("dias")}
             for e in entradas
         ]
 
@@ -3513,6 +3523,7 @@ def admin_desglose_generados(legajo):
         "gen_extra_contado": gen_extra_contado,
         "francos_semana_parcial_residual": [dict(r) for r in parcial_legajo],
         "gen_parcial_calculado_en_vivo": gen_parcial_total,
+        "gen_parcial_dias_de_franco_excluidos_por_ser_anteriores_al_corte": dias_excluidos_por_corte,
         "gen_parcial_detalle": gen_parcial_detalle,
         "generados_total_esperado": gen_periodos_total + gen_extra_contado + gen_parcial_total,
         "saldo_actual_en_pantalla": saldos_actual,
@@ -7019,6 +7030,14 @@ def _calcular_saldos():
     # quedar con filas residuales de semanas ya cerradas (duplicando lo que
     # el cierre ya dejó en el saldo). Calculando siempre en vivo, esta
     # pantalla nunca puede desincronizarse de lo que muestra Períodos.
+    #
+    # _leer_historial() (adentro de _calcular_periodo) puede "readoptar" por
+    # fecha una confirmación archivada de un cierre YA cerrado (no anulado) si
+    # una semana nueva activa se solapa en fechas con ese cierre viejo -- ver
+    # _resolver_semana_confirmacion(). Sin filtrar por fecha acá, esos días ya
+    # absorbidos en periodo_empleados.francos se sumarían dos veces. Por eso
+    # se cuenta día por día y sólo los posteriores al fecha_corte de CADA
+    # empleado (el mismo criterio que ya usa gen_periodos_por_emp arriba).
     empleados_conocidos_cache = _empleados_conocidos()
     deptos_activos = sorted({
         e["departamento"] for e in empleados_conocidos_cache if e.get("departamento")
@@ -7028,7 +7047,17 @@ def _calcular_saldos():
         depto_norm = _normalizar_departamento_web(depto)
         for e in _calcular_periodo(0, 999999, depto_norm):
             leg = e["legajo"]
-            gen_parcial[leg] = gen_parcial.get(leg, 0) + (e.get("francos") or 0)
+            corte_str = iniciales.get(leg, {}).get("fecha_corte", "2026-05-21") or "2026-05-21"
+            corte_fecha = _parse_fecha(str(corte_str)[:10])
+            dias_nuevos = 0
+            for dia in e.get("dias", []):
+                if not dia.get("franco"):
+                    continue
+                f = _parse_fecha(dia.get("fecha", ""))
+                if f and corte_fecha and f <= corte_fecha:
+                    continue
+                dias_nuevos += 1
+            gen_parcial[leg] = gen_parcial.get(leg, 0) + dias_nuevos
 
     resultado = []
     for emp in empleados_conocidos_cache:

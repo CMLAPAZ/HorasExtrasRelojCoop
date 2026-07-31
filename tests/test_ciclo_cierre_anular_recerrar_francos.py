@@ -16,6 +16,7 @@ pantalla lo que el cierre ya había dejado en el saldo. Usar _calcular_saldos()
 para grabar el saldo de un cierre puntual mezcla datos de otro período/mes en
 curso -- ver CLAUDE.md y el plan de rediseño de cierre de francos.
 """
+import json
 import sqlite3
 
 import pytest
@@ -155,6 +156,56 @@ def test_calcular_saldos_no_duplica_generados_con_parcial_residual_de_periodo_ya
     saldos = servidor._calcular_saldos()
     saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
     assert saldo_leg["generados"] == 3
+
+
+def test_calcular_saldos_no_duplica_generados_con_confirmacion_archivada_readoptada_por_fecha(db_temporal):
+    """Reproduce el incidente real de producción (31/07/2026, Castrillón
+    +6 en vez de +3): _resolver_semana_confirmacion() reamarra por fecha una
+    confirmación archivada de un cierre YA cerrado (no anulado) cuando una
+    semana nueva activa se solapa en fechas con ese cierre viejo -- ver su
+    docstring y el de _archivos_confirmacion(). Sin filtrar por fecha_corte
+    por-empleado en _calcular_saldos(), ese día ya absorbido en el cierre
+    (reflejado en el saldo_inicial actualizado automáticamente al cerrar) se
+    contaba una segunda vez porque _calcular_periodo() la "readopta" como si
+    fuera del período activo en curso."""
+    conn = _conn(db_temporal)
+    leg, nombre = "121", "CASTRILLON DIEGO"
+
+    cerrado_en = "2026-07-03T15:18:04.000000"
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, fecha_corte, cargado_en) "
+        "VALUES (?,?,13,?,?)",
+        (leg, nombre, cerrado_en, cerrado_en),
+    )
+    _crear_periodo(conn, cerrado_en, "Redes", leg, nombre, francos=3)
+    conn.commit()
+
+    # Semana activa nueva (período de julio en curso), con un rango de
+    # fechas que se solapa con el cierre de junio ya cerrado.
+    servidor._guardar_metadata({
+        "semana_actual": 99,
+        "semanas": [{
+            "numero": 99, "num_depto": 5, "departamento": "Redes",
+            "fecha_desde": "2026-06-01", "fecha_hasta": "2026-07-31",
+            "archivo": "semana_99.csv",
+        }],
+    })
+
+    # Confirmación archivada del cierre de junio, con su número de semana
+    # original (1) que ya no existe en la metadata activa -- por eso
+    # _resolver_semana_confirmacion() cae al fallback por fecha.
+    servidor.CONFIRM_DIR.mkdir(exist_ok=True, parents=True)
+    (servidor.CONFIRM_DIR / "vieja.json").write_text(json.dumps({
+        "legajo": leg, "nombre": nombre, "departamento": "Redes", "semana": 1,
+        "confirmado_en": "2026-06-16T10:00:00",
+        "dias": [{"fecha": "2026-06-15", "franco": 1, "ot50": "00:00:00",
+                   "ot100": "00:00:00", "comida": 0, "tiene_ot": True}],
+        "totales": {"ot50": "0h", "ot100": "0h", "comidas": 0, "francos": 1, "tardanzas": 0},
+    }, ensure_ascii=False), encoding="utf-8")
+
+    saldos = servidor._calcular_saldos()
+    saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
+    assert saldo_leg["generados"] == 0
 
 
 def test_delta_francos_cierre_solo_cuenta_lo_propio_del_pid(db_temporal):
