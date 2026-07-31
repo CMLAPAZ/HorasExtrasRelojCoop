@@ -108,7 +108,7 @@ reporte_saldos_francos.py → reportes/reporte_francos_{DEPTO}_{FECHA}.pdf → e
 | `francos_semana_manual` | Francos semanales de Guardias/Internet/Telefonía/Ingenieros cargados desde el formulario web; **+cierre_francos_id** |
 | `francos_semana_parcial` | Snapshot del período activo guardado cada viernes (borrado al cerrar el período) |
 | `francos_cierre_detalle` | Copia de francos_tomados al momento de cada cierre (historial inmutable) |
-| `cierres_francos` | Cierres manuales (Guardias/Ingenieros): **+base_anterior** (JSON snapshot reversible), **+fecha_anulacion**, **+motivo_anulacion**, **+usuario_anulacion** |
+| `cierres_francos` | Cierres manuales (deptos sin fichadas: Guardias/Internet/Telefonía/Ingenieros — la ruta `/francos/cierre/nuevo` es genérica por depto, el selector `cf-depto` de `periodos_historial.html` no restringe cuáles): **+base_anterior** (JSON snapshot reversible), **+fecha_anulacion**, **+motivo_anulacion**, **+usuario_anulacion** |
 | `supervisores` | nombre, email, departamentos (JSON array), activo |
 | `empleados_extra` | Empleados de deptos sin fichadas: Guardias, Internet, Telefonía, **Ingenieros** + Karen Soto (Redes) |
 
@@ -762,6 +762,34 @@ El botón "Guardar Franco" del panel supervisor (`/semanas/<n>/guardar-francos`,
 `/semanas/guardar-francos-todos`) sigue escribiendo en `francos_semana_parcial`
 sin error, pero esa tabla quedó huérfana — ya no la lee ningún cálculo de
 saldo, solo las rutas de diagnóstico. Pendiente decidir si se deprecia.
+
+### Seguimiento: el fix de Redes NO cubre a los deptos de cierre manual
+
+El bug de "Generados" duplicado (arriba) es específico del mecanismo
+`periodos` (fichadas: Redes, Administración) — depende de
+`_resolver_semana_confirmacion()`, que solo existe para deptos con
+confirmaciones/tokens. Guardias, Internet, Telefonía e Ingenieros no pasan
+por ahí: cargan francos vía `francos_semana_manual`/`francos_generados` y
+cierran con el mecanismo separado `cierres_francos`. Ese bug puntual no
+puede reproducirse ahí.
+
+Pero se detectó que **`/admin/verificar-cadena-saldos-francos` y
+`/admin/auditoria-completa-saldos-francos` excluyen a estos 4 deptos**
+(los marcan `no_aplicable` porque solo caminan la cadena de `periodos`) —
+nunca hubo forma automática de validar la cadena de cierres manuales.
+Se agregó el equivalente:
+
+- `GET /admin/verificar-cadena-cierres-francos` (solo lectura): recorre
+  `cierres_francos` ACTIVOS por depto, compara el `saldo_final` guardado en
+  `saldo_anterior` de cada cierre contra el `base_anterior` (foto pre-cierre)
+  del siguiente, y el último cierre de cada legajo contra
+  `francos_saldo_inicial` en vivo. Reporta `desajustes` (huecos reales en la
+  cadena) y `no_aplicables` (legajos donde otro mecanismo más reciente tomó
+  la posta, ej. volvió a fichadas).
+- Pendiente: correrla contra la DB de PythonAnywhere (la local no tiene
+  filas en `cierres_francos`) para confirmar si Telefonía tiene un
+  desajuste real y, si lo hay, investigar la causa puntual — no asumir que
+  es el mismo bug de Redes.
 
 ## Notas importantes
 
