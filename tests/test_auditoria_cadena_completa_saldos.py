@@ -362,3 +362,103 @@ def test_revertir_y_recorregir_incidente_julio2026(db_temporal, client, monkeypa
 
     assert saldo_100 == 5, "debe revertirse al valor correcto conocido"
     assert saldo_30 == 15, "debe recalcularse solo con la devolucion incluida (13+2)"
+
+
+# ── fecha_corte atrasada (incidente real del 31/07/2026: Generados duplicado) ──
+
+def test_sincronizar_fecha_corte_detecta_y_corrige_atraso(db_temporal, client):
+    """Reproduce el incidente: fecha_corte quedo en el cierre viejo (#2) en
+    vez de avanzar al ultimo cierre activo (#4) -- por eso _calcular_saldos
+    volvia a contar el cierre #4 como "Generados" aunque ya estaba absorbido
+    en el saldo."""
+    conn = _conn(db_temporal)
+    _crear_cierre(conn, "2026-06-08 10:17:49", {"40": {"saldo": 5, "gen_extra_al_corte": 0}},
+                  [("40", "Empleado Corte Atrasado", "redes", 3, 0)])
+    _crear_cierre(conn, "2026-07-03 15:18:04", {"40": {"saldo": 8, "gen_extra_al_corte": 0}},
+                  [("40", "Empleado Corte Atrasado", "redes", 2, 0)])
+    # fecha_corte quedo mal: apunta al cierre viejo, no al ultimo (#4)
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en, "
+        "tomados_al_corte, gen_extra_al_corte, fecha_corte) VALUES (?,?,?,?,?,?,?,?)",
+        ("40", "Empleado Corte Atrasado", 10, "test", "2026-07-03 15:18:04",
+         0, 0, "2026-06-08 10:17:49"),
+    )
+    conn.commit()
+    conn.close()
+
+    # Diagnostico puro
+    conn = _conn(db_temporal)
+    diag = servidor._fecha_corte_correcta_legajo(conn, "40")
+    conn.close()
+    assert diag["desactualizado"] is True
+    assert diag["fecha_corte_correcta"] == "2026-07-03 15:18:04"
+
+    # Dry-run no escribe
+    resp = client.get("/admin/sincronizar-fecha-corte-saldos")
+    data = resp.get_json()
+    assert data["aplicado"] is False
+    assert data["total_desactualizados"] == 1
+
+    conn = _conn(db_temporal)
+    corte_sin_confirmar = conn.execute(
+        "SELECT fecha_corte FROM francos_saldo_inicial WHERE legajo='40'"
+    ).fetchone()["fecha_corte"]
+    conn.close()
+    assert corte_sin_confirmar == "2026-06-08 10:17:49", "dry-run no debe escribir"
+
+    # Confirmado: corrige y deja historial
+    resp = client.get("/admin/sincronizar-fecha-corte-saldos?confirmar=si")
+    data = resp.get_json()
+    assert data["aplicado"] is True
+    assert "backup" in data
+
+    conn = _conn(db_temporal)
+    fila = conn.execute(
+        "SELECT saldo, fecha_corte FROM francos_saldo_inicial WHERE legajo='40'"
+    ).fetchone()
+    historial = conn.execute(
+        "SELECT * FROM francos_fecha_corte_historial WHERE legajo='40'"
+    ).fetchall()
+    conn.close()
+
+    assert fila["fecha_corte"] == "2026-07-03 15:18:04"
+    assert fila["saldo"] == 10, "no debe tocar el saldo, solo fecha_corte"
+    assert len(historial) == 1
+    assert historial[0]["fecha_corte_anterior"] == "2026-06-08 10:17:49"
+    assert historial[0]["fecha_corte_nueva"] == "2026-07-03 15:18:04"
+
+
+def test_corregir_fecha_corte_no_regresa_corte_mas_reciente(db_temporal, client):
+    """Reproduce la causa raiz del incidente: /admin/corregir-fecha-corte/<pid>
+    (pensada para un solo cierre puntual) no debe pisar con una fecha VIEJA
+    el corte de un legajo que ya avanzo a un cierre mas reciente."""
+    conn = _conn(db_temporal)
+    pid_viejo = _crear_cierre(
+        conn, "2026-06-08 10:17:49", {"40": {"saldo": 5, "gen_extra_al_corte": 0}},
+        [("40", "Empleado Ok", "redes", 3, 0)]
+    )
+    _crear_cierre(conn, "2026-07-03 15:18:04", {"40": {"saldo": 8, "gen_extra_al_corte": 0}},
+                  [("40", "Empleado Ok", "redes", 2, 0)])
+    # fecha_corte YA esta bien, apuntando al cierre mas reciente (#4)
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en, "
+        "tomados_al_corte, gen_extra_al_corte, fecha_corte) VALUES (?,?,?,?,?,?,?,?)",
+        ("40", "Empleado Ok", 10, "test", "2026-07-03 15:18:04", 0, 0, "2026-07-03 15:18:04"),
+    )
+    conn.commit()
+    conn.close()
+
+    # Alguien corre /admin/corregir-fecha-corte sobre el cierre VIEJO (#2) --
+    # antes del fix, esto atrasaba fecha_corte al valor de ese cierre viejo.
+    resp = client.post(f"/admin/corregir-fecha-corte/{pid_viejo}?confirmar=si")
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert "40" in data["diagnostico"]["omitidos_por_tener_corte_mas_reciente"]
+    assert not any(c["legajo"] == "40" for c in data["diagnostico"]["cambios"])
+
+    conn = _conn(db_temporal)
+    fecha_corte_final = conn.execute(
+        "SELECT fecha_corte FROM francos_saldo_inicial WHERE legajo='40'"
+    ).fetchone()["fecha_corte"]
+    conn.close()
+    assert fecha_corte_final == "2026-07-03 15:18:04", "no debe atrasarse al cierre viejo"

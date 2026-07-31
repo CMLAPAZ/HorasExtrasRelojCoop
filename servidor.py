@@ -351,6 +351,19 @@ def _init_db():
                 aplicado_en         TEXT DEFAULT ''
             )
         """)
+        # Historial de cambios de fecha_corte -- trazabilidad para poder ver
+        # SIEMPRE por qué cambió (o no debería haber cambiado) el corte de
+        # un legajo. Ver _registrar_cambio_fecha_corte.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_fecha_corte_historial (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo                TEXT NOT NULL,
+                fecha_corte_anterior  TEXT,
+                fecha_corte_nueva     TEXT NOT NULL,
+                motivo                TEXT NOT NULL,
+                cambiado_en           TEXT NOT NULL
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -3277,6 +3290,107 @@ def _auditoria_completa_saldos_francos(conn):
     return resultados, con_diferencia, no_aplicables
 
 
+def _registrar_cambio_fecha_corte(conn, legajo, anterior, nueva, motivo):
+    """Deja constancia en francos_fecha_corte_historial de cada cambio de
+    fecha_corte -- para poder ver siempre, más adelante, por qué cambió (o
+    detectar si algo lo cambió sin deber hacerlo)."""
+    conn.execute(
+        "INSERT INTO francos_fecha_corte_historial "
+        "(legajo, fecha_corte_anterior, fecha_corte_nueva, motivo, cambiado_en) "
+        "VALUES (?,?,?,?,?)",
+        (legajo, anterior, nueva, motivo, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    )
+
+
+def _fecha_corte_correcta_legajo(conn, legajo):
+    """El fecha_corte de un legajo SIEMPRE debe ser el cerrado_en del cierre
+    ACTIVO (no anulado) más reciente de 'periodos' en el que participó --
+    nunca uno anterior. Si fecha_corte quedó atrasado (ej. apuntando a un
+    cierre viejo en vez del último), _calcular_saldos() vuelve a contar como
+    "Generados" un cierre que ya está absorbido en el saldo, duplicándolo.
+
+    Retorna {legajo, fecha_corte_actual, fecha_corte_correcta, desactualizado}
+    o None si el legajo no tiene ningún cierre en periodo_empleados."""
+    ultimo = conn.execute("""
+        SELECT MAX(p.cerrado_en) as cerrado_en
+        FROM periodos p
+        JOIN periodo_empleados pe ON pe.periodo_id = p.id
+        WHERE pe.legajo = ? AND COALESCE(p.estado,'ACTIVO') <> 'ANULADO'
+    """, (legajo,)).fetchone()
+    if not ultimo or not ultimo["cerrado_en"]:
+        return None
+    fecha_corte_correcta = ultimo["cerrado_en"]
+    row = conn.execute(
+        "SELECT fecha_corte FROM francos_saldo_inicial WHERE legajo=?", (legajo,)
+    ).fetchone()
+    fecha_corte_actual = row["fecha_corte"] if row else None
+    return {
+        "legajo": legajo,
+        "fecha_corte_actual": fecha_corte_actual or "",
+        "fecha_corte_correcta": fecha_corte_correcta,
+        "desactualizado": (fecha_corte_actual or "") < fecha_corte_correcta,
+    }
+
+
+@app.route("/admin/sincronizar-fecha-corte-saldos")
+def admin_sincronizar_fecha_corte_saldos():
+    """Solo lectura por defecto: para TODOS los legajos con al menos un
+    cierre en 'periodos', verifica que francos_saldo_inicial.fecha_corte
+    apunte al cierre ACTIVO más reciente (no a uno anterior). Si quedó
+    atrasado, _calcular_saldos() (pantalla de saldos en vivo) vuelve a
+    sumar en "Generados" un cierre que ya está absorbido en el saldo,
+    duplicándolo -- sin tocar el saldo en sí, que puede ya estar correcto.
+
+    Con ?confirmar=si: hace backup y actualiza SOLO la columna fecha_corte
+    (nunca saldo, tomados_al_corte ni gen_extra_al_corte) de los legajos
+    desactualizados, avanzándola al cierre correcto. Nunca puede atrasar
+    fecha_corte, solo adelantarla."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        legajos = [r["legajo"] for r in conn.execute(
+            "SELECT DISTINCT legajo FROM periodo_empleados"
+        ).fetchall()]
+        desactualizados = []
+        for leg in legajos:
+            r = _fecha_corte_correcta_legajo(conn, leg)
+            if r and r["desactualizado"]:
+                desactualizados.append(r)
+
+    if request.args.get("confirmar") != "si":
+        return jsonify({
+            "aplicado": False,
+            "total_desactualizados": len(desactualizados),
+            "desactualizados": desactualizados,
+        })
+
+    if not desactualizados:
+        return jsonify({"aplicado": True, "mensaje": "Nada para corregir.", "desactualizados": []})
+
+    DATOS_DIR.mkdir(exist_ok=True)
+    backup_path = (
+        DATOS_DIR / f"cierres_backup_pre_sincronizar_corte_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    )
+    shutil.copy2(DB_FILE, backup_path)
+
+    with _get_db() as conn:
+        for r in desactualizados:
+            conn.execute(
+                "UPDATE francos_saldo_inicial SET fecha_corte=? WHERE legajo=?",
+                (r["fecha_corte_correcta"], r["legajo"]),
+            )
+            _registrar_cambio_fecha_corte(
+                conn, r["legajo"], r["fecha_corte_actual"], r["fecha_corte_correcta"],
+                "Sincronización automática: fecha_corte atrasada respecto del "
+                "último cierre activo, causaba doble conteo en Generados",
+            )
+        conn.commit()
+
+    return jsonify({
+        "aplicado": True, "backup": str(backup_path), "desactualizados": desactualizados,
+    })
+
+
 @app.route("/admin/auditoria-completa-saldos-francos")
 def admin_auditoria_completa_saldos_francos():
     """Solo lectura: para TODOS los legajos con al menos un cierre en el
@@ -5976,7 +6090,13 @@ def admin_corregir_fecha_corte(pid):
     UPDATE de una sola columna (fecha_corte) en francos_saldo_inicial,
     acotado a los legajos de este cierre. No toca saldo, tomados_al_corte,
     gen_extra_al_corte, nota ni cargado_en, y no afecta legajos de otros
-    cierres."""
+    cierres.
+
+    IMPORTANTE (fix tras el incidente del 31/07/2026): esta ruta corrige
+    fecha_corte a la fecha de ESTE cierre #pid puntual -- si un legajo ya
+    tiene fecha_corte MÁS RECIENTE (de un cierre posterior), esta ruta ya
+    NO lo toca, para no atrasarlo por error y hacer que _calcular_saldos()
+    vuelva a contar como "Generados" un cierre posterior ya absorbido."""
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
 
     with _get_db() as conn:
@@ -6002,7 +6122,11 @@ def admin_corregir_fecha_corte(pid):
     cambios = [
         {"legajo": leg, "fecha_corte_actual": actuales[leg], "fecha_corte_nuevo": cerrado_en}
         for leg in legajos
-        if leg in actuales and actuales[leg] != cerrado_en
+        if leg in actuales and actuales[leg] != cerrado_en and actuales[leg] < cerrado_en
+    ]
+    omitidos_mas_recientes = [
+        leg for leg in legajos
+        if leg in actuales and actuales[leg] > cerrado_en
     ]
     sin_registro = [leg for leg in legajos if leg not in actuales]
 
@@ -6012,6 +6136,7 @@ def admin_corregir_fecha_corte(pid):
         "cerrado_en": cerrado_en,
         "legajos": legajos,
         "cambios": cambios,
+        "omitidos_por_tener_corte_mas_reciente": omitidos_mas_recientes,
         "legajos_sin_registro_saldo_inicial": sin_registro,
     }
 
@@ -6033,6 +6158,10 @@ def admin_corregir_fecha_corte(pid):
         for c in cambios:
             conn.execute("UPDATE francos_saldo_inicial SET fecha_corte=? WHERE legajo=?",
                           (cerrado_en, c["legajo"]))
+            _registrar_cambio_fecha_corte(
+                conn, c["legajo"], c["fecha_corte_actual"], cerrado_en,
+                f"admin_corregir_fecha_corte para cierre #{pid}",
+            )
         conn.commit()
 
     return jsonify({"ok": True, "backup": str(backup_path), "cambios": cambios})
