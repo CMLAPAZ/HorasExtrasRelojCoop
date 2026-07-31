@@ -3091,6 +3091,158 @@ def admin_verificar_cadena_saldos_francos():
     })
 
 
+def _recalcular_cadena_completa_legajo(conn, legajo):
+    """Recorre TODA la cadena de cierres (mecanismo `periodos`, no anulados)
+    de un legajo, en orden cronológico -- no solo un par consecutivo como
+    hace admin_verificar_cadena_saldos_francos -- y recalcula el saldo que
+    debería tener HOY a partir del snapshot más antiguo conocido
+    (saldo_anterior del primer cierre) más el delta propio de cada cierre
+    (_delta_francos_cierre, la misma fuente inmutable que usa el chequeo
+    pareado). Compara el resultado contra el valor actual en vivo de
+    francos_saldo_inicial. Retorna None si el legajo no tiene ningún cierre
+    en periodo_empleados (no aplica, ej. deptos sin fichadas)."""
+    rows = [dict(r) for r in conn.execute("""
+        SELECT DISTINCT p.id, p.cerrado_en, p.saldo_anterior, pe.departamento, pe.nombre
+        FROM periodos p
+        JOIN periodo_empleados pe ON pe.periodo_id = p.id
+        WHERE pe.legajo = ? AND COALESCE(p.estado,'ACTIVO') <> 'ANULADO'
+        ORDER BY p.cerrado_en
+    """, (legajo,)).fetchall()]
+    if not rows:
+        return None
+
+    def _sa_legajo(saldo_anterior_json):
+        try:
+            return json.loads(saldo_anterior_json or "{}").get(legajo, {})
+        except Exception:
+            return {}
+
+    base = _sa_legajo(rows[0]["saldo_anterior"])
+    running = base.get("saldo", 0)
+    gen_extra_prev = base.get("gen_extra_al_corte", 0)
+
+    saldo_actual_row = conn.execute(
+        "SELECT saldo, gen_extra_al_corte, nombre FROM francos_saldo_inicial WHERE legajo=?",
+        (legajo,)
+    ).fetchone()
+    saldo_actual_declarado = saldo_actual_row["saldo"] if saldo_actual_row else None
+
+    for i, r in enumerate(rows):
+        delta = _delta_francos_cierre(conn, r["id"], {legajo}).get(
+            legajo, {"generados_periodo": 0, "tomados_periodo": 0}
+        )
+        if i + 1 < len(rows):
+            gen_extra_after = _sa_legajo(rows[i + 1]["saldo_anterior"]).get(
+                "gen_extra_al_corte", gen_extra_prev
+            )
+        else:
+            gen_extra_after = (
+                saldo_actual_row["gen_extra_al_corte"] if saldo_actual_row else gen_extra_prev
+            )
+        gen_extra_delta = gen_extra_after - gen_extra_prev
+        running = running + delta["generados_periodo"] + gen_extra_delta - delta["tomados_periodo"]
+        gen_extra_prev = gen_extra_after
+
+    nombre = (saldo_actual_row["nombre"] if saldo_actual_row else None) or rows[-1].get("nombre", "")
+
+    return {
+        "legajo": legajo,
+        "nombre": nombre,
+        "departamento": rows[-1].get("departamento", ""),
+        "saldo_actual_declarado": saldo_actual_declarado,
+        "saldo_recalculado_completo": running,
+        "diferencia": (
+            (saldo_actual_declarado - running) if saldo_actual_declarado is not None else None
+        ),
+        "ultimo_cierre_id": rows[-1]["id"],
+        "cantidad_cierres": len(rows),
+    }
+
+
+def _auditoria_completa_saldos_francos(conn):
+    """Corre _recalcular_cadena_completa_legajo para todos los legajos con
+    al menos un cierre en periodo_empleados. Devuelve (resultados, con_diferencia)."""
+    legajos = [r["legajo"] for r in conn.execute(
+        "SELECT DISTINCT legajo FROM periodo_empleados"
+    ).fetchall()]
+    resultados = []
+    for leg in legajos:
+        r = _recalcular_cadena_completa_legajo(conn, leg)
+        if r:
+            resultados.append(r)
+    con_diferencia = [r for r in resultados if r["diferencia"]]
+    con_diferencia.sort(key=lambda r: -abs(r["diferencia"]))
+    return resultados, con_diferencia
+
+
+@app.route("/admin/auditoria-completa-saldos-francos")
+def admin_auditoria_completa_saldos_francos():
+    """Solo lectura: para TODOS los legajos con al menos un cierre en el
+    mecanismo `periodos`, recalcula la cadena COMPLETA desde el primer
+    cierre hasta hoy y compara contra el saldo actual en vivo de
+    francos_saldo_inicial. A diferencia de
+    /admin/verificar-cadena-saldos-francos (que solo compara pares
+    consecutivos de cierres), esto mide el impacto real en el número que
+    se ve HOY en pantalla, para cualquier legajo, sin importar cuántos
+    cierres tenga en su historial. No escribe nada."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        resultados, con_diferencia = _auditoria_completa_saldos_francos(conn)
+    return jsonify({
+        "total_legajos_revisados": len(resultados),
+        "total_con_diferencia": len(con_diferencia),
+        "con_diferencia": con_diferencia,
+    })
+
+
+@app.route("/admin/corregir-cadena-completa-saldos-francos")
+def admin_corregir_cadena_completa_saldos_francos():
+    """Recalcula la cadena completa de TODOS los legajos (ver
+    /admin/auditoria-completa-saldos-francos). Sin ?confirmar=si es un
+    dry-run idéntico a la auditoría (no escribe nada). Con ?confirmar=si:
+    hace un backup de datos/cierres.db y corrige francos_saldo_inicial.saldo
+    (y nota) de cada legajo con diferencia para que coincida con el
+    recálculo completo. NO toca fecha_corte, tomados_al_corte,
+    gen_extra_al_corte, periodos, cierres_francos ni periodo_empleados --
+    esas columnas ya reflejan correctamente el último cierre aplicado; lo
+    único corrupto era el saldo base heredado de una rotura anterior en la
+    cadena."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        _resultados, con_diferencia = _auditoria_completa_saldos_francos(conn)
+
+    if request.args.get("confirmar") != "si":
+        return jsonify({
+            "aplicado": False,
+            "total_con_diferencia": len(con_diferencia),
+            "con_diferencia": con_diferencia,
+        })
+
+    if not con_diferencia:
+        return jsonify({"aplicado": True, "mensaje": "Nada para corregir.", "con_diferencia": []})
+
+    DATOS_DIR.mkdir(exist_ok=True)
+    backup_path = DATOS_DIR / f"cierres_backup_pre_cadena_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    shutil.copy2(DB_FILE, backup_path)
+
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _get_db() as conn:
+        for r in con_diferencia:
+            nota = (
+                f"Corrección automática cadena completa {ahora[:10]}: "
+                f"declarado {r['saldo_actual_declarado']}, recalculado {r['saldo_recalculado_completo']}"
+            )
+            conn.execute(
+                "UPDATE francos_saldo_inicial SET saldo=?, nota=? WHERE legajo=?",
+                (r["saldo_recalculado_completo"], nota, r["legajo"]),
+            )
+            r["corregido"] = True
+        conn.commit()
+
+    return jsonify({"aplicado": True, "backup": str(backup_path), "con_diferencia": con_diferencia})
+
+
 @app.route("/admin/reemplazar-csv-semana/<int:n>", methods=["GET", "POST"])
 def admin_reemplazar_csv_semana(n):
     """Reemplaza semanas/semana_N.csv (el CSV interno que el sistema ya
