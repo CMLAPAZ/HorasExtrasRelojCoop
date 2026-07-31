@@ -6595,6 +6595,96 @@ def admin_ajuste_saldo_guardar():
     return jsonify({"ok": True, "nota": nota_nueva, "saldo": nuevo_saldo})
 
 
+# Legajos de Ingenieros que la primera version de la auditoria de cadena
+# completa (antes de excluir deptos sin fichadas) corrigio por error el
+# 31/07/2026, usando un cierre viejo de Redes que ya no les corresponde.
+# Valores correctos = los que tenian en francos_saldo_inicial ANTES de esa
+# corrección. Ver [[project_bug_saldo_francos_redes]] / CLAUDE.md.
+_REVERTIR_INGENIEROS_JUL2026 = {"100": 5, "101": 19}
+
+
+@app.route("/admin/revertir-y-recorregir-cadena-saldos-julio2026")
+def admin_revertir_y_recorregir_cadena_saldos_julio2026():
+    """Ruta puntual de una sola vez para deshacer el incidente del
+    31/07/2026: la primera versión de /admin/corregir-cadena-completa-saldos-francos
+    (a) tocó por error a Mancioni (100) y Gatti (101), que son Ingenieros y
+    no deberían haberse recalculado por la cadena vieja de 'periodos' de
+    Redes, y (b) no consideraba las devoluciones de francos_anulaciones_cerrados,
+    por lo que "corrigió" a Labanca (143) y Barrientos Cristian (145) que en
+    realidad ya estaban bien.
+
+    Con el código ya arreglado (ver _recalcular_cadena_completa_legajo):
+    1. Revierte 100 y 101 a sus valores conocidos de antes del incidente
+       (hardcodeados arriba, en _REVERTIR_INGENIEROS_JUL2026).
+    2. Vuelve a correr la auditoría completa (ya con el fix de devoluciones
+       y deptos sin fichadas) y aplica cualquier corrección pendiente --
+       esto debería devolver a 143/145 a sus valores correctos (39/10)
+       automáticamente, sin necesidad de tocarlos a mano.
+
+    Sin ?confirmar=si es un dry-run (no escribe nada). Hace backup antes de
+    escribir. Es seguro correrla más de una vez -- si ya no hay nada para
+    corregir, no hace nada."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        reversiones = []
+        for leg, saldo_correcto in _REVERTIR_INGENIEROS_JUL2026.items():
+            row = conn.execute(
+                "SELECT saldo, nombre FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+            ).fetchone()
+            if row and row["saldo"] != saldo_correcto:
+                reversiones.append({
+                    "legajo": leg, "nombre": row["nombre"],
+                    "saldo_actual": row["saldo"], "saldo_correcto": saldo_correcto,
+                })
+        _resultados, con_diferencia, no_aplicables = _auditoria_completa_saldos_francos(conn)
+
+    if request.args.get("confirmar") != "si":
+        return jsonify({
+            "aplicado": False,
+            "reversiones_ingenieros_pendientes": reversiones,
+            "correcciones_cadena_pendientes": con_diferencia,
+            "total_no_aplicables": len(no_aplicables),
+        })
+
+    if not reversiones and not con_diferencia:
+        return jsonify({"aplicado": True, "mensaje": "Nada pendiente, ya está todo correcto."})
+
+    DATOS_DIR.mkdir(exist_ok=True)
+    backup_path = (
+        DATOS_DIR / f"cierres_backup_pre_revertir_incidente_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    )
+    shutil.copy2(DB_FILE, backup_path)
+
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _get_db() as conn:
+        for r in reversiones:
+            conn.execute(
+                "UPDATE francos_saldo_inicial SET saldo=?, nota=? WHERE legajo=?",
+                (r["saldo_correcto"],
+                 f"Revertido {ahora[:10]}: correccion erronea de cadena completa aplicada "
+                 "sobre cierre viejo de Redes (legajo ya es Ingenieros)",
+                 r["legajo"]),
+            )
+        for r in con_diferencia:
+            conn.execute(
+                "UPDATE francos_saldo_inicial SET saldo=?, nota=? WHERE legajo=?",
+                (r["saldo_recalculado_completo"],
+                 f"Corrección automática cadena completa {ahora[:10]} (con devoluciones): "
+                 f"declarado {r['saldo_actual_declarado']}, recalculado {r['saldo_recalculado_completo']}",
+                 r["legajo"]),
+            )
+        conn.commit()
+
+    return jsonify({
+        "aplicado": True,
+        "backup": str(backup_path),
+        "reversiones_ingenieros": reversiones,
+        "correcciones_cadena": con_diferencia,
+        "total_no_aplicables": len(no_aplicables),
+    })
+
+
 @app.route("/admin/reset", methods=["POST"])
 def admin_reset():
     if not _autenticado(): return jsonify({"error": "No autorizado"}), 401

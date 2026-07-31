@@ -312,3 +312,53 @@ def test_verificar_cadena_pareada_tampoco_reporta_devolucion_como_desajuste(db_t
     data = resp.get_json()
     assert data["cadena_sana"] is True
     assert data["desajustes"] == []
+
+
+def test_revertir_y_recorregir_incidente_julio2026(db_temporal, client, monkeypatch):
+    """Reproduce el incidente completo: 100/101 (Ingenieros) quedaron con un
+    saldo incorrecto por una corrección vieja, y 143-estilo (legajo "30" acá,
+    con devolución) también quedó mal por no considerar la devolución. La
+    ruta de una sola vez debe revertir ambos casos en un solo llamado."""
+    monkeypatch.setattr(servidor, "_REVERTIR_INGENIEROS_JUL2026", {"100": 5})
+
+    conn = _conn(db_temporal)
+    # Legajo 100: saldo incorrecto (simula la correccion erronea sobre
+    # Ingenieros), sin ningun cierre de periodos relacionado necesario para
+    # esta reversion puntual (se revierte por valor fijo, no por cadena).
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en, "
+        "tomados_al_corte, gen_extra_al_corte, fecha_corte) VALUES (?,?,?,?,?,?,?,?)",
+        ("100", "Mancioni Martin", 6, "correccion erronea", "2026-07-31 12:00:11", 0, 0, "2026-01-01"),
+    )
+
+    # Legajo "30": cadena con devolucion (como 143/145), pero el saldo en
+    # vivo quedo en el valor MAL recalculado (sin la devolucion) por la
+    # version vieja del codigo -- la re-correccion debe arreglarlo solo.
+    pid1 = _crear_cierre(
+        conn, "2026-06-01 10:00:00", {"30": {"saldo": 5, "gen_extra_al_corte": 0}},
+        [("30", "Empleado Devolucion", "redes", 3, 0)]
+    )
+    _anular_franco_cerrado(conn, "30", "Empleado Devolucion", 5, "2026-06-15 09:00:00", pid1)
+    _crear_cierre(
+        conn, "2026-07-01 10:00:00", {"30": {"saldo": 13, "gen_extra_al_corte": 0}},
+        [("30", "Empleado Devolucion", "redes", 2, 0)]
+    )
+    _set_saldo_inicial(conn, "30", "Empleado Devolucion", 10)  # mal: sin la devolucion (13+2=15 seria lo correcto)
+    conn.close()
+
+    resp = client.get("/admin/revertir-y-recorregir-cadena-saldos-julio2026?confirmar=si")
+    data = resp.get_json()
+    assert data["aplicado"] is True
+    assert "backup" in data
+
+    conn = _conn(db_temporal)
+    saldo_100 = conn.execute(
+        "SELECT saldo FROM francos_saldo_inicial WHERE legajo='100'"
+    ).fetchone()["saldo"]
+    saldo_30 = conn.execute(
+        "SELECT saldo FROM francos_saldo_inicial WHERE legajo='30'"
+    ).fetchone()["saldo"]
+    conn.close()
+
+    assert saldo_100 == 5, "debe revertirse al valor correcto conocido"
+    assert saldo_30 == 15, "debe recalcularse solo con la devolucion incluida (13+2)"
