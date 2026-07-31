@@ -3391,6 +3391,42 @@ def admin_sincronizar_fecha_corte_saldos():
     })
 
 
+@app.route("/admin/ver-francos-semana-parcial")
+def admin_ver_francos_semana_parcial():
+    """Solo lectura: contenido crudo de francos_semana_parcial (el snapshot
+    semanal del período activo, ver _calcular_saldos/gen_parcial), agrupado
+    por legajo. Sirve para ver si quedaron filas residuales de semanas ya
+    cerradas que no se borraron -- causa posible de que "Generados" duplique
+    algo ya absorbido en el saldo. Filtra opcionalmente por depto (?departamento=)
+    o legajo (?legajo=)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    departamento = request.args.get("departamento", "").strip()
+    legajo = request.args.get("legajo", "").strip()
+
+    sql = "SELECT * FROM francos_semana_parcial WHERE 1=1"
+    params = []
+    if departamento:
+        sql += " AND LOWER(departamento) LIKE ?"
+        params.append(f"%{departamento.lower()}%")
+    if legajo:
+        sql += " AND legajo=?"
+        params.append(legajo)
+    sql += " ORDER BY CAST(legajo AS INTEGER), semana_num"
+
+    with _get_db() as conn:
+        filas = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    por_legajo = {}
+    for f in filas:
+        por_legajo.setdefault(f["legajo"], []).append(f)
+
+    return jsonify({
+        "total_filas": len(filas),
+        "semanas_distintas": sorted({f["semana_num"] for f in filas}),
+        "por_legajo": por_legajo,
+    })
+
+
 @app.route("/admin/auditoria-completa-saldos-francos")
 def admin_auditoria_completa_saldos_francos():
     """Solo lectura: para TODOS los legajos con al menos un cierre en el
