@@ -3141,96 +3141,108 @@ def admin_semanas_de_periodo(pid):
     return jsonify({"periodo_id": pid, "fecha_desde": p["fecha_desde"], "fecha_hasta": p["fecha_hasta"], "semanas": semanas})
 
 
-@app.route("/admin/verificar-cadena-saldos-francos")
-def admin_verificar_cadena_saldos_francos():
-    """Solo lectura: para cada departamento, recorre los cierres de periodos
-    ACTIVOS (no anulados) ordenados por cerrado_en y, para cada legajo
-    presente en dos cierres consecutivos del mismo depto, recalcula el
-    "saldo final" que ese cierre debería haber dejado (usando SOLO datos
-    guardados de forma histórica e inmutable: periodos.saldo_anterior del
-    cierre y su propio _delta_francos_cierre) y lo compara contra el
-    saldo_anterior guardado del cierre siguiente.
+def _verificar_cadena_saldos_francos(conn):
+    """Para cada departamento, recorre los cierres de periodos ACTIVOS (no
+    anulados) ordenados por cerrado_en y, para cada legajo presente en dos
+    cierres consecutivos del mismo depto, recalcula el "saldo final" que
+    ese cierre debería haber dejado (usando SOLO datos guardados de forma
+    histórica e inmutable: periodos.saldo_anterior del cierre y su propio
+    _delta_francos_cierre) y lo compara contra el saldo_anterior guardado
+    del cierre siguiente.
 
     No depende del estado actual/en vivo de francos_generados ni de
     francos_semana_parcial -- por eso puede detectar si algún cierre
     histórico rompió la cadena, sin que un ajuste posterior lo enmascare.
-    Reporta cada desajuste encontrado; lista vacía significa que la cadena
-    está sana en todos los cierres activos."""
-    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    Retorna {cierres_consecutivos_revisados, cadena_sana, desajustes}.
+    Usada tanto por /admin/verificar-cadena-saldos-francos (solo lectura)
+    como automáticamente al final de /periodo/cerrar."""
+    rows = conn.execute("""
+        SELECT DISTINCT p.id, p.cerrado_en, p.saldo_anterior, pe.departamento
+        FROM periodos p
+        JOIN periodo_empleados pe ON pe.periodo_id = p.id
+        WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'
+    """).fetchall()
 
-    with _get_db() as conn:
-        rows = conn.execute("""
-            SELECT DISTINCT p.id, p.cerrado_en, p.saldo_anterior, pe.departamento
-            FROM periodos p
-            JOIN periodo_empleados pe ON pe.periodo_id = p.id
-            WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'
-        """).fetchall()
+    por_depto = {}
+    for r in rows:
+        depto = _normalizar_departamento_web(r["departamento"] or "")
+        por_depto.setdefault(depto, {})[r["id"]] = {
+            "cerrado_en": r["cerrado_en"] or "",
+            "saldo_anterior": json.loads(r["saldo_anterior"] or "{}"),
+        }
 
-        por_depto = {}
-        for r in rows:
-            depto = _normalizar_departamento_web(r["departamento"] or "")
-            por_depto.setdefault(depto, {})[r["id"]] = {
-                "cerrado_en": r["cerrado_en"] or "",
-                "saldo_anterior": json.loads(r["saldo_anterior"] or "{}"),
-            }
+    desajustes = []
+    cierres_revisados = 0
+    for depto, cierres in por_depto.items():
+        orden = sorted(cierres.keys(), key=lambda pid: cierres[pid]["cerrado_en"])
+        for i in range(len(orden) - 1):
+            pid_actual, pid_sig = orden[i], orden[i + 1]
+            sa_actual = cierres[pid_actual]["saldo_anterior"]
+            sa_sig    = cierres[pid_sig]["saldo_anterior"]
+            legajos_comunes = set(sa_actual.keys()) & set(sa_sig.keys())
+            if not legajos_comunes:
+                continue
+            cierres_revisados += 1
+            deltas = _delta_francos_cierre(conn, pid_actual, legajos_comunes)
+            cerrado_en_actual = cierres[pid_actual]["cerrado_en"]
+            cerrado_en_sig = cierres[pid_sig]["cerrado_en"]
+            for leg in sorted(legajos_comunes):
+                base = sa_actual[leg]
+                despues = sa_sig[leg]
+                d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
+                gen_extra_delta = despues.get("gen_extra_al_corte", 0) - base.get("gen_extra_al_corte", 0)
+                # Devoluciones de francos ya cerrados anulados en la ventana
+                # entre estos dos cierres -- _devolver_saldo_franco_anulado()
+                # las suma directo a francos_saldo_inicial.saldo en tiempo
+                # real, fuera del ciclo de cierre; sin esto, una devolución
+                # legítima se reporta como un desajuste falso.
+                devolucion = conn.execute(
+                    "SELECT COALESCE(SUM(dias),0) as total FROM francos_anulaciones_cerrados "
+                    "WHERE legajo=? AND anulado_en > ? AND anulado_en <= ?",
+                    (leg, cerrado_en_actual, cerrado_en_sig)
+                ).fetchone()["total"]
+                saldo_final_recalculado = (
+                    base.get("saldo", 0) + d["generados_periodo"] + gen_extra_delta
+                    - d["tomados_periodo"] + devolucion
+                )
+                if saldo_final_recalculado != despues.get("saldo", 0):
+                    desajustes.append({
+                        "departamento": depto,
+                        "legajo": leg,
+                        "cierre_anterior_id": pid_actual,
+                        "cierre_siguiente_id": pid_sig,
+                        "saldo_final_recalculado": saldo_final_recalculado,
+                        "saldo_anterior_declarado_en_siguiente": despues.get("saldo", 0),
+                    })
 
-        desajustes = []
-        cierres_revisados = 0
-        for depto, cierres in por_depto.items():
-            orden = sorted(cierres.keys(), key=lambda pid: cierres[pid]["cerrado_en"])
-            for i in range(len(orden) - 1):
-                pid_actual, pid_sig = orden[i], orden[i + 1]
-                sa_actual = cierres[pid_actual]["saldo_anterior"]
-                sa_sig    = cierres[pid_sig]["saldo_anterior"]
-                legajos_comunes = set(sa_actual.keys()) & set(sa_sig.keys())
-                if not legajos_comunes:
-                    continue
-                cierres_revisados += 1
-                deltas = _delta_francos_cierre(conn, pid_actual, legajos_comunes)
-                cerrado_en_actual = cierres[pid_actual]["cerrado_en"]
-                cerrado_en_sig = cierres[pid_sig]["cerrado_en"]
-                for leg in sorted(legajos_comunes):
-                    base = sa_actual[leg]
-                    despues = sa_sig[leg]
-                    d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
-                    gen_extra_delta = despues.get("gen_extra_al_corte", 0) - base.get("gen_extra_al_corte", 0)
-                    # Devoluciones de francos ya cerrados anulados en la ventana
-                    # entre estos dos cierres -- _devolver_saldo_franco_anulado()
-                    # las suma directo a francos_saldo_inicial.saldo en tiempo
-                    # real, fuera del ciclo de cierre; sin esto, una devolución
-                    # legítima se reporta como un desajuste falso.
-                    devolucion = conn.execute(
-                        "SELECT COALESCE(SUM(dias),0) as total FROM francos_anulaciones_cerrados "
-                        "WHERE legajo=? AND anulado_en > ? AND anulado_en <= ?",
-                        (leg, cerrado_en_actual, cerrado_en_sig)
-                    ).fetchone()["total"]
-                    saldo_final_recalculado = (
-                        base.get("saldo", 0) + d["generados_periodo"] + gen_extra_delta
-                        - d["tomados_periodo"] + devolucion
-                    )
-                    if saldo_final_recalculado != despues.get("saldo", 0):
-                        desajustes.append({
-                            "departamento": depto,
-                            "legajo": leg,
-                            "cierre_anterior_id": pid_actual,
-                            "cierre_siguiente_id": pid_sig,
-                            "saldo_final_recalculado": saldo_final_recalculado,
-                            "saldo_anterior_declarado_en_siguiente": despues.get("saldo", 0),
-                        })
-
-    return jsonify({
+    return {
         "cierres_consecutivos_revisados": cierres_revisados,
         "cadena_sana": not desajustes,
         "desajustes": desajustes,
-    })
+    }
 
 
-@app.route("/admin/verificar-cadena-cierres-francos")
-def admin_verificar_cadena_cierres_francos():
-    """Solo lectura: equivalente de /admin/verificar-cadena-saldos-francos
-    pero para el mecanismo `cierres_francos` (cierre manual de deptos SIN
-    fichadas: Guardias, Internet, Telefonía, Ingenieros) -- el chequeo de
-    'periodos' los marca 'no_aplicable' y nunca los valida.
+@app.route("/admin/verificar-cadena-saldos-francos")
+def admin_verificar_cadena_saldos_francos():
+    """Solo lectura: ver _verificar_cadena_saldos_francos. También se corre
+    automáticamente al final de /periodo/cerrar."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        return jsonify(_verificar_cadena_saldos_francos(conn))
+
+
+def _snap_json(json_txt):
+    try:
+        return json.loads(json_txt or "{}")
+    except Exception:
+        return {}
+
+
+def _verificar_cadena_cierres_francos(conn):
+    """Equivalente de _verificar_cadena_saldos_francos pero para el
+    mecanismo `cierres_francos` (cierre manual de deptos SIN fichadas:
+    Guardias, Internet, Telefonía, Ingenieros) -- el chequeo de 'periodos'
+    los marca 'no_aplicable' y nunca los valida.
 
     Para cada departamento, recorre los cierres ACTIVOS (no anulados)
     ordenados por cerrado_en y, para cada legajo presente en dos cierres
@@ -3248,109 +3260,112 @@ def admin_verificar_cadena_cierres_francos():
     'periodos' si el legajo volvió a fichadas), en cuyo caso se marca
     no_aplicable en vez de reportar un falso desajuste.
 
-    No escribe nada."""
-    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    No escribe nada. Retorna {cierres_consecutivos_revisados, cadena_sana,
+    desajustes, no_aplicables}. Usada tanto por
+    /admin/verificar-cadena-cierres-francos como automáticamente al final
+    de /francos/cierre/nuevo."""
+    rows = conn.execute("""
+        SELECT id, cerrado_en, departamento, base_anterior, saldo_anterior
+        FROM cierres_francos
+        WHERE COALESCE(estado,'ACTIVO') <> 'ANULADO'
+    """).fetchall()
 
-    def _snap(json_txt):
-        try:
-            return json.loads(json_txt or "{}")
-        except Exception:
-            return {}
+    por_depto = {}
+    for r in rows:
+        depto = _normalizar_departamento_web(r["departamento"] or "")
+        por_depto.setdefault(depto, {})[r["id"]] = {
+            "cerrado_en": r["cerrado_en"] or "",
+            "base_anterior": _snap_json(r["base_anterior"]),
+            "saldo_anterior": _snap_json(r["saldo_anterior"]),
+        }
 
-    with _get_db() as conn:
-        rows = conn.execute("""
-            SELECT id, cerrado_en, departamento, base_anterior, saldo_anterior
-            FROM cierres_francos
-            WHERE COALESCE(estado,'ACTIVO') <> 'ANULADO'
-        """).fetchall()
-
-        por_depto = {}
-        for r in rows:
-            depto = _normalizar_departamento_web(r["departamento"] or "")
-            por_depto.setdefault(depto, {})[r["id"]] = {
-                "cerrado_en": r["cerrado_en"] or "",
-                "base_anterior": _snap(r["base_anterior"]),
-                "saldo_anterior": _snap(r["saldo_anterior"]),
-            }
-
-        desajustes = []
-        cierres_revisados = 0
-        for depto, cierres in por_depto.items():
-            orden = sorted(cierres.keys(), key=lambda cid: cierres[cid]["cerrado_en"])
-            for i in range(len(orden) - 1):
-                cid_actual, cid_sig = orden[i], orden[i + 1]
-                snap_actual = cierres[cid_actual]["saldo_anterior"]
-                base_sig    = cierres[cid_sig]["base_anterior"]
-                legajos_comunes = set(snap_actual.keys()) & set(base_sig.keys())
-                if not legajos_comunes:
+    desajustes = []
+    cierres_revisados = 0
+    for depto, cierres in por_depto.items():
+        orden = sorted(cierres.keys(), key=lambda cid: cierres[cid]["cerrado_en"])
+        for i in range(len(orden) - 1):
+            cid_actual, cid_sig = orden[i], orden[i + 1]
+            snap_actual = cierres[cid_actual]["saldo_anterior"]
+            base_sig    = cierres[cid_sig]["base_anterior"]
+            legajos_comunes = set(snap_actual.keys()) & set(base_sig.keys())
+            if not legajos_comunes:
+                continue
+            cierres_revisados += 1
+            for leg in sorted(legajos_comunes):
+                esperado = snap_actual[leg].get("saldo_final")
+                declarado = (base_sig[leg] or {}).get("saldo")
+                if base_sig[leg] is None or esperado is None:
                     continue
-                cierres_revisados += 1
-                for leg in sorted(legajos_comunes):
-                    esperado = snap_actual[leg].get("saldo_final")
-                    declarado = (base_sig[leg] or {}).get("saldo")
-                    if base_sig[leg] is None or esperado is None:
-                        continue
-                    if esperado != declarado:
-                        desajustes.append({
-                            "departamento": depto,
-                            "legajo": leg,
-                            "cierre_anterior_id": cid_actual,
-                            "cierre_siguiente_id": cid_sig,
-                            "saldo_final_cierre_anterior": esperado,
-                            "saldo_base_declarado_en_cierre_siguiente": declarado,
-                        })
-
-        # Último cierre activo de cada legajo vs. saldo en vivo actual
-        ultimo_por_legajo = {}
-        for depto, cierres in por_depto.items():
-            orden = sorted(cierres.keys(), key=lambda cid: cierres[cid]["cerrado_en"])
-            if not orden:
-                continue
-            ultimo = cierres[orden[-1]]
-            for leg, snap in ultimo["saldo_anterior"].items():
-                actual = ultimo_por_legajo.get(leg)
-                if not actual or ultimo["cerrado_en"] > actual["cerrado_en"]:
-                    ultimo_por_legajo[leg] = {
-                        "cerrado_en": ultimo["cerrado_en"],
-                        "cierre_id": orden[-1],
+                if esperado != declarado:
+                    desajustes.append({
                         "departamento": depto,
-                        "saldo_final": snap.get("saldo_final"),
-                    }
+                        "legajo": leg,
+                        "cierre_anterior_id": cid_actual,
+                        "cierre_siguiente_id": cid_sig,
+                        "saldo_final_cierre_anterior": esperado,
+                        "saldo_base_declarado_en_cierre_siguiente": declarado,
+                    })
 
-        no_aplicables = []
-        for leg, info in ultimo_por_legajo.items():
-            row = conn.execute(
-                "SELECT saldo, cargado_en FROM francos_saldo_inicial WHERE legajo=?", (leg,)
-            ).fetchone()
-            if not row:
-                continue
-            if (row["cargado_en"] or "") > info["cerrado_en"]:
-                no_aplicables.append({
-                    "legajo": leg, "departamento": info["departamento"],
-                    "motivo": (
-                        f"francos_saldo_inicial fue actualizado el {row['cargado_en']}, "
-                        f"posterior al último cierre_francos activo ({info['cerrado_en']}) -- "
-                        "otro mecanismo (periodos u otro cierre) tomó la posta."
-                    ),
-                })
-                continue
-            if row["saldo"] != info["saldo_final"]:
-                desajustes.append({
-                    "departamento": info["departamento"],
-                    "legajo": leg,
-                    "cierre_anterior_id": info["cierre_id"],
-                    "cierre_siguiente_id": None,
-                    "saldo_final_cierre_anterior": info["saldo_final"],
-                    "saldo_base_declarado_en_cierre_siguiente": row["saldo"],
-                    "nota": "comparado contra francos_saldo_inicial en vivo (no hay cierre posterior)",
-                })
+    # Último cierre activo de cada legajo vs. saldo en vivo actual
+    ultimo_por_legajo = {}
+    for depto, cierres in por_depto.items():
+        orden = sorted(cierres.keys(), key=lambda cid: cierres[cid]["cerrado_en"])
+        if not orden:
+            continue
+        ultimo = cierres[orden[-1]]
+        for leg, snap in ultimo["saldo_anterior"].items():
+            actual = ultimo_por_legajo.get(leg)
+            if not actual or ultimo["cerrado_en"] > actual["cerrado_en"]:
+                ultimo_por_legajo[leg] = {
+                    "cerrado_en": ultimo["cerrado_en"],
+                    "cierre_id": orden[-1],
+                    "departamento": depto,
+                    "saldo_final": snap.get("saldo_final"),
+                }
 
-    return jsonify({
+    no_aplicables = []
+    for leg, info in ultimo_por_legajo.items():
+        row = conn.execute(
+            "SELECT saldo, cargado_en FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+        ).fetchone()
+        if not row:
+            continue
+        if (row["cargado_en"] or "") > info["cerrado_en"]:
+            no_aplicables.append({
+                "legajo": leg, "departamento": info["departamento"],
+                "motivo": (
+                    f"francos_saldo_inicial fue actualizado el {row['cargado_en']}, "
+                    f"posterior al último cierre_francos activo ({info['cerrado_en']}) -- "
+                    "otro mecanismo (periodos u otro cierre) tomó la posta."
+                ),
+            })
+            continue
+        if row["saldo"] != info["saldo_final"]:
+            desajustes.append({
+                "departamento": info["departamento"],
+                "legajo": leg,
+                "cierre_anterior_id": info["cierre_id"],
+                "cierre_siguiente_id": None,
+                "saldo_final_cierre_anterior": info["saldo_final"],
+                "saldo_base_declarado_en_cierre_siguiente": row["saldo"],
+                "nota": "comparado contra francos_saldo_inicial en vivo (no hay cierre posterior)",
+            })
+
+    return {
         "cierres_consecutivos_revisados": cierres_revisados,
         "cadena_sana": not desajustes,
         "desajustes": desajustes,
         "no_aplicables": no_aplicables,
-    })
+    }
+
+
+@app.route("/admin/verificar-cadena-cierres-francos")
+def admin_verificar_cadena_cierres_francos():
+    """Solo lectura: ver _verificar_cadena_cierres_francos. También se
+    corre automáticamente al final de /francos/cierre/nuevo."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        return jsonify(_verificar_cadena_cierres_francos(conn))
 
 
 def _recalcular_cadena_completa_legajo(conn, legajo):
@@ -4446,7 +4461,37 @@ def periodo_cerrar():
         saldo_warning = str(exc_saldo)
         print(f"[ERROR] saldo_inicial NO actualizado en cierre #{pid}: {exc_saldo}\n{tb}")
 
+    # Auto-verificación de trazabilidad al cerrar -- para no depender de
+    # que alguien se acuerde de correr /admin/verificar-cadena-saldos-francos
+    # aparte cada mes (ver CLAUDE.md, feedback de la usuaria 03/08/2026:
+    # "la trazabilidad para los próximos meses... y todos"). Dos chequeos:
+    # (1) la cadena de cierres de este depto sigue sana, (2) "Generados"
+    # queda en 0 para cada legajo recién cerrado -- todo lo generado hasta
+    # ahora ya debería estar absorbido en el saldo que se acaba de grabar.
+    trazabilidad = None
+    try:
+        with _get_db() as conn_verif:
+            chequeo = _verificar_cadena_saldos_francos(conn_verif)
+        desajustes_depto = [
+            d for d in chequeo["desajustes"]
+            if _normalizar_departamento_web(d.get("departamento", "")) == departamento
+        ]
+        saldos_por_leg = {s["legajo"]: s for s in _calcular_saldos()}
+        generados_no_absorbidos = [
+            {"legajo": leg, "generados": saldos_por_leg[leg]["generados"]}
+            for leg in sorted(legajos_cierre_set)
+            if leg in saldos_por_leg and saldos_por_leg[leg]["generados"] != 0
+        ]
+        trazabilidad = {
+            "cadena_sana": not desajustes_depto and not generados_no_absorbidos,
+            "desajustes_cadena": desajustes_depto,
+            "generados_no_absorbidos": generados_no_absorbidos,
+        }
+    except Exception as exc_verif:
+        trazabilidad = {"error": f"No se pudo auto-verificar: {exc_verif}"}
+
     return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json",
+                    "trazabilidad": trazabilidad,
                     **({"saldo_warning": saldo_warning} if saldo_warning else {})})
 
 
@@ -4848,7 +4893,31 @@ def francos_cierre_nuevo():
         ).fetchall()
     francos_list = [{**dict(r), "departamento": depto_visible} for r in rows]
     _generar_pdf_francos_cierre(f"cf{cid}", francos_list, fecha_hasta)
-    return jsonify({"ok": True, "id": cid, "total": total})
+
+    # Auto-verificación de trazabilidad al cerrar (mismo criterio que
+    # periodo_cerrar): la cadena de cierres_francos de este depto sigue
+    # sana. No comparamos "Generados en 0" acá porque el patrón de carga
+    # manual (francos_semana_manual/francos_generados) no se resetea en el
+    # mismo sentido que el período de fichadas -- ver
+    # _verificar_cadena_cierres_francos para el chequeo real de la cadena.
+    trazabilidad = None
+    try:
+        with _get_db() as conn_verif:
+            chequeo = _verificar_cadena_cierres_francos(conn_verif)
+        trazabilidad = {
+            "cadena_sana": not any(
+                _normalizar_departamento_web(d.get("departamento", "")) == departamento
+                for d in chequeo["desajustes"]
+            ),
+            "desajustes_cadena": [
+                d for d in chequeo["desajustes"]
+                if _normalizar_departamento_web(d.get("departamento", "")) == departamento
+            ],
+        }
+    except Exception as exc_verif:
+        trazabilidad = {"error": f"No se pudo auto-verificar: {exc_verif}"}
+
+    return jsonify({"ok": True, "id": cid, "total": total, "trazabilidad": trazabilidad})
 
 
 @app.route("/francos/cierre/anular/<int:cid>", methods=["POST"])

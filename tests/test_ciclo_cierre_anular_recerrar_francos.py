@@ -330,6 +330,10 @@ def test_ciclo_cerrar_anular_recerrar_preserva_cadena_de_saldos(db_temporal, cli
 
     resp1 = client.post("/periodo/cerrar", data=form)
     assert resp1.status_code == 200, resp1.get_json()
+    trazabilidad1 = resp1.get_json()["trazabilidad"]
+    assert trazabilidad1["cadena_sana"] is True
+    assert trazabilidad1["desajustes_cadena"] == []
+    assert trazabilidad1["generados_no_absorbidos"] == []
 
     conn = _conn(db_temporal)
     pid1 = conn.execute("SELECT id FROM periodos ORDER BY id DESC LIMIT 1").fetchone()["id"]
@@ -580,3 +584,25 @@ def test_corregir_saldo_inicial_manual_requiere_motivo_y_es_dry_run_por_default(
     ).fetchall()
     ultima = historial[-1]
     assert ultima["saldo_anterior"] == 7 and ultima["saldo_nuevo"] == 8
+
+
+def test_francos_cierre_nuevo_incluye_trazabilidad_automatica(db_temporal, client):
+    """Igual que periodo_cerrar, francos_cierre_nuevo debe auto-verificar
+    su propia cadena al cerrar (feedback 03/08/2026: la trazabilidad tiene
+    que quedar cubierta para todos los deptos de ahora en más, no solo
+    cuando alguien corre /admin/verificar-cadena-cierres-francos aparte)."""
+    conn = _conn(db_temporal)
+    leg, nombre = "113", "MAYDANA"
+    conn.execute(
+        "INSERT INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+        (leg, nombre, "Guardias"),
+    )
+    conn.commit()
+
+    resp = client.post("/francos/cierre/nuevo", data={
+        "departamento": "Guardias", "fecha_hasta": "2026-07-08",
+    })
+    assert resp.status_code == 200, resp.get_json()
+    trazabilidad = resp.get_json()["trazabilidad"]
+    assert trazabilidad["cadena_sana"] is True
+    assert trazabilidad["desajustes_cadena"] == []
