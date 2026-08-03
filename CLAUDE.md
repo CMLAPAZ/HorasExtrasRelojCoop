@@ -929,6 +929,26 @@ que pedir una ruta de `/admin/*` cada vez. Implementado en `francos.html` y `ser
 Con esto, un caso como el de Calvet se puede corregir directamente desde
 `/francos` sin pedir ayuda para correr una ruta de admin.
 
+### Auto-verificación de trazabilidad al cerrar (todos los deptos, de ahora en más)
+
+A pedido de la usuaria ("la trazabilidad para los próximos meses de Redes
+y Administración y todos"), `/periodo/cerrar` y `/francos/cierre/nuevo`
+ahora corren automáticamente, al final, la verificación de cadena
+correspondiente y devuelven un campo `"trazabilidad"` en la respuesta
+JSON — acotado al departamento que se acaba de cerrar:
+
+- `_verificar_cadena_saldos_francos(conn)` / `_verificar_cadena_cierres_francos(conn)`
+  — las rutas de solo lectura `/admin/verificar-cadena-saldos-francos` y
+  `/admin/verificar-cadena-cierres-francos` se refactorizaron en estas
+  funciones reutilizables; las rutas ahora son wrappers finos.
+- `periodo_cerrar` además verifica que **"Generados" quede en 0** para
+  cada legajo recién cerrado (todo lo generado hasta el corte ya debería
+  estar absorbido en el saldo que se acaba de grabar) — este chequeo corre
+  DESPUÉS de que el cierre terminó de guardar, no antes.
+- Si `cadena_sana` da `false`, no bloquea el cierre (ya se hizo) — es una
+  alerta temprana en la misma respuesta, para no depender de que alguien
+  se acuerde de correr las rutas de `/admin/*` por separado el mes que viene.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
