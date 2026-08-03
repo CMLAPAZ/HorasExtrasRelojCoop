@@ -7943,6 +7943,16 @@ def francos():
             manual_guardados.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["dias"]
             if r["cierre_francos_id"] is not None:
                 manual_cierres.setdefault(str(r["legajo"]), {})[r["semana_num"]] = r["cierre_francos_id"]
+        # Todas las cargas semanales SIN cerrar, de cualquier mes (no solo el
+        # actual) -- para poder corregir/eliminar un error de carga vieja
+        # desde la pantalla, sin depender de una ruta de admin (ver
+        # incidente Calvet, 03/08/2026).
+        semana_manual_abiertas = [dict(r) for r in conn.execute("""
+            SELECT id, legajo, nombre, departamento, semana_num, mes, dias, guardado_en
+            FROM francos_semana_manual
+            WHERE cierre_francos_id IS NULL
+            ORDER BY mes DESC, CAST(legajo AS INTEGER), semana_num
+        """) if not _depto_francos_oculto(r["departamento"])]
     _DEPTOS_AUTO = {"redes", "administracion"}
     deptos_manuales = {}
     for e in emps_extra:
@@ -7965,6 +7975,7 @@ def francos():
                            departamentos=departamentos,
                            gen_manual=gen_manual,
                            deptos_manuales=deptos_manuales_list,
+                           semana_manual_abiertas=semana_manual_abiertas,
                            mes_actual=mes_actual,
                            firma=FIRMA_SUPERVISOR)
 
@@ -8143,6 +8154,85 @@ def francos_generados_eliminar(gen_id):
         conn.execute("DELETE FROM francos_generados WHERE id=?", (gen_id,))
         conn.commit()
     return redirect(url_for("francos_saldos"))
+
+
+@app.route("/francos/generados/editar/<int:gen_id>", methods=["POST"])
+def francos_generados_editar(gen_id):
+    """Corrige días/descripción de un franco generado (carga puntual) que
+    todavía no está vinculado a ningún cierre -- para que un error de carga
+    se pueda arreglar directo desde /francos, sin pasar por una ruta de
+    admin (ver incidente Calvet, 03/08/2026: no había forma de corregir una
+    carga manual de un mes anterior desde la pantalla normal)."""
+    if not _autenticado(): return _requiere_auth()
+    try:
+        dias = int(request.form.get("dias", "").strip())
+    except (TypeError, ValueError):
+        return redirect(url_for("francos") + "?error=generados_datos_requeridos")
+    if dias < 1:
+        return redirect(url_for("francos") + "?error=generados_datos_requeridos")
+    descripcion = request.form.get("descripcion", "").strip()
+    with _get_db() as conn:
+        generado = conn.execute(
+            "SELECT cierre_francos_id FROM francos_generados WHERE id=?", (gen_id,)
+        ).fetchone()
+        if not generado:
+            return redirect(url_for("francos") + "?error=no_encontrado")
+        if generado["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
+        conn.execute(
+            "UPDATE francos_generados SET dias=?, descripcion=? WHERE id=?",
+            (dias, descripcion, gen_id),
+        )
+        conn.commit()
+    return redirect(url_for("francos"))
+
+
+@app.route("/francos/semana-manual/editar/<int:fila_id>", methods=["POST"])
+def francos_semana_manual_editar(fila_id):
+    """Corrige los días de una carga semanal manual (Guardias/Internet/
+    Telefonía/Ingenieros) que todavía no está vinculada a ningún cierre,
+    sin importar de qué mes sea -- el formulario de carga semanal de
+    /francos solo permite tocar el mes actual; esto cubre meses anteriores
+    con un error de carga."""
+    if not _autenticado(): return _requiere_auth()
+    try:
+        dias = int(request.form.get("dias", "").strip())
+    except (TypeError, ValueError):
+        return redirect(url_for("francos") + "?error=generados_datos_requeridos")
+    if dias < 0:
+        return redirect(url_for("francos") + "?error=generados_datos_requeridos")
+    with _get_db() as conn:
+        fila = conn.execute(
+            "SELECT cierre_francos_id FROM francos_semana_manual WHERE id=?", (fila_id,)
+        ).fetchone()
+        if not fila:
+            return redirect(url_for("francos") + "?error=no_encontrado")
+        if fila["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
+        conn.execute(
+            "UPDATE francos_semana_manual SET dias=? WHERE id=?", (dias, fila_id)
+        )
+        conn.commit()
+    return redirect(url_for("francos"))
+
+
+@app.route("/francos/semana-manual/eliminar/<int:fila_id>", methods=["POST"])
+def francos_semana_manual_eliminar(fila_id):
+    """Elimina una carga semanal manual que todavía no está vinculada a
+    ningún cierre, de cualquier mes -- equivalente web (con formulario/POST
+    normal, no ruta de admin) de /admin/eliminar-francos-semana-manual."""
+    if not _autenticado(): return _requiere_auth()
+    with _get_db() as conn:
+        fila = conn.execute(
+            "SELECT cierre_francos_id FROM francos_semana_manual WHERE id=?", (fila_id,)
+        ).fetchone()
+        if not fila:
+            return redirect(url_for("francos") + "?error=no_encontrado")
+        if fila["cierre_francos_id"] is not None:
+            return redirect(url_for("francos") + "?error=movimiento_cerrado")
+        conn.execute("DELETE FROM francos_semana_manual WHERE id=?", (fila_id,))
+        conn.commit()
+    return redirect(url_for("francos"))
 
 
 @app.route("/francos/nuevo", methods=["POST"])

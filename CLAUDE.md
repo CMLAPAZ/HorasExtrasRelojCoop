@@ -896,6 +896,39 @@ igual registrada) y
 `/francos/cierre/nuevo`, simula el drift externo, y verifica dry-run +
 corrección + registro de auditoría).
 
+**Segunda corrección puntual, mismo incidente:** después de arreglar el
+`saldo`, Calvet seguía mostrando "+1 Generados" en pantalla. Causa: una
+fila en `francos_semana_manual` (mes 2026-05, 1 día, sin `cierre_francos_id`)
+nunca absorbida por ningún cierre, que la usuaria confirmó como error de
+carga. Se agregó `GET /admin/eliminar-francos-semana-manual/<id>` (dry-run
+por default, bloqueada si la fila ya tiene cierre vinculado) y se usó para
+borrarla en producción.
+
+### UI: editar/eliminar cargas manuales no cerradas, de cualquier mes
+
+La usuaria señaló el problema de fondo: el formulario de carga semanal en
+`/francos` solo permite tocar el **mes actual** — una carga vieja mal hecha
+(como la de Calvet) no se podía corregir desde la pantalla normal, había
+que pedir una ruta de `/admin/*` cada vez. Implementado en `francos.html` y `servidor.py`:
+
+- `POST /francos/generados/editar/<id>` — corrige días/descripción de un
+  franco generado puntual (`francos_generados`) no cerrado. La tabla de
+  "Francos generados — Carga manual" en `/francos` ahora tiene un formulario
+  inline (días + descripción + Guardar) en vez de solo mostrar el valor.
+- `POST /francos/semana-manual/editar/<id>` y
+  `POST /francos/semana-manual/eliminar/<id>` — equivalentes para
+  `francos_semana_manual`, ambas bloqueadas si `cierre_francos_id` no es
+  NULL (igual criterio que todo el resto del proyecto).
+- Nueva sección en `/francos`: "Cargas semanales pendientes (todos los
+  meses)" — lista TODAS las filas de `francos_semana_manual` con
+  `cierre_francos_id IS NULL`, de cualquier mes (no solo el actual), con
+  edición inline de días y botón eliminar. La grilla de carga semanal
+  original (solo mes actual) queda igual, sin tocar — esta es una sección
+  aparte, complementaria.
+
+Con esto, un caso como el de Calvet se puede corregir directamente desde
+`/francos` sin pedir ayuda para correr una ruta de admin.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

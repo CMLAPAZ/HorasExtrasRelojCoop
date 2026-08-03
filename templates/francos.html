@@ -420,7 +420,19 @@ if (window.history && window.history.replaceState) {
           <td>{{ g.legajo }}</td>
           <td>{{ g.nombre }}</td>
           <td style="color:#64748b;font-size:.82rem">{{ g.departamento }}</td>
-          <td style="font-size:.82rem">{{ g.descripcion }}</td>
+          <td style="font-size:.82rem">
+            {% if g.cierre_francos_id %}
+              {{ g.descripcion }}
+            {% else %}
+            <form method="post" action="/francos/generados/editar/{{ g.id }}" style="display:flex;gap:4px;align-items:center">
+              <input type="text" name="descripcion" value="{{ g.descripcion }}"
+                     style="width:120px;padding:3px 6px;border:1px solid #d7dde5;border-radius:5px;font-size:.8rem">
+              <input type="number" name="dias" min="1" value="{{ g.dias }}"
+                     style="width:52px;padding:3px 4px;border:1px solid #d7dde5;border-radius:5px;font-size:.8rem">
+              <button type="submit" class="btn-print-f" style="padding:3px 8px;font-size:.75rem">Guardar</button>
+            </form>
+            {% endif %}
+          </td>
           <td><span class="badge-gen">+{{ g.dias }}</span></td>
           <td style="font-size:.78rem;color:#94a3b8">{{ g.cargado_en[:10] if g.cargado_en else '—' }}</td>
           <td>
@@ -497,6 +509,58 @@ if (window.history && window.history.replaceState) {
     </table>
   </div>
   {% endfor %}
+</div>
+{% endif %}
+
+<!-- Cargas semanales manuales SIN cerrar, de cualquier mes -- para corregir
+     un error de carga aunque no sea del mes actual (el formulario de arriba
+     solo edita el mes en curso) -->
+{% if semana_manual_abiertas %}
+<div class="card no-print">
+  <div class="card-header">
+    <div class="card-title-inline">Cargas semanales pendientes (todos los meses)</div>
+  </div>
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Legajo</th>
+          <th>Nombre</th>
+          <th>Departamento</th>
+          <th>Mes</th>
+          <th>Semana</th>
+          <th>Días</th>
+          <th>Cargado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in semana_manual_abiertas %}
+        <tr>
+          <td>{{ f.legajo }}</td>
+          <td>{{ f.nombre }}</td>
+          <td style="color:#64748b;font-size:.82rem">{{ f.departamento }}</td>
+          <td>{{ f.mes }}</td>
+          <td>Semana {{ f.semana_num }}</td>
+          <td>
+            <form method="post" action="/francos/semana-manual/editar/{{ f.id }}" style="display:flex;gap:4px;align-items:center">
+              <input type="number" name="dias" min="0" max="7" value="{{ f.dias }}"
+                     style="width:52px;padding:3px 4px;border:1px solid #d7dde5;border-radius:5px;font-size:.8rem">
+              <button type="submit" class="btn-print-f" style="padding:3px 8px;font-size:.75rem">Guardar</button>
+            </form>
+          </td>
+          <td style="font-size:.78rem;color:#94a3b8">{{ f.guardado_en[:10] if f.guardado_en else '—' }}</td>
+          <td>
+            <form method="post" action="/francos/semana-manual/eliminar/{{ f.id }}"
+                  onsubmit="return confirm('¿Eliminar esta carga semanal?')">
+              <button type="submit" class="btn-del">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 
