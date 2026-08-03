@@ -3719,6 +3719,41 @@ def admin_corregir_saldo_inicial(legajo):
     })
 
 
+@app.route("/admin/eliminar-francos-semana-manual/<int:fila_id>")
+def admin_eliminar_francos_semana_manual(fila_id):
+    """Elimina una fila puntual de francos_semana_manual por id -- para
+    corregir una carga semanal mal hecha de un mes que ya no es el mes
+    actual (el formulario de /francos solo edita el mes en curso, así que
+    una carga vieja mal cargada no se puede tocar desde ahí). Bloqueada si
+    la fila ya está vinculada a un cierre (cierre_francos_id IS NOT NULL) --
+    en ese caso hay que anular el cierre primero. Dry-run por default;
+    ?confirmar=si aplica. No toca francos_saldo_inicial -- eso se corrige
+    aparte, con /admin/corregir-saldo-inicial si hace falta."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        fila = conn.execute(
+            "SELECT * FROM francos_semana_manual WHERE id=?", (fila_id,)
+        ).fetchone()
+        if not fila:
+            return jsonify({"error": f"No hay fila id={fila_id} en francos_semana_manual."}), 404
+        fila = dict(fila)
+        if fila.get("cierre_francos_id") is not None:
+            return jsonify({
+                "error": "Esta fila está vinculada a un cierre "
+                         f"(cierre_francos_id={fila['cierre_francos_id']}) -- hay que anular "
+                         "ese cierre antes de poder borrarla."
+            }), 409
+
+        aplicado = False
+        if request.args.get("confirmar") == "si":
+            conn.execute("DELETE FROM francos_semana_manual WHERE id=?", (fila_id,))
+            conn.commit()
+            aplicado = True
+
+    return jsonify({"fila": fila, "aplicado": aplicado})
+
+
 @app.route("/admin/auditoria-saldo-inicial/<legajo>")
 def admin_auditoria_saldo_inicial(legajo):
     """Solo lectura: historial completo de cambios a francos_saldo_inicial
