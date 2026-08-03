@@ -445,3 +445,99 @@ def test_aprobar_bloqueado_para_franco_cerrado_por_periodo(db_temporal, client):
 
     estado = conn.execute("SELECT estado FROM francos_tomados WHERE id=?", (fid,)).fetchone()["estado"]
     assert estado == "Cerrado"
+
+
+# ──────────────────────────────────────────────────────────────
+# 5. Auditoría de francos_saldo_inicial (triggers) + sincronización desde
+#    cierres_francos -- reproduce el incidente Calvet/Telefonía (03/08/2026):
+#    un cierre manual dejó saldo_final=8 pero francos_saldo_inicial quedó en
+#    7 por una escritura fuera del mecanismo de cierre, sin registro de
+#    quién la hizo.
+# ──────────────────────────────────────────────────────────────
+
+def test_trigger_auditoria_captura_cualquier_escritura_a_saldo_inicial(db_temporal):
+    """Los triggers deben registrar la escritura sin importar el camino:
+    acá se escribe directo por SQL, sin pasar por ninguna ruta de la app,
+    simulando una edición fuera de los mecanismos conocidos."""
+    conn = _conn(db_temporal)
+    leg, nombre = "18", "CALVET SILVIA PATRICIA"
+
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en) "
+        "VALUES (?,?,8,'carga inicial de prueba','2026-07-08 14:10:00')",
+        (leg, nombre),
+    )
+    conn.commit()
+
+    conn.execute("UPDATE francos_saldo_inicial SET saldo=7 WHERE legajo=?", (leg,))
+    conn.commit()
+
+    historial = conn.execute(
+        "SELECT * FROM francos_saldo_inicial_auditoria WHERE legajo=? ORDER BY id", (leg,)
+    ).fetchall()
+    assert len(historial) == 2
+    assert historial[0]["accion"] == "INSERT" and historial[0]["saldo_nuevo"] == 8
+    assert historial[1]["accion"] == "UPDATE"
+    assert historial[1]["saldo_anterior"] == 8
+    assert historial[1]["saldo_nuevo"] == 7
+
+
+def test_sincronizar_saldo_inicial_desde_cierre_francos_corrige_drift(db_temporal, client):
+    """Reproduce el incidente real: cierre manual de Telefonía deja
+    saldo_final=8 para Calvet (vía la ruta real /francos/cierre/nuevo, con
+    su base_anterior/saldo_anterior propios), y después algo -- fuera del
+    mecanismo de cierre -- pisa francos_saldo_inicial.saldo a 7. La ruta de
+    sincronización debe detectar el drift contra ese mismo cierre y, con
+    ?confirmar=si, restaurarlo a 8 -- quedando además registrado en
+    francos_saldo_inicial_auditoria."""
+    conn = _conn(db_temporal)
+    leg, nombre = "18", "CALVET SILVIA PATRICIA"
+
+    conn.execute(
+        "INSERT INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+        (leg, nombre, "Telefonia"),
+    )
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en) "
+        "VALUES (?,?,8,'saldo previo al cierre','2026-06-01 00:00:00')",
+        (leg, nombre),
+    )
+    conn.commit()
+
+    resp = client.post("/francos/cierre/nuevo", data={
+        "departamento": "Telefonía", "fecha_hasta": "2026-07-08",
+    })
+    assert resp.status_code == 200, resp.get_json()
+    cid = resp.get_json()["id"]
+
+    fila = conn.execute("SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)).fetchone()
+    assert fila["saldo"] == 8          # el cierre en sí quedó bien
+
+    # Drift fuera de mecanismo: algo pisa el saldo en vivo a 7 sin cierre nuevo.
+    conn.execute("UPDATE francos_saldo_inicial SET saldo=7 WHERE legajo=?", (leg,))
+    conn.commit()
+
+    resp_dry = client.get(f"/admin/sincronizar-saldo-inicial-desde-cierre-francos/{cid}")
+    data_dry = resp_dry.get_json()
+    assert data_dry["aplicado"] is False
+    diffs = {d["legajo"]: d for d in data_dry["diferencias"]}
+    assert leg in diffs
+    assert diffs[leg]["actual"]["saldo"] == 7
+    assert diffs[leg]["correcto"]["saldo"] == 8
+
+    fila_sin_tocar = conn.execute("SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)).fetchone()
+    assert fila_sin_tocar["saldo"] == 7    # dry-run no escribe nada
+
+    resp_aplicar = client.get(f"/admin/sincronizar-saldo-inicial-desde-cierre-francos/{cid}?confirmar=si")
+    data_aplicar = resp_aplicar.get_json()
+    assert data_aplicar["legajos_corregidos"] == [leg]
+
+    fila_final = conn.execute("SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)).fetchone()
+    assert fila_final["saldo"] == 8
+
+    historial = conn.execute(
+        "SELECT * FROM francos_saldo_inicial_auditoria WHERE legajo=? ORDER BY id", (leg,)
+    ).fetchall()
+    ultima = historial[-1]
+    assert ultima["saldo_anterior"] == 7 and ultima["saldo_nuevo"] == 8
+    assert "sincronizado" in ultima["nota_nueva"].lower()

@@ -200,10 +200,6 @@ def _init_db():
             conn.execute("ALTER TABLE periodos ADD COLUMN francos_corregido_en TEXT DEFAULT ''")
         except Exception:
             pass
-        try:
-            conn.execute("ALTER TABLE cierres_francos ADD COLUMN saldo_anterior TEXT DEFAULT '{}'")
-        except Exception:
-            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_generados (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -322,6 +318,7 @@ def _init_db():
             )
         for tabla, columna in (
             ("francos_tomados", "estado_antes_cierre TEXT DEFAULT ''"),
+            ("cierres_francos", "saldo_anterior TEXT DEFAULT '{}'"),
             ("cierres_francos", "base_anterior TEXT DEFAULT '{}'"),
             ("cierres_francos", "fecha_anulacion TEXT DEFAULT ''"),
             ("cierres_francos", "motivo_anulacion TEXT DEFAULT ''"),
@@ -363,6 +360,117 @@ def _init_db():
                 motivo                TEXT NOT NULL,
                 cambiado_en           TEXT NOT NULL
             )
+        """)
+        # Auditoría completa de francos_saldo_inicial -- a diferencia de
+        # francos_fecha_corte_historial (solo esa columna), esto graba TODA
+        # fila que cambie (INSERT/UPDATE/DELETE), sin importar qué ruta la
+        # escribió. Implementado con triggers de SQLite en vez de instrumentar
+        # cada uno de los ~15 sitios del código que escriben esta tabla (cierres,
+        # devoluciones de francos anulados, herramientas de emergencia,
+        # correcciones manuales): así ningún camino -- ni uno nuevo que se
+        # agregue después -- puede tocar el saldo sin dejar rastro. Ver
+        # incidente Calvet/Telefonía (03/08/2026): un salto de saldo sin
+        # cierre de por medio que no se pudo explicar porque no había forma
+        # de reconstruir qué lo escribió.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS francos_saldo_inicial_auditoria (
+                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+                legajo                      TEXT NOT NULL,
+                accion                      TEXT NOT NULL,
+                saldo_anterior              INTEGER,
+                saldo_nuevo                 INTEGER,
+                tomados_al_corte_anterior   INTEGER,
+                tomados_al_corte_nuevo      INTEGER,
+                gen_extra_al_corte_anterior INTEGER,
+                gen_extra_al_corte_nuevo    INTEGER,
+                fecha_corte_anterior        TEXT,
+                fecha_corte_nuevo           TEXT,
+                nota_anterior               TEXT,
+                nota_nueva                  TEXT,
+                cargado_en_anterior         TEXT,
+                cargado_en_nuevo            TEXT,
+                registrado_en               TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_fsi_auditoria_insert
+            AFTER INSERT ON francos_saldo_inicial
+            BEGIN
+                INSERT INTO francos_saldo_inicial_auditoria (
+                    legajo, accion,
+                    saldo_anterior, saldo_nuevo,
+                    tomados_al_corte_anterior, tomados_al_corte_nuevo,
+                    gen_extra_al_corte_anterior, gen_extra_al_corte_nuevo,
+                    fecha_corte_anterior, fecha_corte_nuevo,
+                    nota_anterior, nota_nueva,
+                    cargado_en_anterior, cargado_en_nuevo,
+                    registrado_en
+                ) VALUES (
+                    NEW.legajo, 'INSERT',
+                    NULL, NEW.saldo,
+                    NULL, NEW.tomados_al_corte,
+                    NULL, NEW.gen_extra_al_corte,
+                    NULL, NEW.fecha_corte,
+                    NULL, NEW.nota,
+                    NULL, NEW.cargado_en,
+                    datetime('now','localtime')
+                );
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_fsi_auditoria_update
+            AFTER UPDATE ON francos_saldo_inicial
+            WHEN OLD.saldo IS NOT NEW.saldo
+              OR OLD.tomados_al_corte IS NOT NEW.tomados_al_corte
+              OR OLD.gen_extra_al_corte IS NOT NEW.gen_extra_al_corte
+              OR OLD.fecha_corte IS NOT NEW.fecha_corte
+              OR OLD.nota IS NOT NEW.nota
+            BEGIN
+                INSERT INTO francos_saldo_inicial_auditoria (
+                    legajo, accion,
+                    saldo_anterior, saldo_nuevo,
+                    tomados_al_corte_anterior, tomados_al_corte_nuevo,
+                    gen_extra_al_corte_anterior, gen_extra_al_corte_nuevo,
+                    fecha_corte_anterior, fecha_corte_nuevo,
+                    nota_anterior, nota_nueva,
+                    cargado_en_anterior, cargado_en_nuevo,
+                    registrado_en
+                ) VALUES (
+                    NEW.legajo, 'UPDATE',
+                    OLD.saldo, NEW.saldo,
+                    OLD.tomados_al_corte, NEW.tomados_al_corte,
+                    OLD.gen_extra_al_corte, NEW.gen_extra_al_corte,
+                    OLD.fecha_corte, NEW.fecha_corte,
+                    OLD.nota, NEW.nota,
+                    OLD.cargado_en, NEW.cargado_en,
+                    datetime('now','localtime')
+                );
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_fsi_auditoria_delete
+            AFTER DELETE ON francos_saldo_inicial
+            BEGIN
+                INSERT INTO francos_saldo_inicial_auditoria (
+                    legajo, accion,
+                    saldo_anterior, saldo_nuevo,
+                    tomados_al_corte_anterior, tomados_al_corte_nuevo,
+                    gen_extra_al_corte_anterior, gen_extra_al_corte_nuevo,
+                    fecha_corte_anterior, fecha_corte_nuevo,
+                    nota_anterior, nota_nueva,
+                    cargado_en_anterior, cargado_en_nuevo,
+                    registrado_en
+                ) VALUES (
+                    OLD.legajo, 'DELETE',
+                    OLD.saldo, NULL,
+                    OLD.tomados_al_corte, NULL,
+                    OLD.gen_extra_al_corte, NULL,
+                    OLD.fecha_corte, NULL,
+                    OLD.nota, NULL,
+                    OLD.cargado_en, NULL,
+                    datetime('now','localtime')
+                );
+            END
         """)
         conn.commit()
     # Importar JSON viejos si los hay
@@ -3555,6 +3663,33 @@ def admin_ver_francos_semana_parcial():
     })
 
 
+@app.route("/admin/auditoria-saldo-inicial/<legajo>")
+def admin_auditoria_saldo_inicial(legajo):
+    """Solo lectura: historial completo de cambios a francos_saldo_inicial
+    para un legajo puntual, capturado por los triggers de SQLite
+    trg_fsi_auditoria_* (ver _init_db) -- registra automáticamente CUALQUIER
+    escritura a esa tabla (cierre, devolución de franco anulado, herramienta
+    de emergencia, corrección manual), sin importar qué ruta del código la
+    haya hecho. Pensada para responder "quién/qué tocó este saldo y cuándo"
+    sin tener que adivinar entre los ~15 lugares del código que pueden
+    escribir esa tabla."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo = str(legajo)
+    with _get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM francos_saldo_inicial_auditoria "
+            "WHERE legajo=? ORDER BY id", (legajo,)
+        ).fetchall()
+        actual = conn.execute(
+            "SELECT * FROM francos_saldo_inicial WHERE legajo=?", (legajo,)
+        ).fetchone()
+    return jsonify({
+        "legajo": legajo,
+        "estado_actual": dict(actual) if actual else None,
+        "historial": [dict(r) for r in rows],
+    })
+
+
 @app.route("/admin/desglose-generados/<legajo>")
 def admin_desglose_generados(legajo):
     """Solo lectura: desglosa, componente por componente, de dónde sale el
@@ -6596,6 +6731,157 @@ def admin_recalcular_saldo_cierre_francos(cid):
     return jsonify({
         "cierre_francos_id": cid, "departamento": departamento, "fecha_hasta": fecha_hasta,
         "diferencias": diffs, "aplicado": request.args.get("confirmar") == "si",
+    })
+
+
+@app.route("/admin/sincronizar-saldo-inicial-desde-cierre-francos/<int:cid>")
+def admin_sincronizar_saldo_inicial_desde_cierre_francos(cid):
+    """Solo lectura por default: para un cierre manual de francos YA HECHO,
+    recalcula de forma independiente (desde francos_tomados/francos_generados/
+    francos_semana_manual, acotado a fecha_hasta -- misma fórmula que
+    /admin/recalcular-saldo-cierre-francos) lo que francos_saldo_inicial
+    DEBERÍA tener para cada legajo de ese cierre, y lo compara contra el
+    valor en vivo actual.
+
+    A diferencia de esa otra ruta (que corrige cierres_francos.saldo_anterior,
+    la foto histórica del cierre), ésta corrige francos_saldo_inicial -- la
+    base que usa la pantalla de Saldos hoy. Sirve para el caso donde el
+    cierre en sí quedó bien pero algo por fuera (devolución, herramienta de
+    emergencia, corrección manual) pisó el saldo en vivo después sin pasar
+    por un cierre nuevo (ver incidente Calvet/Telefonía, 03/08/2026).
+
+    Solo toca legajos donde este cierre (cid) es el ÚLTIMO cierre_francos
+    ACTIVO del legajo Y francos_saldo_inicial no fue tocado por un mecanismo
+    más reciente (mismo criterio que /admin/verificar-cadena-cierres-francos)
+    -- para no pisar un saldo legítimamente más nuevo. Con ?confirmar=si:
+    aplica los cambios (queda registrado automáticamente en
+    francos_saldo_inicial_auditoria vía los triggers)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    with _get_db() as conn:
+        cf = conn.execute("SELECT * FROM cierres_francos WHERE id=?", (cid,)).fetchone()
+        if not cf:
+            return jsonify({"error": f"Cierre de francos #{cid} no encontrado"}), 404
+        cf = dict(cf)
+        if (cf.get("estado") or "ACTIVO") == "ANULADO":
+            return jsonify({"error": "Este cierre está ANULADO."}), 409
+        fecha_hasta = cf["fecha_hasta"]
+        departamento = cf["departamento"]
+
+        try:
+            base_anterior = json.loads(cf.get("base_anterior") or "{}")
+        except Exception:
+            base_anterior = {}
+        try:
+            snap_cierre = json.loads(cf.get("saldo_anterior") or "{}")
+        except Exception:
+            snap_cierre = {}
+        if not snap_cierre:
+            return jsonify({"error": "Este cierre no tiene saldo_anterior (snapshot post-cierre) guardado -- no se puede sincronizar con seguridad."}), 409
+
+        # Solo legajos donde ESTE cierre es el último cierre_francos ACTIVO
+        # del departamento -- si hay uno más nuevo, ese manda.
+        ultimo_cid = conn.execute(
+            "SELECT id FROM cierres_francos WHERE LOWER(departamento)=LOWER(?) "
+            "AND COALESCE(estado,'ACTIVO') <> 'ANULADO' "
+            "ORDER BY cerrado_en DESC, id DESC LIMIT 1",
+            (departamento,)
+        ).fetchone()
+        if not ultimo_cid or ultimo_cid["id"] != cid:
+            return jsonify({
+                "error": f"El cierre #{cid} no es el último cierre activo de {departamento} -- "
+                         "sincronizá desde el último, no desde uno viejo."
+            }), 409
+
+        legajos = list(snap_cierre.keys())
+        ph = ",".join("?" * len(legajos))
+        mes_hasta = (fecha_hasta or "")[:7]
+
+        tomados_al_hasta = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_tomados "
+            f"WHERE legajo IN ({ph}) AND COALESCE(estado,'') != 'Anulado' "
+            f"AND {_SQL_CARGADO_EN_DIA} <= ? GROUP BY legajo",
+            (*legajos, fecha_hasta)
+        )}
+        gen_extra_al_hasta = {}
+        for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_generados "
+            f"WHERE legajo IN ({ph}) AND {_SQL_CARGADO_EN_DIA} <= ? GROUP BY legajo",
+            (*legajos, fecha_hasta)
+        ):
+            gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+        for r in conn.execute(
+            f"SELECT legajo, SUM(dias) as total FROM francos_semana_manual "
+            f"WHERE legajo IN ({ph}) AND mes <= ? GROUP BY legajo",
+            (*legajos, mes_hasta)
+        ):
+            gen_extra_al_hasta[r["legajo"]] = gen_extra_al_hasta.get(r["legajo"], 0) + (r["total"] or 0)
+
+        nombres_conocidos = {str(e["legajo"]): e["nombre"] for e in _empleados_conocidos()}
+        actuales = {r["legajo"]: dict(r) for r in conn.execute(
+            f"SELECT * FROM francos_saldo_inicial WHERE legajo IN ({ph})", legajos
+        )}
+
+        correctos = {}
+        diffs = []
+        no_aplicables = []
+        for leg in legajos:
+            base = base_anterior.get(leg) or {}
+            base_saldo     = (base.get("saldo") or 0) if base else 0
+            base_tom_corte = (base.get("tomados_al_corte") or 0) if base else 0
+            base_gen_corte = (base.get("gen_extra_al_corte") or 0) if base else 0
+            saldo_correcto = base_saldo + max(0, gen_extra_al_hasta.get(leg, 0) - base_gen_corte) \
+                              - max(0, tomados_al_hasta.get(leg, 0) - base_tom_corte)
+            correctos[leg] = {
+                "saldo": saldo_correcto,
+                "tomados_al_corte": tomados_al_hasta.get(leg, 0),
+                "gen_extra_al_corte": gen_extra_al_hasta.get(leg, 0),
+                "fecha_corte": fecha_hasta,
+            }
+
+            actual = actuales.get(leg)
+            cargado_en_actual = (actual.get("cargado_en") or "") if actual else ""
+            if cargado_en_actual > cf.get("cerrado_en", ""):
+                no_aplicables.append({
+                    "legajo": leg,
+                    "motivo": f"francos_saldo_inicial fue tocado el {cargado_en_actual}, "
+                              f"posterior a este cierre ({cf.get('cerrado_en','')}) -- no se toca.",
+                })
+                continue
+            if not actual or (
+                actual.get("saldo") != saldo_correcto
+                or (actual.get("tomados_al_corte") or 0) != correctos[leg]["tomados_al_corte"]
+                or (actual.get("gen_extra_al_corte") or 0) != correctos[leg]["gen_extra_al_corte"]
+            ):
+                diffs.append({
+                    "legajo": leg, "nombre": nombres_conocidos.get(leg, leg),
+                    "actual": actual, "correcto": correctos[leg],
+                })
+
+        aplicado = []
+        if request.args.get("confirmar") == "si":
+            ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for d in diffs:
+                leg = d["legajo"]
+                c = correctos[leg]
+                conn.execute("""
+                    UPDATE francos_saldo_inicial
+                    SET saldo=?, tomados_al_corte=?, gen_extra_al_corte=?,
+                        fecha_corte=?, nota=?, cargado_en=?
+                    WHERE legajo=?
+                """, (
+                    c["saldo"], c["tomados_al_corte"], c["gen_extra_al_corte"], c["fecha_corte"],
+                    f"Sincronizado desde cierre_francos #{cid} ({departamento}, {fecha_hasta}) "
+                    f"-- admin_sincronizar_saldo_inicial_desde_cierre_francos",
+                    ahora_str, leg,
+                ))
+                aplicado.append(leg)
+            conn.commit()
+
+    return jsonify({
+        "cierre_francos_id": cid, "departamento": departamento, "fecha_hasta": fecha_hasta,
+        "diferencias": diffs, "no_aplicables": no_aplicables,
+        "legajos_corregidos": aplicado, "aplicado": bool(aplicado),
     })
 
 

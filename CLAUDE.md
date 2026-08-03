@@ -834,11 +834,67 @@ importaban bajo el filtro viejo pero sí bajo el nuevo).
 `_snapshot_francos_cierre`, etc.) — el fix es exclusivamente en cómo
 `_calcular_saldos()` lee períodos ya cerrados para la pantalla en vivo.
 
-**Pendiente:** correr `/admin/auditoria-completa-saldos-francos` y
-`/admin/verificar-cadena-cierres-francos` en producción para ver si hay más
-legajos/departamentos afectados por este mismo patrón (recierre tardío) o
-por la cadena rota de `cierres_francos` (Calvet, Telefonía — todavía sin
-diagnosticar la causa puntual).
+**Confirmado en producción con `/admin/verificar-cadena-cierres-francos`**:
+único desajuste real fue CALVET (Telefonía, legajo 18) — el último cierre
+manual (cid=5, 2026-07-08) dejó `saldo_final=8`, pero `francos_saldo_inicial`
+en vivo tenía `saldo=7`, sin ningún cierre posterior que lo explique.
+Guardias e Internet, con cierres propios en `cierres_francos`, no
+mostraron ningún desajuste (su saldo en vivo coincide con su último
+cierre). Ingenieros (100/101) salió `no_aplicable` — su saldo fue tocado el
+31/07, después del último cierre manual (22/07), por otro mecanismo — no
+es un error, solo no verificable con este chequeo puntual.
+
+**Decisión de la usuaria (03/08/2026): no reabrir la causa histórica de
+Calvet** ("los cierres anteriores están bien, arranquemos bien desde ahora
+con la trazabilidad") — en cambio, foco en (a) corregir el número actual
+para que coincida con lo que el cierre ya dejó grabado y (b) que un drift
+así no pueda volver a pasar sin dejar rastro. Ver
+[[feedback_chequear_trazabilidad_post_cierre]] en memoria.
+
+## Implementado en sesión 03/08/2026 (cont.) — auditoría de `francos_saldo_inicial` + sincronización desde cierre
+
+**Auditoría automática (triggers de SQLite, no instrumentación manual):**
+nueva tabla `francos_saldo_inicial_auditoria` + 3 triggers
+(`trg_fsi_auditoria_insert/update/delete`) sobre `francos_saldo_inicial`.
+Hay ~15 sitios en el código que escriben esa tabla (cierres de los dos
+mecanismos, devolución de francos anulados, herramientas de emergencia,
+correcciones manuales) — instrumentar cada uno a mano es frágil y un sitio
+nuevo se puede olvidar. Un trigger a nivel de base de datos captura
+**cualquier** escritura, sin importar el camino, incluida una edición
+directa por SQL fuera de la app. Cada fila de auditoría guarda el valor
+anterior y nuevo de `saldo`, `tomados_al_corte`, `gen_extra_al_corte`,
+`fecha_corte` y `nota`. Consulta: `GET /admin/auditoria-saldo-inicial/<legajo>`.
+
+**Corrección real (no parche puntual en la DB):** nueva ruta
+`GET /admin/sincronizar-saldo-inicial-desde-cierre-francos/<cid>` — recalcula
+de forma independiente (desde `francos_tomados`/`francos_generados`/
+`francos_semana_manual`, acotado a `fecha_hasta`, misma fórmula que
+`/admin/recalcular-saldo-cierre-francos`) lo que `francos_saldo_inicial`
+debería tener para cada legajo de un cierre manual ya hecho, lo compara
+contra el valor en vivo, y con `?confirmar=si` corrige solo los legajos
+donde el cierre `cid` sigue siendo el último activo (no pisa un saldo más
+nuevo). Dry-run por default, mismo patrón que las demás herramientas de
+`/admin/*`. Reemplaza la alternativa de escribir un `UPDATE` manual puntual
+para Calvet — cualquier legajo/depto con el mismo síntoma se corrige con la
+misma ruta, y queda registrado en `francos_saldo_inicial_auditoria`.
+
+**Bug de migración encontrado y arreglado de paso:** `ALTER TABLE
+cierres_francos ADD COLUMN saldo_anterior` se ejecutaba en `_init_db()`
+*antes* del `CREATE TABLE IF NOT EXISTS cierres_francos` (más abajo en el
+archivo). En producción no se notaba porque el segundo arranque de la app
+"autocuraba" (la tabla ya existía la próxima vez), pero en una base nueva
+creada de una sola pasada la columna nunca se agregaba. Movido junto a las
+otras columnas de `cierres_francos` (`base_anterior`, etc.), que sí estaban
+en el orden correcto.
+
+Tests: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
+`test_trigger_auditoria_captura_cualquier_escritura_a_saldo_inicial` (una
+escritura por SQL directo, sin pasar por ninguna ruta de la app, queda
+igual registrada) y
+`test_sincronizar_saldo_inicial_desde_cierre_francos_corrige_drift`
+(reproduce el incidente completo de Calvet vía la ruta real
+`/francos/cierre/nuevo`, simula el drift externo, y verifica dry-run +
+corrección + registro de auditoría).
 
 ## Notas importantes
 
