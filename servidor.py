@@ -3663,6 +3663,62 @@ def admin_ver_francos_semana_parcial():
     })
 
 
+@app.route("/admin/corregir-saldo-inicial/<legajo>")
+def admin_corregir_saldo_inicial(legajo):
+    """Corrección manual puntual de francos_saldo_inicial.saldo para un
+    legajo, con motivo obligatorio -- pensada para casos como Calvet
+    (Telefonía, 03/08/2026) donde el traslado de saldo de un cierre viejo
+    (sin base_anterior, no reconstruible con /admin/sincronizar-saldo-inicial-
+    desde-cierre-francos) se rompió y hay evidencia externa confiable
+    (PDF del cierre + planilla de la usuaria) del valor correcto.
+
+    Solo toca la columna `saldo` -- no tomados_al_corte, gen_extra_al_corte
+    ni fecha_corte, para no inventar valores que no se puedan justificar.
+    Dry-run por default (muestra el antes/después sin escribir); con
+    ?confirmar=si aplica el cambio. Queda registrado automáticamente en
+    francos_saldo_inicial_auditoria vía los triggers, con el motivo pegado
+    a la nota para que quede explicado sin tener que adivinar después."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo = str(legajo)
+
+    try:
+        saldo_nuevo = int(request.args.get("saldo", ""))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Pasá ?saldo=<numero_entero> en la URL."}), 400
+    motivo = (request.args.get("motivo") or "").strip()
+    if not motivo:
+        return jsonify({"error": "Pasá ?motivo=<texto> explicando por qué se corrige."}), 400
+
+    with _get_db() as conn:
+        actual = conn.execute(
+            "SELECT * FROM francos_saldo_inicial WHERE legajo=?", (legajo,)
+        ).fetchone()
+        if not actual:
+            return jsonify({"error": f"No hay fila en francos_saldo_inicial para el legajo {legajo}."}), 404
+        actual = dict(actual)
+
+        aplicado = False
+        if request.args.get("confirmar") == "si":
+            ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("""
+                UPDATE francos_saldo_inicial
+                SET saldo=?, nota=?, cargado_en=?
+                WHERE legajo=?
+            """, (
+                saldo_nuevo,
+                f"{actual.get('nota','')} [corregido manualmente {ahora_str[:10]}: {motivo}]".strip(),
+                ahora_str, legajo,
+            ))
+            conn.commit()
+            aplicado = True
+
+    return jsonify({
+        "legajo": legajo, "nombre": actual.get("nombre"),
+        "saldo_actual": actual.get("saldo"), "saldo_propuesto": saldo_nuevo,
+        "motivo": motivo, "aplicado": aplicado,
+    })
+
+
 @app.route("/admin/auditoria-saldo-inicial/<legajo>")
 def admin_auditoria_saldo_inicial(legajo):
     """Solo lectura: historial completo de cambios a francos_saldo_inicial

@@ -541,3 +541,42 @@ def test_sincronizar_saldo_inicial_desde_cierre_francos_corrige_drift(db_tempora
     ultima = historial[-1]
     assert ultima["saldo_anterior"] == 7 and ultima["saldo_nuevo"] == 8
     assert "sincronizado" in ultima["nota_nueva"].lower()
+
+
+def test_corregir_saldo_inicial_manual_requiere_motivo_y_es_dry_run_por_default(db_temporal, client):
+    """Ruta pensada para corregir a mano un legajo puntual (ej. Calvet, cuyo
+    cierre de origen no tiene base_anterior y no se puede sincronizar con
+    /admin/sincronizar-saldo-inicial-desde-cierre-francos) cuando hay
+    evidencia externa confiable del valor correcto. Exige motivo, no aplica
+    sin ?confirmar=si, y deja rastro en francos_saldo_inicial_auditoria."""
+    conn = _conn(db_temporal)
+    leg, nombre = "18", "CALVET SILVIA PATRICIA"
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, nota, cargado_en) "
+        "VALUES (?,?,7,'nota original','2026-07-08 14:09:22')",
+        (leg, nombre),
+    )
+    conn.commit()
+
+    resp_sin_motivo = client.get(f"/admin/corregir-saldo-inicial/{leg}?saldo=8")
+    assert resp_sin_motivo.status_code == 400
+
+    resp_dry = client.get(f"/admin/corregir-saldo-inicial/{leg}?saldo=8&motivo=restaurado+segun+cierre+5")
+    assert resp_dry.get_json()["aplicado"] is False
+    fila_sin_tocar = conn.execute("SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)).fetchone()
+    assert fila_sin_tocar["saldo"] == 7
+
+    resp_aplicar = client.get(
+        f"/admin/corregir-saldo-inicial/{leg}?saldo=8&motivo=restaurado+segun+cierre+5&confirmar=si"
+    )
+    assert resp_aplicar.get_json()["aplicado"] is True
+
+    fila_final = conn.execute("SELECT saldo, nota FROM francos_saldo_inicial WHERE legajo=?", (leg,)).fetchone()
+    assert fila_final["saldo"] == 8
+    assert "restaurado segun cierre 5" in fila_final["nota"]
+
+    historial = conn.execute(
+        "SELECT * FROM francos_saldo_inicial_auditoria WHERE legajo=? ORDER BY id", (leg,)
+    ).fetchall()
+    ultima = historial[-1]
+    assert ultima["saldo_anterior"] == 7 and ultima["saldo_nuevo"] == 8
