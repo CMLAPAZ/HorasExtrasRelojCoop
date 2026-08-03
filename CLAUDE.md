@@ -791,6 +791,55 @@ Se agregó el equivalente:
   desajuste real y, si lo hay, investigar la causa puntual — no asumir que
   es el mismo bug de Redes.
 
+## Implementado en sesión 03/08/2026 — "Generados" tapados por recierre tardío (Administración)
+
+Encontrado revisando trazabilidad de todos los deptos tras el fix de Redes:
+GOMEZ MARIO (Administración) generó un franco real el 2026-07-04, visible en
+Períodos/Historial, pero **ausente** en "Generados" de la pantalla de
+Francos — síntoma inverso al de Redes (acá desaparece, no se duplica).
+
+**Causa raíz:** el cierre #6 de Administración cubría datos hasta
+`fecha_hasta` 2026-06-28, pero por haberse anulado y recerrado (incidente ya
+documentado arriba, sesión 21/07/2026) terminó de cerrarse recién el
+2026-07-20 (`cerrado_en`). `fecha_corte` se fija en `cerrado_en` (la hora
+real de cierre, por diseño — ver `admin_corregir_fecha_corte`), no en
+`fecha_hasta`. El período siguiente (semanas 1-4, 2026-06-29 al 2026-07-26)
+ya se venía cargando en paralelo mientras el cierre #6 seguía sin cerrar, y
+generó el franco del 07-04 — anterior a `fecha_corte` (07-20) pero
+**posterior** a la ventana real de datos del cierre #6 (que terminaba el
+06-28). El filtro de `gen_parcial` en `_calcular_saldos()` (agregado en el
+fix de Redes) descartaba cualquier día con `fecha <= fecha_corte` a secas,
+sin mirar a qué período pertenecía cada día — tapó el franco nuevo.
+
+**Fix:** `gen_parcial` ahora descarta un día solo si cae dentro de la
+ventana `fecha_desde..fecha_hasta` de algún período ACTIVO ya cerrado de
+ese legajo (mismos datos que ya usa `gen_periodos_por_emp`), no por estar
+antes de `fecha_corte` a secas. Un día de un período todavía abierto nunca
+cae dentro de la ventana de un período previo, sin importar cuándo ese
+previo terminó de cerrarse en el reloj de pared. Para legajos sin ningún
+período cerrado todavía se mantiene la comparación contra `fecha_corte`
+como piso (cubre la carga inicial de saldo). Aplicado también en
+`/admin/desglose-generados/<legajo>` para que el diagnóstico no quede
+inconsistente con lo que muestra Saldos.
+
+Tests: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
+`test_calcular_saldos_no_tapa_franco_del_periodo_abierto_por_recierre_tardio`
+(reproduce el incidente real de Gomez Mario). El test de readopción de
+Redes (`test_calcular_saldos_no_duplica_generados_con_confirmacion_archivada_readoptada_por_fecha`)
+se ajustó para pasarle al período de test una ventana `fecha_desde/fecha_hasta`
+realista (antes usaba fechas dummy hardcodeadas en `_crear_periodo`, que no
+importaban bajo el filtro viejo pero sí bajo el nuevo).
+
+**No se tocó la lógica de cierre** (`periodo_cerrar`, `francos_cierre_nuevo`,
+`_snapshot_francos_cierre`, etc.) — el fix es exclusivamente en cómo
+`_calcular_saldos()` lee períodos ya cerrados para la pantalla en vivo.
+
+**Pendiente:** correr `/admin/auditoria-completa-saldos-francos` y
+`/admin/verificar-cadena-cierres-francos` en producción para ver si hay más
+legajos/departamentos afectados por este mismo patrón (recierre tardío) o
+por la cadena rota de `cierres_francos` (Calvet, Telefonía — todavía sin
+diagnosticar la causa puntual).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

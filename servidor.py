@@ -3616,7 +3616,17 @@ def admin_desglose_generados(legajo):
     depto = emp["departamento"] if emp else None
     depto_norm = _normalizar_departamento_web(depto) if depto else None
 
+    # Mismo criterio que _calcular_saldos(): un día ya está absorbido si cae
+    # dentro de la ventana fecha_desde..fecha_hasta de algún período ACTIVO
+    # ya cerrado de este legajo -- no por estar antes de fecha_corte (hora
+    # real de cierre) a secas, que se rompe si el último cierre se recerró
+    # tarde (ver comentario en _calcular_saldos).
     corte_fecha = _parse_fecha(str(fecha_corte)[:10])
+    ventanas = [
+        (_parse_fecha(str(r["fecha_desde"] or "")[:10]), _parse_fecha(str(r["fecha_hasta"] or "")[:10]))
+        for r in periodos_legajo if (r["estado"] or "ACTIVO") != "ANULADO"
+    ]
+    ventanas = [(fd, fh) for fd, fh in ventanas if fd and fh]
     gen_parcial_detalle = None
     gen_parcial_total = 0
     dias_excluidos_por_corte = []
@@ -3627,7 +3637,13 @@ def admin_desglose_generados(legajo):
                 if not dia.get("franco"):
                     continue
                 f = _parse_fecha(dia.get("fecha", ""))
-                if f and corte_fecha and f <= corte_fecha:
+                if not f:
+                    continue
+                excluido = (
+                    any(fd <= f <= fh for fd, fh in ventanas) if ventanas
+                    else bool(corte_fecha and f <= corte_fecha)
+                )
+                if excluido:
                     dias_excluidos_por_corte.append(dia.get("fecha"))
                 else:
                     gen_parcial_total += 1
@@ -3643,6 +3659,9 @@ def admin_desglose_generados(legajo):
         "nombre": emp["nombre"] if emp else None,
         "departamento": depto,
         "fecha_corte": fecha_corte,
+        "ventanas_periodos_activos": [
+            {"fecha_desde": fd.isoformat(), "fecha_hasta": fh.isoformat()} for fd, fh in ventanas
+        ],
         "saldo_inicial_row": inicial,
         "periodos_del_legajo": periodos_detalle,
         "gen_periodos_por_emp_total": gen_periodos_total,
@@ -7134,7 +7153,7 @@ def _calcular_saldos():
 
         # Todos los generados por períodos cerrados (se filtra por fecha_corte per-empleado abajo)
         all_pe = conn.execute(
-            "SELECT pe.legajo, pe.francos, p.fecha_hasta "
+            "SELECT pe.legajo, pe.francos, p.fecha_desde, p.fecha_hasta "
             "FROM periodo_empleados pe "
             "JOIN periodos p ON pe.periodo_id = p.id "
             "WHERE COALESCE(p.estado,'ACTIVO') <> 'ANULADO'"
@@ -7152,6 +7171,17 @@ def _calcular_saldos():
         if (row["fecha_hasta"] or "") > corte:
             gen_periodos_por_emp[leg] = gen_periodos_por_emp.get(leg, 0) + (row["francos"] or 0)
 
+    # Ventanas de fechas (fecha_desde..fecha_hasta) de los períodos ACTIVO ya
+    # cerrados de cada legajo -- para saber qué días ya están absorbidos en
+    # gen_periodos_por_emp sin depender de fecha_corte (cerrado_en, la hora
+    # real de cierre). Ver por qué abajo.
+    ventanas_por_emp = {}
+    for row in all_pe:
+        fd = _parse_fecha(str(row["fecha_desde"] or "")[:10])
+        fh = _parse_fecha(str(row["fecha_hasta"] or "")[:10])
+        if fd and fh:
+            ventanas_por_emp.setdefault(row["legajo"], []).append((fd, fh))
+
     # Generados del período activo (todavía sin cerrar): en vivo, con la
     # misma función que usa la pantalla de Períodos (_calcular_periodo),
     # en vez de la tabla-snapshot francos_semana_parcial -- esa tabla podía
@@ -7162,10 +7192,26 @@ def _calcular_saldos():
     # _leer_historial() (adentro de _calcular_periodo) puede "readoptar" por
     # fecha una confirmación archivada de un cierre YA cerrado (no anulado) si
     # una semana nueva activa se solapa en fechas con ese cierre viejo -- ver
-    # _resolver_semana_confirmacion(). Sin filtrar por fecha acá, esos días ya
-    # absorbidos en periodo_empleados.francos se sumarían dos veces. Por eso
-    # se cuenta día por día y sólo los posteriores al fecha_corte de CADA
-    # empleado (el mismo criterio que ya usa gen_periodos_por_emp arriba).
+    # _resolver_semana_confirmacion(). Sin filtrar acá, esos días ya
+    # absorbidos en periodo_empleados.francos se sumarían dos veces.
+    #
+    # Un día se descarta SOLO si cae dentro de la ventana fecha_desde..fecha_hasta
+    # de algún período ACTIVO ya cerrado de ese legajo (mismos datos que usa
+    # gen_periodos_por_emp) -- NO comparando contra fecha_corte (cerrado_en)
+    # a secas. fecha_corte es la hora REAL en que se cerró el último período,
+    # que puede quedar semanas después de su propia ventana de datos si ese
+    # cierre se recuperó/recerró tarde (ver CLAUDE.md, incidente Administración
+    # agosto 2026: el cierre #6 cubría datos hasta 2026-06-28 pero se cerró
+    # recién el 2026-07-20 tras anular y rehacer el #5; con la comparación
+    # vieja, un franco real del 2026-07-04 -- ya del período siguiente,
+    # todavía abierto -- quedaba tapado porque 07-04 <= 07-20). Comparar
+    # contra la ventana propia de cada período cerrado no tiene ese problema:
+    # un día de un período todavía abierto nunca cae dentro de la ventana de
+    # un período previo, sin importar cuándo se terminó de cerrar ese previo
+    # en el reloj de pared. Para legajos sin ningún período cerrado todavía
+    # (nunca tuvieron un cierre real) se mantiene la comparación contra
+    # fecha_corte como piso, para no perder el filtro de la carga inicial de
+    # saldo.
     empleados_conocidos_cache = _empleados_conocidos()
     deptos_activos = sorted({
         e["departamento"] for e in empleados_conocidos_cache if e.get("departamento")
@@ -7175,6 +7221,7 @@ def _calcular_saldos():
         depto_norm = _normalizar_departamento_web(depto)
         for e in _calcular_periodo(0, 999999, depto_norm):
             leg = e["legajo"]
+            ventanas = ventanas_por_emp.get(leg)
             corte_str = iniciales.get(leg, {}).get("fecha_corte", "2026-05-21") or "2026-05-21"
             corte_fecha = _parse_fecha(str(corte_str)[:10])
             dias_nuevos = 0
@@ -7182,7 +7229,12 @@ def _calcular_saldos():
                 if not dia.get("franco"):
                     continue
                 f = _parse_fecha(dia.get("fecha", ""))
-                if f and corte_fecha and f <= corte_fecha:
+                if not f:
+                    continue
+                if ventanas:
+                    if any(fd <= f <= fh for fd, fh in ventanas):
+                        continue
+                elif corte_fecha and f <= corte_fecha:
                     continue
                 dias_nuevos += 1
             gen_parcial[leg] = gen_parcial.get(leg, 0) + dias_nuevos

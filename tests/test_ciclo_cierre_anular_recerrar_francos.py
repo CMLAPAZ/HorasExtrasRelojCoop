@@ -55,11 +55,12 @@ def _conn(db_file):
     return conn
 
 
-def _crear_periodo(conn, cerrado_en, departamento, legajo, nombre, estado="ACTIVO", francos=0):
+def _crear_periodo(conn, cerrado_en, departamento, legajo, nombre, estado="ACTIVO", francos=0,
+                    fecha_desde="2026-01-01", fecha_hasta="2026-01-07"):
     cur = conn.execute(
         "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, "
         "fecha_desde, fecha_hasta, estado) VALUES (?,?,?,?,?,?,?)",
-        (cerrado_en, 1, 1, "periodo_test.json", "2026-01-01", "2026-01-07", estado),
+        (cerrado_en, 1, 1, "periodo_test.json", fecha_desde, fecha_hasta, estado),
     )
     pid = cur.lastrowid
     conn.execute(
@@ -177,7 +178,11 @@ def test_calcular_saldos_no_duplica_generados_con_confirmacion_archivada_readopt
         "VALUES (?,?,13,?,?)",
         (leg, nombre, cerrado_en, cerrado_en),
     )
-    _crear_periodo(conn, cerrado_en, "Redes", leg, nombre, francos=3)
+    # Ventana real del cierre de junio -- incluye el 2026-06-15, la fecha del
+    # día readoptado más abajo, para que el chequeo por ventana (no por
+    # fecha_corte a secas) siga reconociéndolo como ya absorbido.
+    _crear_periodo(conn, cerrado_en, "Redes", leg, nombre, francos=3,
+                    fecha_desde="2026-06-09", fecha_hasta="2026-06-15")
     conn.commit()
 
     # Semana activa nueva (período de julio en curso), con un rango de
@@ -206,6 +211,66 @@ def test_calcular_saldos_no_duplica_generados_con_confirmacion_archivada_readopt
     saldos = servidor._calcular_saldos()
     saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
     assert saldo_leg["generados"] == 0
+
+
+def test_calcular_saldos_no_tapa_franco_del_periodo_abierto_por_recierre_tardio(db_temporal):
+    """Reproduce el incidente real de producción (03/08/2026, Administración
+    / GOMEZ MARIO): el cierre #6 cubría datos hasta 2026-06-28 pero, por
+    haberse anulado y recerrado, se terminó de cerrar recién el 2026-07-20
+    (cerrado_en). fecha_corte quedó en esa fecha tardía. El período
+    siguiente (todavía abierto) ya se venía cargando en paralelo y generó un
+    franco real el 2026-07-04 -- anterior a fecha_corte (07-20) pero
+    POSTERIOR a la ventana de datos del cierre #6 (que terminaba el 06-28).
+    Con el filtro viejo (día <= fecha_corte a secas) ese franco desaparecía
+    de "Generados" en Saldos aunque sí aparecía en Períodos/Historial.
+    Ahora el filtro compara contra la ventana fecha_desde..fecha_hasta de
+    cada período ACTIVO ya cerrado, no contra fecha_corte."""
+    conn = _conn(db_temporal)
+    leg, nombre = "13", "GOMEZ MARIO"
+    cerrado_tardio = "2026-07-20T14:10:32.244725"
+
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, fecha_corte, cargado_en) "
+        "VALUES (?,?,25,?,?)",
+        (leg, nombre, cerrado_tardio, "2026-07-21 09:58:07"),
+    )
+    # Cierre #6: ventana de datos hasta 2026-06-28, pero cerrado (cerrado_en)
+    # recién el 2026-07-20 tras un ciclo anular/recerrar.
+    cur = conn.execute(
+        "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, "
+        "fecha_desde, fecha_hasta, estado) VALUES (?,?,?,?,?,?,?)",
+        (cerrado_tardio, 1, 4, "periodo_test.json", "2026-06-01", "2026-06-28", "ACTIVO"),
+    )
+    pid = cur.lastrowid
+    conn.execute(
+        "INSERT INTO periodo_empleados (periodo_id,legajo,nombre,departamento,ot50,ot100,"
+        "comidas,francos,tardanzas,semanas,confirmado) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (pid, leg, nombre, "Administración", "0h", "0h", 0, 0, 0, "[]", 0),
+    )
+    conn.commit()
+
+    # Período nuevo, todavía abierto (semanas 1-4, 2026-06-29 al 2026-07-26),
+    # cargándose en paralelo mientras el cierre #6 seguía sin cerrarse.
+    servidor._guardar_metadata({
+        "semana_actual": 50,
+        "semanas": [{
+            "numero": 50, "num_depto": 1, "departamento": "Administración",
+            "fecha_desde": "2026-06-29", "fecha_hasta": "2026-07-05",
+            "archivo": "semana_50.csv",
+        }],
+    })
+    servidor.CONFIRM_DIR.mkdir(exist_ok=True, parents=True)
+    (servidor.CONFIRM_DIR / "nueva.json").write_text(json.dumps({
+        "legajo": leg, "nombre": nombre, "departamento": "Administración", "semana": 50,
+        "confirmado_en": "2026-07-05T10:00:00",
+        "dias": [{"fecha": "2026-07-04", "franco": 1, "ot50": "00:00:00",
+                   "ot100": "04:00:00", "comida": 0, "tiene_ot": True}],
+        "totales": {"ot50": "0h", "ot100": "4h", "comidas": 0, "francos": 1, "tardanzas": 0},
+    }, ensure_ascii=False), encoding="utf-8")
+
+    saldos = servidor._calcular_saldos()
+    saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
+    assert saldo_leg["generados"] == 1
 
 
 def test_delta_francos_cierre_solo_cuenta_lo_propio_del_pid(db_temporal):
