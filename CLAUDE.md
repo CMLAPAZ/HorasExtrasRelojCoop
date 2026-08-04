@@ -206,17 +206,21 @@ Fuentes de "generados":
 
 ## Departamentos y fuentes
 
-| Depto | Fichadas | Carga manual | Horario variable |
+| Depto | Fichadas procesadas por el sistema | Carga manual | Horario variable |
 |---|---|---|---|
 | Redes | Sí (biométrico) | No | Sí — varía verano/invierno |
 | Administración | Sí (biométrico) | No | No |
 | Guardias | No | Semanal desde formulario web | No |
 | Internet | No | Semanal desde formulario web | No |
 | Telefonía | No | Semanal desde formulario web | No |
-| **Ingenieros** | No (excluidos del biométrico) | Cierre manual mensual | No |
+| **Ingenieros** | No | Cierre manual mensual | No |
 
-Los deptos sin fichadas (Guardias, Internet, Telefonía, Ingenieros) tienen empleados en
+**Guardias, Internet, Telefonía e Ingenieros fichan igual que el resto** (tienen reloj
+biométrico) — el sistema simplemente **no procesa esas fichadas** para estos 4
+departamentos, porque su horario es demasiado complejo/variable para calcularlo
+automáticamente con `procesador.py`. Sus francos se llevan aparte, con empleados en
 `empleados_extra` y francos generados en `francos_semana_manual` + `francos_generados`.
+No confundir "sin fichadas procesadas por el sistema" con "sin reloj biométrico".
 
 **Legajos 100 y 101** (MANCIONI y GATTI) están **excluidos de todo procesamiento biométrico**: `procesador.py` los filtra en `_df_to_registros()` y `LEGAJOS_EXCLUIR_PROCESAMIENTO = {"100", "101"}`. Sus francos se gestionan exclusivamente como Ingenieros desde el módulo manual. `_empleados_conocidos()` da prioridad a `empleados_extra` para esos legajos, ignorando cualquier sesión biométrica que los traiga como Redes.
 
