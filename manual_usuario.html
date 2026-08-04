@@ -223,6 +223,7 @@ li{margin-bottom:5px;font-size:.9rem}
     <li><a href="#francos-saldos">💰 Revisar saldos</a></li>
     <li><a href="#cierre">🔒 Cierre de período</a></li>
     <li><a href="#historial">📁 Historial de cierres</a></li>
+    <li><a href="#plus-vacacional">🏖️ Plus Vacacional</a></li>
 
     <li class="div"></li>
     <li class="grp">🖥️ App local (Windows)</li>
@@ -569,7 +570,8 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><strong>Francos</strong></td><td>Para registrar cuando alguien toma un franco y ver los saldos.</td></tr>
         <tr><td><strong>Cierres</strong></td><td>Historial de todos los cierres mensuales realizados.</td></tr>
         <tr><td><strong>Historial</strong></td><td>Lista de confirmaciones recibidas de los empleados (incluye el acumulado de horas extra por empleado y semana).</td></tr>
-        <tr><td><strong>Admin ▾</strong></td><td>Menú desplegable con tareas administrativas: <strong>Empleados extra</strong> (importar empleados sin fichadas), <strong>Config. Email</strong> (SMTP y supervisores) y <strong>Ajuste saldo inicial</strong> (corrección manual de saldo, ver sección <a href="#no-tocar" style="color:var(--acc)">Qué NO tocar</a>).</td></tr>
+        <tr><td><strong>Plus Vac.</strong></td><td>Informe imprimible de horas extras para calcular el plus vacacional (ver sección <a href="#plus-vacacional" style="color:var(--acc)">Plus Vacacional</a>).</td></tr>
+        <tr><td><strong>Admin ▾</strong></td><td>Menú desplegable con tareas administrativas: <strong>Empleados extra</strong> (importar empleados sin fichadas), <strong>Config. Email</strong> (SMTP y supervisores), <strong>Feriados</strong> (agregar/quitar feriados que usa el cálculo de horas extra) y <strong>Ajuste saldo inicial</strong> (corrección manual de saldo, ver sección <a href="#no-tocar" style="color:var(--acc)">Qué NO tocar</a>).</td></tr>
         <tr><td><strong>Salir</strong></td><td>Cerrar sesión.</td></tr>
       </tbody>
     </table>
@@ -928,9 +930,18 @@ li{margin-bottom:5px;font-size:.9rem}
 
   <div class="card">
     <div class="card-ttl">Cómo se cargan sus francos</div>
-    <p><strong>Guardias y Telefonía:</strong> los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
+    <p><strong>Guardias, Internet y Telefonía:</strong> los francos generados se cargan semanalmente desde el formulario web. Carola o la supervisora correspondiente completa los datos de cada persona.</p>
     <p><strong>Ingenieros:</strong> los francos se cargan mediante un <strong>cierre mensual manual</strong> al finalizar cada mes. A diferencia de los deptos con fichadas, el cierre de Ingenieros lo hace Carola directamente en el sistema.</p>
     <p>Si te piden cargar datos de estos departamentos, seguí las instrucciones específicas que te dé Carola.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Corregir una carga semanal mal hecha</div>
+    <p>El formulario semanal de arriba de la pantalla de Francos solo permite cargar/editar el <strong>mes actual</strong>. Si te equivocaste al cargar una semana de un mes anterior (y todavía no tiene ningún cierre que la incluya), en la sección <strong>"Cargas semanales pendientes (todos los meses)"</strong>, más abajo en la misma pantalla de Francos, aparecen todas las cargas sin cerrar de cualquier mes — ahí podés corregir los días o eliminar la fila directamente.</p>
+    <div class="alert a-info" style="margin-top:10px">
+      <span class="a-ico">ℹ️</span>
+      <div class="a-body">Una vez que un cierre ya incluyó esa carga, deja de poder editarse desde ahí (aparece marcada con el número de cierre) — a partir de ese momento, cualquier corrección pasa por anular el cierre.</div>
+    </div>
   </div>
 
   <div class="card">
@@ -1235,14 +1246,48 @@ li{margin-bottom:5px;font-size:.9rem}
     <span class="a-ico">ℹ️</span>
     <div class="a-body"><strong>Cierres de período (horas extras): permanentes</strong>
     Los cierres de período de Redes y Administración son permanentes. Si hay un error grave, Carola puede anularlo, pero es un proceso especial que no debe hacerse sin revisión.<br><br>
-    <strong>Cierres de francos de Ingenieros y Guardias: reversibles</strong>
-    El último cierre activo de Ingenieros o Guardias puede ser anulado por Carola si hubo un error, y regenerado correctamente. Esto está diseñado así porque estos cierres se hacen manualmente cada mes.</div>
+    <strong>Cierres de francos de Guardias, Internet, Telefonía e Ingenieros: reversibles (los recientes)</strong>
+    El último cierre activo de estos departamentos puede ser anulado por Carola si hubo un error, y regenerado correctamente. En la lista de "Cierres", si un cierre tiene el botón rojo "Anular cierre" disponible, es reversible; si no lo tiene (cierres más viejos, de antes de que se agregara esta función), hay que corregirlo con una herramienta puntual en vez de anularlo — consultá a Carola.</div>
   </div>
 
   <div class="card">
     <div class="card-ttl">Informe mensual combinado</div>
     <p>Desde la pantalla de "Cierres" se puede generar un único PDF con los cierres de <strong>todos los departamentos de un mes</strong>, con salto de página entre cada uno.</p>
     <p>Sirve para tener un solo archivo con todo lo cerrado ese mes, en vez de descargar el informe completo de cada departamento por separado.</p>
+  </div>
+</section>
+
+<!-- ── PLUS VACACIONAL ── -->
+<section class="sec" id="plus-vacacional">
+  <div class="sec-hd">
+    <div class="sec-ico ico-g">🏖️</div>
+    <div>
+      <div class="sec-tag tag-g">Referencia</div>
+      <div class="sec-ttl">Plus Vacacional</div>
+      <div class="sec-sub">Informe imprimible de horas extras para calcular el plus</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="card">
+    <div class="card-ttl">Qué muestra</div>
+    <p>Una tabla con la suma de <strong>OT50 + OT100</strong> (horas extras al 50% y al 100%) de cada empleado, mes por mes, de los <strong>últimos 6 cierres activos</strong> del departamento — más el total. Sirve como base para calcular el plus vacacional de cada persona.</p>
+    <p>Solo está disponible para <strong>Redes</strong> y <strong>Administración</strong> (los departamentos con fichadas); se elige cuál ver con los links "Redes" / "Administración" arriba de la tabla.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cómo usarlo</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Hacer clic en "Plus Vac." en el menú</div><div class="sd">Muestra Redes por defecto.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Elegir el departamento arriba de la tabla</div><div class="sd">"Redes" o "Administración".</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">"🖨 Imprimir / PDF"</div><div class="sd">Genera un PDF listo para entregar.</div></div></div>
+    </div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>Solo cuenta cierres ya hechos</strong>
+    Si el departamento todavía no tiene ningún período cerrado, el informe va a estar vacío — hay que cerrar al menos un período primero (ver sección <a href="#cierre" style="color:var(--acc)">Cierre de período</a>).</div>
   </div>
 </section>
 
