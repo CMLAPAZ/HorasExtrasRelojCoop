@@ -96,6 +96,48 @@ def _get_db():
     return conn
 
 
+def _registrar_reporte_enviado(conn, departamentos, supervisor_nombre, supervisor_email,
+                                saldos, origen, resultado="ok", error_detalle=""):
+    """Auditoría de envíos del reporte de saldos -- hasta el 04/08/2026 no
+    quedaba ningún registro de qué se mandó, a quién ni cuándo (el reporte
+    semanal solo dejaba una notificación de Windows que no aplica en el
+    servidor). Sin esto, si un envío salió con datos incorrectos (ej. el
+    viernes 31/07/2026, con el bug de "Generados" duplicado de Redes
+    todavía sin arreglar) no había forma de confirmar después qué números
+    recibió cada supervisor. `saldos` es la lista ya filtrada de empleados
+    de los departamentos de ESE supervisor, tal cual se adjuntó/mostró en
+    ese envío -- se guarda tal cual para poder reconstruir el contenido
+    exacto sin adivinar. Llamada tanto desde el cron de los viernes
+    (main()) como desde /configuracion/supervisores/enviar/<id> (envío
+    manual) -- ambos comparten esta misma tabla."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reportes_enviados (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            enviado_en         TEXT NOT NULL,
+            departamentos      TEXT NOT NULL,
+            supervisor_nombre  TEXT NOT NULL,
+            supervisor_email   TEXT NOT NULL,
+            saldos_snapshot    TEXT NOT NULL,
+            origen             TEXT NOT NULL,
+            resultado          TEXT NOT NULL DEFAULT 'ok',
+            error_detalle      TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        INSERT INTO reportes_enviados
+            (enviado_en, departamentos, supervisor_nombre, supervisor_email,
+             saldos_snapshot, origen, resultado, error_detalle)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, (
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ", ".join(departamentos) if isinstance(departamentos, (list, tuple)) else str(departamentos),
+        supervisor_nombre, supervisor_email,
+        json.dumps(saldos, ensure_ascii=False, default=str),
+        origen, resultado, error_detalle,
+    ))
+    conn.commit()
+
+
 def _calcular_saldos():
     """
     Devuelve lista de dicts por empleado con saldo calculado.
@@ -765,6 +807,7 @@ def main():
     enviados     = 0
 
     if cfg.get("smtp_user") and cfg.get("smtp_pass") and supervisores:
+        conn_auditoria = _get_db()
         for sup in supervisores:
             adjuntos = []
             for dep in sup["deptos"]:
@@ -773,12 +816,26 @@ def main():
                     adjuntos.append(pdf)
             if not adjuntos:
                 continue
+            saldos_sup = [
+                e for dep in sup["deptos"]
+                for e in por_depto_envio.get(dep, [])
+            ]
             try:
                 html_body = _hacer_html_email(sup["nombre"], sup["deptos"], por_depto_envio, fecha_str)
                 _enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
                 enviados += 1
+                _registrar_reporte_enviado(
+                    conn_auditoria, sup["deptos"], sup["nombre"], sup["email"],
+                    saldos_sup, origen="automatico_viernes",
+                )
             except Exception as exc:
                 errores_mail.append(f"{sup['email']}: {exc}")
+                _registrar_reporte_enviado(
+                    conn_auditoria, sup["deptos"], sup["nombre"], sup["email"],
+                    saldos_sup, origen="automatico_viernes",
+                    resultado="error", error_detalle=str(exc),
+                )
+        conn_auditoria.close()
 
     # Notificación final
     partes = []

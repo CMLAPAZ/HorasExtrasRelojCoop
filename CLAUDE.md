@@ -949,6 +949,40 @@ JSON — acotado al departamento que se acaba de cerrar:
   alerta temprana en la misma respuesta, para no depender de que alguien
   se acuerde de correr las rutas de `/admin/*` por separado el mes que viene.
 
+## Implementado en sesión 04/08/2026 — auditoría de envíos del reporte de saldos
+
+A raíz de una duda de la usuaria ("el viernes pasado mandamos mal los
+saldos... ¿te acordás que los corregimos?" — el bug de "Generados"
+duplicado de Redes del 31/07/2026, arreglado ese mismo día) se detectó que
+**no existía ningún registro de qué se había enviado, a quién, ni
+cuándo** — ni en el cron de los viernes (`reporte_saldos_francos.py`,
+`_notificar()` solo mostraba un balloon de Windows que no aplica en el
+servidor) ni en el botón manual "Enviar" de `/configuracion/email`. Si un
+envío salía con datos incorrectos, no había forma de confirmarlo después.
+
+**Fix:** nueva tabla `reportes_enviados` (creada en `_init_db()` y
+defensivamente en `_registrar_reporte_enviado()`) con una fila por cada
+email realmente enviado: `enviado_en`, `departamentos`, `supervisor_nombre`,
+`supervisor_email`, `saldos_snapshot` (JSON — la lista completa de
+empleados/saldos tal cual se envió, para reconstruir el contenido exacto
+sin adivinar), `origen` (`automatico_viernes` | `manual_boton_enviar`),
+`resultado` (`ok` | `error`) y `error_detalle`. Se registra tanto en el
+éxito como en el fallo del envío.
+
+`_registrar_reporte_enviado()` vive en `reporte_saldos_francos.py` (import
+`reporte_saldos_francos as rrf` ya existía en `servidor.py` para
+`supervisores_enviar`) y se llama desde los dos lugares que mandan email:
+`reporte_saldos_francos.main()` (cron de los viernes) y
+`servidor.supervisores_enviar()` (botón manual).
+
+Consulta de solo lectura: `GET /admin/historial-reportes-enviados`
+(filtros opcionales `?supervisor_email=`, `?departamento=`, `?desde=`,
+`?resultado=`).
+
+Tests: `tests/test_reporte_saldos_francos.py` —
+`test_main_registra_auditoria_de_envios_en_reportes_enviados` y
+`test_main_envio_fallido_queda_registrado_como_error`.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

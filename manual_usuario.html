@@ -217,6 +217,7 @@ li{margin-bottom:5px;font-size:.9rem}
     <li><a href="#links">📲 Links de confirmación</a></li>
     <li><a href="#confirmaciones">✅ Revisar confirmaciones</a></li>
     <li><a href="#informe-semanal">🖨️ Informe semanal</a></li>
+    <li><a href="#config-email">📧 Configuración de email</a></li>
     <li><a href="#sin-fichadas">📋 Deptos sin fichadas</a></li>
     <li><a href="#francos-nuevo">➕ Registrar franco tomado</a></li>
     <li><a href="#francos-saldos">💰 Revisar saldos</a></li>
@@ -855,6 +856,49 @@ li{margin-bottom:5px;font-size:.9rem}
     <span class="a-ico">ℹ️</span>
     <div class="a-body"><strong>No hace falta que ninguna PC esté prendida</strong>
     Este envío corre en el servidor en la nube (PythonAnywhere), no en una computadora de la oficina. Aunque todas las PCs estén apagadas, el reporte sale igual los viernes. (Antes existía una tarea programada en una PC con Windows para esto, pero está deshabilitada desde el 29/05/2026 — ya no se usa.)</div>
+  </div>
+</section>
+
+<!-- ── CONFIGURACIÓN DE EMAIL ── -->
+<section class="sec" id="config-email">
+  <div class="sec-hd">
+    <div class="sec-ico ico-w">📧</div>
+    <div>
+      <div class="sec-tag tag-w">Admin ▾ Config. Email</div>
+      <div class="sec-ttl">Configuración de email</div>
+      <div class="sec-sub">Quién recibe el reporte de los viernes y con qué cuenta se envía</div>
+    </div>
+  </div>
+  <div class="plat-row"><span class="plat plat-web">🌐 Página web — cmhoras.pythonanywhere.com</span></div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>Cada supervisor recibe solo sus departamentos</strong>
+    Al asignarle departamentos a un supervisor, solo le llegan los PDFs de saldos de <em>esos</em> departamentos — nunca los de otro. Es la misma regla de "nunca mezclar departamentos" aplicada a los envíos.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Cuenta de correo remitente (una sola vez, salvo que cambie la contraseña)</div>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a Admin ▾ → Config. Email</div><div class="sd">Es un menú desplegable en la barra superior.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Completar "Cuenta de correo remitente"</div><div class="sd">Email remitente (ej. Gmail), contraseña, servidor SMTP y puerto (para Gmail vienen precargados: smtp.gmail.com, puerto 587).</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Presionar "Guardar configuración SMTP"</div><div class="sd">Queda guardado para todos los envíos futuros, no hace falta repetirlo cada semana.</div></div></div>
+    </div>
+    <div class="alert a-warn" style="margin-top:12px">
+      <span class="a-ico">⚠️</span>
+      <div class="a-body"><strong>Si la cuenta tiene verificación en 2 pasos</strong>
+      No uses la contraseña normal de la cuenta — generá una "Contraseña de aplicación" desde la configuración de seguridad de Gmail (o el proveedor que uses) y pegá esa.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Agregar o sacar un supervisor</div>
+    <p>Para que alguien empiece a recibir el reporte de los viernes: nombre, email, y tildar los departamentos que le corresponden (puede ser más de uno). Para que deje de recibirlo, "Eliminar" en la lista de supervisores configurados.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Enviar el reporte ahora, sin esperar al viernes</div>
+    <p>Cada supervisor de la lista tiene un botón <strong>"Enviar"</strong> — manda el reporte de saldos de sus departamentos en ese momento, con los datos actuales. Sirve para reenviar algo que no llegó, o para probar la configuración después de cambiarla.</p>
   </div>
 </section>
 

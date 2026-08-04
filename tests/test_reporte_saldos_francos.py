@@ -288,3 +288,49 @@ def test_main_mismo_depto_repetido_no_duplica_adjunto(db_temporal, main_io):
 
     assert len(main_io) == 1
     assert len(main_io[0]["adjuntos"]) == 1
+
+
+# ──────────────────────────────────────────────────────────────
+# 8. Auditoría de envíos (reportes_enviados) -- agregada 04/08/2026 tras
+#    el incidente del viernes 31/07 (Generados duplicado de Redes): hasta
+#    entonces no quedaba ningún registro de qué se mandó ni a quién.
+# ──────────────────────────────────────────────────────────────
+
+def test_main_registra_auditoria_de_envios_en_reportes_enviados(db_temporal, main_io):
+    _insert_periodo_empleado(db_temporal, "133", "ZABALA ANTONIO", "Redes")
+    _insert_supervisor(db_temporal, "Ing. Gatti", "gatti@celp.com.ar", ["Redes"])
+
+    rep.main()
+
+    conn = sqlite3.connect(str(db_temporal))
+    conn.row_factory = sqlite3.Row
+    filas = conn.execute("SELECT * FROM reportes_enviados").fetchall()
+    conn.close()
+
+    assert len(filas) == 1
+    fila = dict(filas[0])
+    assert fila["supervisor_email"] == "gatti@celp.com.ar"
+    assert fila["departamentos"] == "Redes"
+    assert fila["origen"] == "automatico_viernes"
+    assert fila["resultado"] == "ok"
+    snapshot = json.loads(fila["saldos_snapshot"])
+    assert any(e["legajo"] == "133" for e in snapshot)
+
+
+def test_main_envio_fallido_queda_registrado_como_error(db_temporal, main_io, monkeypatch):
+    _insert_periodo_empleado(db_temporal, "133", "ZABALA ANTONIO", "Redes")
+    _insert_supervisor(db_temporal, "Ing. Gatti", "gatti@celp.com.ar", ["Redes"])
+
+    def _falla(*a, **k):
+        raise RuntimeError("SMTP caído")
+    monkeypatch.setattr(rep, "_enviar_email", _falla)
+
+    rep.main()
+
+    conn = sqlite3.connect(str(db_temporal))
+    conn.row_factory = sqlite3.Row
+    fila = dict(conn.execute("SELECT * FROM reportes_enviados").fetchone())
+    conn.close()
+
+    assert fila["resultado"] == "error"
+    assert "SMTP caído" in fila["error_detalle"]

@@ -472,6 +472,24 @@ def _init_db():
                 );
             END
         """)
+        # Auditoría de envíos del reporte de saldos (cron de los viernes y
+        # botón "Enviar" manual) -- ver reporte_saldos_francos._registrar_reporte_enviado.
+        # Se crea acá también (además de defensivamente en esa función) para
+        # que las rutas de consulta puedan asumir que la tabla existe desde
+        # el arranque de la app, sin esperar al primer envío.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reportes_enviados (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                enviado_en         TEXT NOT NULL,
+                departamentos      TEXT NOT NULL,
+                supervisor_nombre  TEXT NOT NULL,
+                supervisor_email   TEXT NOT NULL,
+                saldos_snapshot    TEXT NOT NULL,
+                origen             TEXT NOT NULL,
+                resultado          TEXT NOT NULL DEFAULT 'ok',
+                error_detalle      TEXT DEFAULT ''
+            )
+        """)
         conn.commit()
     # Importar JSON viejos si los hay
     if PERIODOS_DIR.exists():
@@ -3794,6 +3812,59 @@ def admin_auditoria_saldo_inicial(legajo):
         "estado_actual": dict(actual) if actual else None,
         "historial": [dict(r) for r in rows],
     })
+
+
+@app.route("/admin/historial-reportes-enviados")
+def admin_historial_reportes_enviados():
+    """Solo lectura: historial de envíos del reporte de saldos de francos
+    (cron automático de los viernes y botón "Enviar" manual de Config.
+    Email) -- ver reporte_saldos_francos._registrar_reporte_enviado.
+
+    Hasta el 04/08/2026 no quedaba ningún registro de qué se mandó, a quién
+    ni cuándo, así que si un envío salía con datos incorrectos (ej. el
+    viernes 31/07/2026, con el bug de "Generados" duplicado de Redes
+    todavía sin arreglar) no había forma de confirmar después qué números
+    recibió cada supervisor. Cada fila guarda el snapshot completo de
+    saldos tal cual se envió, para reconstruir el contenido exacto sin
+    adivinar.
+
+    Filtros opcionales por querystring: ?supervisor_email=, ?departamento=,
+    ?desde=YYYY-MM-DD, ?resultado=ok|error."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+
+    sql = "SELECT id, enviado_en, departamentos, supervisor_nombre, supervisor_email, origen, resultado, error_detalle, saldos_snapshot FROM reportes_enviados WHERE 1=1"
+    params = []
+    email_f = request.args.get("supervisor_email", "").strip()
+    if email_f:
+        sql += " AND supervisor_email=?"
+        params.append(email_f)
+    dep_f = request.args.get("departamento", "").strip()
+    if dep_f:
+        sql += " AND departamentos LIKE ?"
+        params.append(f"%{dep_f}%")
+    desde_f = request.args.get("desde", "").strip()
+    if desde_f:
+        sql += " AND enviado_en >= ?"
+        params.append(desde_f)
+    resultado_f = request.args.get("resultado", "").strip()
+    if resultado_f:
+        sql += " AND resultado=?"
+        params.append(resultado_f)
+    sql += " ORDER BY id DESC"
+
+    with _get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    envios = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["saldos_snapshot"] = json.loads(d["saldos_snapshot"])
+        except Exception:
+            pass
+        envios.append(d)
+
+    return jsonify({"total": len(envios), "envios": envios})
 
 
 @app.route("/admin/desglose-generados/<legajo>")
@@ -8684,12 +8755,24 @@ def supervisores_enviar(sid):
         return redirect(url_for("configuracion_email") + "?error=sin_datos")
 
     cfg = rrf._leer_email_cfg()
+    saldos_sup = [e for dep in deptos for e in por_depto_envio.get(dep, [])]
     try:
         html_body = rrf._hacer_html_email(sup["nombre"], deptos, por_depto_envio, fecha_str)
         rrf._enviar_email(cfg, sup["nombre"], sup["email"], adjuntos, html_body, fecha_str)
-    except Exception:
+    except Exception as exc:
         app.logger.error("supervisores_enviar: _enviar_email\n" + traceback.format_exc())
+        with _get_db() as conn:
+            rrf._registrar_reporte_enviado(
+                conn, deptos, sup["nombre"], sup["email"], saldos_sup,
+                origen="manual_boton_enviar", resultado="error", error_detalle=str(exc),
+            )
         return redirect(url_for("configuracion_email") + "?error=email")
+
+    with _get_db() as conn:
+        rrf._registrar_reporte_enviado(
+            conn, deptos, sup["nombre"], sup["email"], saldos_sup,
+            origen="manual_boton_enviar",
+        )
 
     return redirect(url_for("configuracion_email") + f"?ok=reporte&sup_nombre={sup['nombre']}")
 
