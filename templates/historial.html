@@ -169,10 +169,11 @@
     <div class="field">
       <label for="semana">Semana</label>
       <select id="semana" name="semana">
-        <option value="">Todas</option>
+        <option value="" {% if not semana_actual and not ver_todo_el_archivo %}selected{% endif %}>Todas (período activo)</option>
         {% for s in semanas %}
         <option value="{{ s.valor }}" {% if s.valor == semana_actual %}selected{% endif %}>Semana {{ s.nombre }}</option>
         {% endfor %}
+        <option value="archivo_completo" {% if ver_todo_el_archivo %}selected{% endif %}>Ver todo el archivo (incluye meses ya cerrados)</option>
       </select>
     </div>
     <button class="btn btn-primary" type="submit">Aplicar</button>
@@ -195,7 +196,7 @@
     </div>
     <div class="metric">
       <div class="metric-label">Semana</div>
-      <div class="metric-value">{% if semana_actual %}{% for s in semanas %}{% if s.valor == semana_actual %}{{ s.nombre }}{% endif %}{% endfor %}{% else %}Todas{% endif %}</div>
+      <div class="metric-value">{% if semana_actual %}{% for s in semanas %}{% if s.valor == semana_actual %}{{ s.nombre }}{% endif %}{% endfor %}{% elif ver_todo_el_archivo %}Archivo completo{% else %}Todas (período activo){% endif %}</div>
     </div>
   </div>
 

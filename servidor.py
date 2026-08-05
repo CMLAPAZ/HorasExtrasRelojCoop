@@ -656,9 +656,15 @@ def _ajustar_confirmacion_a_semana(data, meta, semana, departamento=None):
     }
     return data
 
-def _leer_historial(semana=None, departamento=None):
+def _leer_historial(semana=None, departamento=None, incluir_cerradas=False):
+    """`incluir_cerradas=True` desactiva el filtro de "solo período activo"
+    (línea de semanas_activas de abajo) para poder traer confirmaciones de
+    semanas ya cerradas y quitadas de metadata -- usado por la vista
+    "archivo completo" de /historial. Por default (False) se preserva el
+    comportamiento de siempre: solo semanas que siguen en metadata."""
     CONFIRM_DIR.mkdir(exist_ok=True)
-    # Solo leer confirmaciones del período activo (semanas en metadata)
+    # Solo leer confirmaciones del período activo (semanas en metadata),
+    # salvo que incluir_cerradas=True.
     departamento = _normalizar_departamento_web(departamento)
     meta = _cargar_metadata()
     semanas_activas = {s.get("numero") for s in meta.get("semanas", [])}
@@ -675,7 +681,7 @@ def _leer_historial(semana=None, departamento=None):
             data["semana_depto"] = sem_depto
             data = _ajustar_confirmacion_a_semana(data, meta, sem_conf, depto_conf)
             # Ignorar confirmaciones de períodos anteriores
-            if semanas_activas and sem_conf not in semanas_activas:
+            if not incluir_cerradas and semanas_activas and sem_conf not in semanas_activas:
                 continue
             if departamento and depto_conf != departamento:
                 continue
@@ -2714,11 +2720,22 @@ def historial():
     if not _autenticado(): return _requiere_auth()
     departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
     semana_raw = request.args.get("semana", "").strip()
+    # "todas" (semana_raw vacío) ya no significa "todo el archivo histórico
+    # de siempre" (confundía: mezclaba meses ya cerrados con el período
+    # abierto -- feedback de la usuaria 04/08/2026). Ahora significa "todas
+    # las semanas del período ACTIVO todavía sin cerrar" -- las mismas que
+    # aparecen en la pantalla de Períodos. Para ver una semana vieja
+    # puntual (ya cerrada), se puede seguir eligiendo su número específico
+    # en el desplegable -- eso no cambió.
+    ver_todo_el_archivo = semana_raw == "archivo_completo"
     try:
-        semana = int(semana_raw) if semana_raw else None
+        semana = int(semana_raw) if semana_raw and not ver_todo_el_archivo else None
     except ValueError:
         semana = None
-    todos = _leer_historial()
+    # incluir_cerradas=True para el desplegable: si no, los números de
+    # semana ya cerrada (quitados de metadata al cerrar) nunca aparecerían
+    # como opción para elegir.
+    todos = _leer_historial(incluir_cerradas=True)
     deptos_map = {}
     semanas_map = {}
     for item in todos:
@@ -2737,8 +2754,31 @@ def historial():
         {"valor": valor, "nombre": nombre}
         for valor, nombre in sorted(semanas_map.items(), key=lambda item: item[1])
     ]
-    items = [i for i in _leer_historial(semana=semana, departamento=departamento)
+
+    semanas_activas_por_depto = {}
+    if semana is None and not ver_todo_el_archivo:
+        meta = _cargar_metadata()
+        for s in meta.get("semanas", []):
+            depto_s = _normalizar_departamento_web(s.get("departamento", "") or "")
+            if depto_s:
+                semanas_activas_por_depto.setdefault(depto_s, set()).add(s.get("numero"))
+
+    # Semana puntual vieja o "archivo completo": traer también lo ya
+    # cerrado (si no, el filtro interno de _leer_historial ya lo excluye
+    # aunque se pida ese número específico). Default ("período activo"):
+    # se mantiene el comportamiento de siempre.
+    items = [i for i in _leer_historial(
+                semana=semana, departamento=departamento,
+                incluir_cerradas=(semana is not None or ver_todo_el_archivo),
+             )
               if str(i.get("legajo", "")) not in LEGAJOS_EXCLUIR_INFORMES]
+    if semana is None and not ver_todo_el_archivo:
+        items = [
+            i for i in items
+            if i.get("semana") in semanas_activas_por_depto.get(
+                _normalizar_departamento_web(i.get("departamento", "")), set()
+            )
+        ]
     todas_fechas = [d["fecha"] for item in items for d in item.get("dias", []) if d.get("fecha")]
     fecha_desde = fecha_hasta = None
     if todas_fechas:
@@ -2750,6 +2790,7 @@ def historial():
                            departamento_actual=departamento,
                            semanas=semanas,
                            semana_actual=semana,
+                           ver_todo_el_archivo=ver_todo_el_archivo,
                            fecha_desde=fecha_desde,
                            fecha_hasta=fecha_hasta)
 

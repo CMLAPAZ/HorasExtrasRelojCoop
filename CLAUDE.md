@@ -987,6 +987,57 @@ Tests: `tests/test_reporte_saldos_francos.py` —
 `test_main_registra_auditoria_de_envios_en_reportes_enviados` y
 `test_main_envio_fallido_queda_registrado_como_error`.
 
+## Implementado en sesión 04-05/08/2026 — /historial "Todas" mezclaba meses ya cerrados
+
+Investigando una alarma de la usuaria sobre "Generados" de Redes (que
+terminó confirmando, con tres verificaciones independientes —
+`/admin/desglose-generados`, `/admin/auditoria-completa-saldos-francos`, y
+el propio Historial filtrado por semana puntual — que los números estaban
+bien) apareció el verdadero problema: **el filtro "Semana: Todas" de
+`/historial` mostraba confirmaciones de meses ya cerrados (junio) mezcladas
+con el período activo (julio)**, sin ninguna distinción visual. La usuaria
+vio 2 francos de junio de un empleado y los interpretó como parte del
+período en curso.
+
+**Causa doble, encontrada en dos pasos:**
+
+1. `historial()` no distinguía "todo el archivo" de "solo lo abierto" —
+   pasaba `semana=None` a `_leer_historial()` sin ningún filtro adicional.
+2. Al arreglar (1) agregando un post-filtro por semanas activas de
+   metadata, un test reveló un bug **preexistente, más profundo**:
+   `_leer_historial()` tenía un filtro interno (`semanas_activas`) que
+   excluía **cualquier confirmación cuya semana ya no estuviera en
+   metadata** — sin importar qué se le pidiera. Esto significaba que
+   **elegir un número de semana vieja puntual en el desplegable de
+   Historial tampoco funcionaba** (devolvía vacío) una vez que esa semana
+   se cerraba y se quitaba de `metadata.json` (`periodo_cerrar` sí la
+   quita, ver "Actualizar metadata: solo quitar las semanas cerradas").
+
+**Fix:**
+
+- `_leer_historial()` gana parámetro `incluir_cerradas=False` (default
+  preserva el comportamiento de siempre en las demás ~7 llamadas del
+  código) que, en `True`, saltea ese filtro interno.
+- `historial()`: `semana="archivo_completo"` es una opción NUEVA y
+  explícita que trae todo (`incluir_cerradas=True`). El default ("Todas")
+  ahora significa **solo las semanas del período activo** (filtradas
+  contra `metadata.semanas`, por depto). Elegir una semana puntual vieja
+  también usa `incluir_cerradas=True` — ya funciona, cosa que antes no.
+- El desplegable de "Semana" en `historial.html` ahora lista *todos* los
+  números de semana alguna vez usados (antes solo los del período activo,
+  por el mismo bug), y tiene la opción nueva "Ver todo el archivo (incluye
+  meses ya cerrados)" al final.
+
+No se tocó `_resolver_semana_confirmacion()` (el mecanismo de readopción
+por fecha, ver bug de Redes de julio) ni ningún cálculo de saldo — esto es
+puramente sobre qué se **muestra** en la pantalla de Historial.
+
+Test: `tests/test_historial_periodo_activo.py` —
+`test_historial_todas_muestra_solo_periodo_activo_no_meses_cerrados`
+(reproduce con archivos de confirmación reales el escenario de junio vs.
+julio, y verifica las 3 vistas: período activo, archivo completo, y
+semana vieja puntual).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
