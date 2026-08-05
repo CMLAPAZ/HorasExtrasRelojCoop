@@ -4680,12 +4680,8 @@ def periodos_historial():
         depto_norm = _normalizar_departamento_web(depto_visible)
         c["es_ultimo_activo"] = ultimos_activos_cf.get(depto_norm) == c["id"]
         c["es_reversible"] = bool(c.get("base_anterior") and c.get("base_anterior") != "{}")
+        legajos_cf = _legajos_actuales_del_depto(depto_norm)
         with _get_db() as conn:
-            legajos_cf = [str(r["legajo"]) for r in conn.execute(
-                "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
-                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
-                (depto_visible.lower(), depto_norm)
-            )]
             if legajos_cf:
                 ph = ",".join("?" * len(legajos_cf))
                 c["total_registros"] = conn.execute(
@@ -4695,7 +4691,13 @@ def periodos_historial():
                 ).fetchone()[0]
             else:
                 c["total_registros"] = 0
-    deptos_conocidos = _departamentos_francos_disponibles()
+    # Solo deptos del mecanismo manual (cierres_francos) -- Redes y
+    # Administración se cierran desde Períodos (fichadas), nunca desde acá
+    # (ver guard en francos_cierre_nuevo).
+    deptos_conocidos = [
+        d for d in _departamentos_francos_disponibles()
+        if _normalizar_departamento_web(d) not in ("redes", "administracion")
+    ]
     return render_template("periodos_historial.html", cierres=cierres,
                            cierres_francos=cierres_francos,
                            deptos_conocidos=deptos_conocidos)
@@ -4881,16 +4883,18 @@ def francos_cierre_nuevo():
     fecha_hasta  = request.form.get("fecha_hasta", "").strip()
     if not departamento or not fecha_hasta:
         return jsonify({"error": "Completá departamento y fecha."}), 400
+    if departamento in ("redes", "administracion"):
+        return jsonify({
+            "error": f"{_nombre_departamento_visible(departamento)} se cierra desde Períodos "
+                     "(fichadas), no desde acá -- este cierre manual es solo para "
+                     "Guardias/Internet/Telefonía/Ingenieros."
+        }), 400
     if _depto_francos_oculto(departamento):
         return jsonify({"error": "Francos de este departamento está oculto temporalmente."}), 400
     depto_visible = _nombre_departamento_visible(departamento)
     ahora = datetime.now().isoformat()
     with _get_db() as conn:
-        legajos = [str(r["legajo"]) for r in conn.execute(
-            "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
-            "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
-            (depto_visible.lower(), departamento)
-        )]
+        legajos = _legajos_actuales_del_depto(departamento)
         if not legajos:
             return jsonify({"error": f"Sin empleados para {depto_visible}."}), 400
         ph = ",".join("?" * len(legajos))
@@ -7457,12 +7461,7 @@ def admin_diagnostico_francos():
         depto_visible = cf["departamento"]
         depto_norm = _normalizar_departamento_web(depto_visible)
         cierres_francos_por_depto[depto_visible] = cierres_francos_por_depto.get(depto_visible, 0) + 1
-        with _get_db() as conn:
-            legs = [str(r["legajo"]) for r in conn.execute(
-                "SELECT DISTINCT legajo FROM periodo_empleados WHERE LOWER(departamento)=? "
-                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
-                (depto_visible.lower(), depto_norm)
-            )]
+        legs = _legajos_actuales_del_depto(depto_norm)
         legajos_cf_por_depto.setdefault(depto_visible, set()).update(legs)
 
     # ---- Cadena de saldos: fecha_corte de francos_saldo_inicial vs último cierre ACTIVO del depto ----
@@ -7862,6 +7861,31 @@ def _empleados_conocidos():
         key=lambda e: (e["departamento"].lower(), int(e["legajo"]) if e["legajo"].isdigit() else 0)
     )
 
+def _legajos_actuales_del_depto(departamento):
+    """Legajos cuyo departamento ACTUAL (según _empleados_conocidos(), la
+    fuente de verdad vigente) coincide con el pedido -- NO usar
+    "SELECT DISTINCT legajo FROM periodo_empleados WHERE departamento=?"
+    para esto: esa tabla es un snapshot histórico por cierre que nunca se
+    actualiza, así que un legajo que cambió de depto sigue apareciendo bajo
+    su depto viejo para siempre.
+
+    Incidente real (05/08/2026): los legajos 100/101 (Mancioni, Gatti)
+    tienen filas viejas de periodo_empleados con departamento='Redes' de
+    cuando procesaban por fichadas, antes de pasar a Ingenieros en julio
+    2026. Varias rutas armaban su lista de legajos con esa consulta directa
+    y después traían TODO francos_tomados de esos legajos (incluida su
+    actividad nueva como Ingenieros) etiquetándola como "Redes" -- mezcla
+    real de departamentos en el detalle de francos tomados, violando la
+    regla número uno del proyecto. Esta función reemplaza esa consulta en
+    cualquier lugar que necesite "legajos de este depto" fuera del contexto
+    de un cierre puntual ya cerrado (ahí sí corresponde el snapshot
+    histórico, ver periodo_id=? en otras consultas)."""
+    departamento = _normalizar_departamento_web(departamento)
+    return [
+        e["legajo"] for e in _empleados_conocidos()
+        if _normalizar_departamento_web(e["departamento"]) == departamento
+    ]
+
 def _cargar_feriados_config():
     try:
         cfg = json.loads(Path("config.json").read_text(encoding="utf-8"))
@@ -8216,11 +8240,7 @@ def francos_pdf_depto():
     with _get_db() as conn:
         if depto_param and depto_param != "__todos__":
             depto_norm = _normalizar_departamento_web(depto_param)
-            legajos = [str(r["legajo"]) for r in conn.execute(
-                "SELECT DISTINCT legajo FROM periodo_empleados WHERE departamento=? "
-                "UNION SELECT legajo FROM empleados_extra WHERE activo=1 AND LOWER(departamento)=?",
-                (_nombre_departamento_visible(depto_norm), depto_norm)
-            )]
+            legajos = _legajos_actuales_del_depto(depto_norm)
             if not legajos:
                 return "Sin empleados para ese departamento.", 404
             ph = ",".join("?" * len(legajos))

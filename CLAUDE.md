@@ -108,7 +108,7 @@ reporte_saldos_francos.py → reportes/reporte_francos_{DEPTO}_{FECHA}.pdf → e
 | `francos_semana_manual` | Francos semanales de Guardias/Internet/Telefonía/Ingenieros cargados desde el formulario web; **+cierre_francos_id** |
 | `francos_semana_parcial` | Snapshot del período activo guardado cada viernes (borrado al cerrar el período) |
 | `francos_cierre_detalle` | Copia de francos_tomados al momento de cada cierre (historial inmutable) |
-| `cierres_francos` | Cierres manuales (deptos sin fichadas: Guardias/Internet/Telefonía/Ingenieros — la ruta `/francos/cierre/nuevo` es genérica por depto, el selector `cf-depto` de `periodos_historial.html` no restringe cuáles): **+base_anterior** (JSON snapshot reversible), **+fecha_anulacion**, **+motivo_anulacion**, **+usuario_anulacion** |
+| `cierres_francos` | Cierres manuales (deptos sin fichadas: Guardias/Internet/Telefonía/Ingenieros — la ruta `/francos/cierre/nuevo` rechaza explícitamente Redes/Administración desde el 05/08/2026, y el selector `cf-depto` de `periodos_historial.html` ya no los lista): **+base_anterior** (JSON snapshot reversible), **+fecha_anulacion**, **+motivo_anulacion**, **+usuario_anulacion** |
 | `supervisores` | nombre, email, departamentos (JSON array), activo |
 | `empleados_extra` | Empleados de deptos sin fichadas: Guardias, Internet, Telefonía, **Ingenieros** + Karen Soto (Redes) |
 
@@ -1037,6 +1037,58 @@ Test: `tests/test_historial_periodo_activo.py` —
 (reproduce con archivos de confirmación reales el escenario de junio vs.
 julio, y verifica las 3 vistas: período activo, archivo completo, y
 semana vieja puntual).
+
+## Implementado en sesión 05/08/2026 — mezcla real de Redes/Ingenieros en detalle de francos tomados
+
+La usuaria reportó: "en el detalle de francos tomados me junta los
+ingenieros con redes a partir de julio". Esto **sí violaba la regla
+número uno del proyecto** (nunca mezclar departamentos) — a diferencia de
+las alarmas anteriores de la sesión (que resultaron ser lecturas
+correctas de datos reales), acá había una causa de código real.
+
+**Causa raíz:** varias rutas armaban "los legajos de este departamento"
+con `SELECT DISTINCT legajo FROM periodo_empleados WHERE departamento=?`
+— esa tabla es un **snapshot histórico por cierre que nunca se
+actualiza**. Los legajos 100/101 (Mancioni, Gatti) tienen filas viejas ahí
+con `departamento='Redes'` de cuando procesaban por fichadas, antes de
+pasar a Ingenieros en julio 2026 (ver sección "Nuevo departamento:
+Ingenieros" arriba). Esas rutas después traían **todo** `francos_tomados`
+de esos legajos —incluida su actividad NUEVA como Ingenieros— y lo
+etiquetaban como "Redes". El bug es tan viejo como el traspaso de julio,
+pero recién se notó cuando hubo actividad real de Ingenieros para
+mostrar.
+
+**Fix:** nueva función `_legajos_actuales_del_depto(departamento)` —
+usa `_empleados_conocidos()` (la fuente de verdad vigente, que ya
+prioriza `empleados_extra` para 100/101) en vez del snapshot histórico de
+`periodo_empleados`. Reemplaza la consulta rota en las 4 rutas que la
+tenían:
+
+1. `/francos/pdf_depto` — el bug que reportó la usuaria (detalle de
+   francos tomados por depto, sin cierre).
+2. `francos_cierre_nuevo` (`POST /francos/cierre/nuevo`) — más grave que
+   un problema de display: si alguien elegía "Redes" acá (nada lo
+   impedía), el cierre manual iba a vincular y marcar 'Cerrado' la
+   actividad de Ingenieros de 100/101 bajo un cierre etiquetado "Redes",
+   corrompiendo ambos mecanismos. Se agregó además un guard explícito:
+   esta ruta ahora **rechaza** `departamento in ("redes", "administracion")`
+   con 400 — esos se cierran únicamente desde Períodos. El selector
+   `cf-depto` de `periodos_historial.html` (que antes listaba todos los
+   deptos, incluida Redes — ver nota vieja de este archivo) ahora excluye
+   Redes/Administración también en el propio `<select>`.
+3. `periodos_historial()` — conteo de `total_registros` por cierre manual.
+4. `admin_diagnostico_francos()` "Mecanismo B" — agregados por depto.
+
+**No se tocó** ninguna consulta con `periodo_id=?` (esas SÍ deben seguir
+siendo el snapshot histórico exacto de ese cierre puntual — `_snapshot_francos_cierre`,
+`francos_cierre_detalle`, informe completo de cierre, etc. ya estaban bien,
+confirmado por auditoría de código antes de tocar nada).
+
+Tests: `tests/test_no_mezclar_departamentos_legajo_reasignado.py` —
+reproduce el estado real (legajo 100 con cierre viejo de Redes +
+`empleados_extra` actual como Ingenieros + un franco tomado nuevo) y
+verifica que `_legajos_actuales_del_depto`, `/francos/pdf_depto` y el
+guard de `/francos/cierre/nuevo` ya no mezclan.
 
 ## Notas importantes
 
