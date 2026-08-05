@@ -6012,10 +6012,16 @@ def _generar_pdf_informe_mensual_francos(mes):
     hubo_contenido = False
 
     # ── Departamentos con fichadas (mecanismo `periodos`) ────────────────
+    # Filtra por cerrado_en (cuándo se cerró de verdad), NO por fecha_desde
+    # (inicio de la ventana de datos que cubre). Si se filtrara por
+    # fecha_desde, un cierre que se recerró tarde (ver incidente
+    # Administración, sesión 03/08/2026: datos de junio, cerrado_en julio)
+    # no aparecería al elegir el mes en que efectivamente se cerró -- que es
+    # lo que espera ver quien entra a "Cierres" y elige un mes.
     with _get_db() as conn:
         periodos_rows = [dict(r) for r in conn.execute(
             "SELECT id, fecha_desde, fecha_hasta, saldo_anterior FROM periodos "
-            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND fecha_desde LIKE ? ORDER BY id",
+            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND cerrado_en LIKE ? ORDER BY id",
             (f"{mes}%",)
         ).fetchall()]
 
@@ -6139,10 +6145,14 @@ def periodos_informe_mensual():
     if not mes or len(mes) != 7 or mes[4] != "-":
         return "Parámetro 'mes' requerido con formato YYYY-MM.", 400
 
+    # Filtra por cerrado_en (cuándo se cerró de verdad), no por fecha_desde
+    # -- mismo criterio que _generar_pdf_informe_mensual_francos, para que
+    # un cierre recerrado tarde aparezca en el mes en que se cerró
+    # efectivamente, no en el mes de sus datos.
     with _get_db() as conn:
         rows = conn.execute(
             "SELECT id, fecha_desde, fecha_hasta FROM periodos "
-            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND fecha_desde LIKE ? ORDER BY id",
+            "WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND cerrado_en LIKE ? ORDER BY id",
             (f"{mes}%",)
         ).fetchall()
 

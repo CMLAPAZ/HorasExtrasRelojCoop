@@ -1090,6 +1090,28 @@ reproduce el estado real (legajo 100 con cierre viejo de Redes +
 verifica que `_legajos_actuales_del_depto`, `/francos/pdf_depto` y el
 guard de `/francos/cierre/nuevo` ya no mezclan.
 
+### Informes mensuales combinados filtraban por mes de los datos, no por mes de cierre
+
+En la pantalla "Cierres", los botones "Ver informe mensual combinado" y
+"Ver informe mensual de francos (todos los deptos)" (`/periodos/informe_mensual`,
+`/periodos/informe_mensual_francos`) filtraban los cierres de `periodos`
+por `fecha_desde LIKE '{mes}%'` — el inicio de la ventana de datos que
+cubre el cierre. Un cierre recerrado tarde (mismo patrón que el incidente
+de Administración del 03/08/2026: datos de junio, `cerrado_en` en julio)
+tiene `fecha_desde` de un mes distinto al mes en que se cerró de verdad —
+así que al elegir "julio" en el selector, ese cierre de Redes/Administración
+no aparecía (reportado por la usuaria: "en este botón verde no parecen
+los saldos de redes ni administracion", 05/08/2026).
+
+**Fix:** ambas rutas ahora filtran por `cerrado_en LIKE '{mes}%'` (cuándo
+se cerró de verdad), igual criterio que ya usaba el lado de `cierres_francos`
+(`fecha_hasta`, más cercano al cierre real que `fecha_desde`). Un cierre
+aparece en el mes en que se cerró, no en el mes de los datos que cubre.
+
+Test: `tests/test_informe_mensual_filtra_por_cierre_no_por_datos.py` —
+reproduce un cierre con datos de junio y `cerrado_en` de julio, y verifica
+que ambos informes lo traen en julio (no en junio).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
