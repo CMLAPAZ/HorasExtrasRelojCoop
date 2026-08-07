@@ -4726,8 +4726,11 @@ def _cierres_francos_del_mes(conn, mes):
     return encontrados
 
 
-def _actualizar_planilla_francos(contenido, mes, cierres):
-    """Actualiza exclusivamente Franco Orig. (G) y Franco Tom. (H)."""
+def _actualizar_planilla_francos(contenido, mes, departamento, cierre):
+    """Actualiza exclusivamente Franco Orig. (G) y Franco Tom. (H), para UN
+    solo departamento (Ingenieros o Guardias). Desde julio 2026 cada depto
+    tiene su propia planilla Excel separada (antes era una sola planilla
+    combinada con los dos) -- ver CLAUDE.md, sesión 05/08/2026."""
     from openpyxl import load_workbook
 
     try:
@@ -4752,26 +4755,26 @@ def _actualizar_planilla_francos(contenido, mes, cierres):
                 legajo = legajo[:-2]
             filas_por_legajo[legajo] = fila
 
+    try:
+        snapshot = json.loads(cierre.get("saldo_anterior") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        snapshot = {}
+    if not snapshot:
+        raise ValueError(
+            f"El cierre de {_nombre_departamento_visible(departamento)} no tiene datos de saldo para exportar."
+        )
+
     actualizados, faltantes = [], []
-    for departamento in ("ingenieros", "guardias"):
-        try:
-            snapshot = json.loads(cierres[departamento].get("saldo_anterior") or "{}")
-        except (TypeError, json.JSONDecodeError):
-            snapshot = {}
-        if not snapshot:
-            raise ValueError(
-                f"El cierre de {_nombre_departamento_visible(departamento)} no tiene datos de saldo para exportar."
-            )
-        for legajo, datos in snapshot.items():
-            fila = filas_por_legajo.get(str(legajo))
-            if not fila:
-                faltantes.append(str(legajo))
-                continue
-            generados = datos.get("generados", 0) or 0
-            tomados = datos.get("tomados", 0) or 0
-            hoja.cell(fila, 7).value = generados if generados else None
-            hoja.cell(fila, 8).value = tomados if tomados else None
-            actualizados.append(str(legajo))
+    for legajo, datos in snapshot.items():
+        fila = filas_por_legajo.get(str(legajo))
+        if not fila:
+            faltantes.append(str(legajo))
+            continue
+        generados = datos.get("generados", 0) or 0
+        tomados = datos.get("tomados", 0) or 0
+        hoja.cell(fila, 7).value = generados if generados else None
+        hoja.cell(fila, 8).value = tomados if tomados else None
+        actualizados.append(str(legajo))
 
     if faltantes:
         raise ValueError("Faltan estos legajos en la hoja mensual: " + ", ".join(sorted(faltantes)))
@@ -4791,27 +4794,29 @@ def francos_planilla_actualizar():
     if not _autenticado():
         return jsonify({"error": "No autorizado"}), 401
     mes = (request.form.get("mes") or "").strip()
+    departamento = _normalizar_departamento_web(request.form.get("departamento", ""))
     archivo = request.files.get("planilla")
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
         return jsonify({"error": "Seleccioná un mes válido."}), 400
+    if departamento not in ("ingenieros", "guardias"):
+        return jsonify({"error": "Seleccioná Ingenieros o Guardias."}), 400
     if not archivo or not (archivo.filename or "").lower().endswith(".xlsx"):
         return jsonify({"error": "Seleccioná la planilla Excel en formato .xlsx."}), 400
 
     with _get_db() as conn:
         cierres = _cierres_francos_del_mes(conn, mes)
-    faltan = [_nombre_departamento_visible(dep)
-              for dep in ("ingenieros", "guardias") if dep not in cierres]
-    if faltan:
+    if departamento not in cierres:
         return jsonify({
-            "error": "No se puede actualizar: falta el cierre activo del mes para " + " y ".join(faltan) + "."
+            "error": f"No se puede actualizar: falta el cierre activo del mes para "
+                     f"{_nombre_departamento_visible(departamento)}."
         }), 409
     try:
-        salida = _actualizar_planilla_francos(archivo.read(), mes, cierres)
+        salida = _actualizar_planilla_francos(archivo.read(), mes, departamento, cierres[departamento])
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return send_file(
         salida, as_attachment=True,
-        download_name=f"Horas_Extras_actualizada_{mes}.xlsx",
+        download_name=f"Horas_Extras_{_nombre_departamento_visible(departamento)}_actualizada_{mes}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         etag=False, max_age=0,
     )
@@ -4928,6 +4933,7 @@ def francos_cierre_nuevo():
     # fecha, que mezclaría movimientos cargados después de este corte, ej.
     # francos de julio en un cierre de junio). Mismo criterio que
     # periodo_cerrar / _delta_francos_cierre para el mecanismo de periodos.
+    francos_huerfanos = None
     try:
         ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         mes_hasta = (fecha_hasta or "")[:7]
@@ -4992,6 +4998,26 @@ def francos_cierre_nuevo():
 
             conn.execute("UPDATE cierres_francos SET saldo_anterior=? WHERE id=?",
                          (json.dumps(snap, ensure_ascii=False), cid))
+
+            # Verificación de consistencia: cada día contado en tomados_al_hasta
+            # (lo que bajó el saldo) debe corresponder a un franco realmente
+            # vinculado a ESTE cierre (cierre_francos_id=cid, estado='Cerrado').
+            # Si no, queda un franco "huérfano" -- contado en el saldo pero
+            # nunca marcado como cerrado, invisible en el detalle archivado del
+            # cierre y sin protección contra edición/borrado accidental (ver
+            # incidente Barolín/Telefonía, 07/08/2026: franco #50 del 22/06
+            # bajó el saldo del cierre #5 pero quedó sin vincular). No bloquea
+            # el cierre (ya se guardó) -- es una alerta temprana en la respuesta.
+            vinculado_por_leg = {r["legajo"]: (r["total"] or 0) for r in conn.execute(
+                "SELECT legajo, COALESCE(SUM(dias),0) as total FROM francos_tomados "
+                "WHERE cierre_francos_id=? GROUP BY legajo", (cid,)
+            )}
+            francos_huerfanos = [
+                {"legajo": leg, "tomados_contados_en_saldo": tomados_al_hasta.get(leg, 0),
+                 "dias_realmente_vinculados": vinculado_por_leg.get(leg, 0)}
+                for leg in legajos
+                if tomados_al_hasta.get(leg, 0) != vinculado_por_leg.get(leg, 0)
+            ]
             conn.commit()
     except Exception as e:
         print(f"[ADVERTENCIA] Error actualizando saldo en cierre manual: {e}")
@@ -5033,7 +5059,10 @@ def francos_cierre_nuevo():
     except Exception as exc_verif:
         trazabilidad = {"error": f"No se pudo auto-verificar: {exc_verif}"}
 
-    return jsonify({"ok": True, "id": cid, "total": total, "trazabilidad": trazabilidad})
+    return jsonify({
+        "ok": True, "id": cid, "total": total, "trazabilidad": trazabilidad,
+        "francos_huerfanos": francos_huerfanos,
+    })
 
 
 @app.route("/francos/cierre/anular/<int:cid>", methods=["POST"])

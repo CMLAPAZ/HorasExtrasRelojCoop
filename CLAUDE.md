@@ -1112,6 +1112,58 @@ Test: `tests/test_informe_mensual_filtra_por_cierre_no_por_datos.py` —
 reproduce un cierre con datos de junio y `cerrado_en` de julio, y verifica
 que ambos informes lo traen en julio (no en junio).
 
+## Implementado en sesión 07/08/2026 — planilla separada por depto + francos huérfanos en cierre manual
+
+### Planilla Excel de Ingenieros/Guardias: ahora separadas por departamento
+
+Desde julio 2026 la usuaria dejó de usar una única planilla combinada
+Ingenieros+Guardias — cada depto tiene su propia planilla Excel. La
+herramienta "Actualizar planilla mensual" de `/periodos/historial`
+todavía asumía una sola planilla con ambos deptos juntos (`_actualizar_planilla_francos`
+recibía el dict `cierres` completo y escribía las dos secciones en el
+mismo libro, y la ruta exigía el cierre activo de **ambos** deptos para
+actualizar cualquiera de las dos).
+
+**Fix:** `_actualizar_planilla_francos(contenido, mes, departamento, cierre)`
+ahora toma un solo departamento y un solo cierre. La UI gana un selector
+"Departamento" (Ingenieros/Guardias) junto al mes y el archivo; el
+requisito de cierre activo es solo para el depto elegido, no para los
+dos. El nombre de archivo descargado incluye el depto.
+
+Tests: `tests/test_actualizar_planilla_francos.py` — actualizado a la
+nueva firma, más un test de que actualizar la planilla de un depto ya no
+exige el cierre del otro.
+
+### Franco "huérfano": contado en el saldo del cierre pero nunca vinculado (Barolín/Telefonía)
+
+La usuaria notó una inconsistencia real en el cierre #5 de Telefonía
+(08/07/2026): el PDF de saldo mostraba "Tomados: 1" para Barolín, pero el
+PDF de detalle de francos tomados de ESE MISMO cierre daba `TOTAL: 0` —
+el franco #50 (22/06, cargado el 19/06) nunca quedó vinculado
+(`cierre_francos_id` seguía `NULL`, estado seguía `'Aprobado'`), aunque
+sí bajó el saldo. Revisando el código, el franco cumplía todas las
+condiciones de `_vincular_movimientos_cierre_francos` en el momento del
+cierre -- no se pudo reconstruir con certeza la causa histórica exacta
+sin poder ejecutar consultas forenses contra datos de hace un mes.
+Corregido puntualmente con `/admin/vincular-franco-a-cierre/50/5?confirmar=si`
+(herramienta que ya existía).
+
+**Prevención ("esto no puede volver a pasar", pedido explícito de la
+usuaria):** `francos_cierre_nuevo` ahora compara, para cada legajo, los
+días contados en `tomados_al_hasta` (lo que bajó el saldo) contra la
+suma real de días vinculados a ese cierre (`francos_tomados` con
+`cierre_francos_id` = el cierre recién creado). Si difieren para algún
+legajo, queda reportado en un campo nuevo `"francos_huerfanos"` en la
+respuesta del cierre — no bloquea el cierre (ya se guardó), es una
+alerta temprana para no depender de que alguien lo note comparando dos
+PDFs a mano semanas después.
+
+Test: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
+`test_francos_cierre_nuevo_detecta_franco_contado_pero_no_vinculado`
+(reproduce el patrón forzando un franco ya `'Cerrado'` de antemano sin
+`cierre_francos_id`, que es justo lo que `_vincular_movimientos_cierre_francos`
+excluye pero `tomados_al_hasta` no).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

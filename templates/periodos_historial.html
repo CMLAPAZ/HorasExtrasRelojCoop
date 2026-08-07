@@ -304,15 +304,22 @@ function descargarInformeMensualFrancos(e) {
   <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:9px;padding:14px 16px;margin-bottom:20px">
     <div style="font-weight:700;color:#1e3a5f;margin-bottom:5px">Actualizar planilla mensual</div>
     <div style="font-size:.78rem;color:#475569;margin-bottom:12px">
-      Completa únicamente <b>Franco Orig.</b> y <b>Franco Tom.</b> de Guardias e Ingenieros. Requiere el cierre activo de ambos departamentos para el mes.
+      Completa únicamente <b>Franco Orig.</b> y <b>Franco Tom.</b> del departamento elegido. Desde julio 2026 Guardias e Ingenieros tienen planillas separadas — subí la planilla de ese depto puntual. Requiere el cierre activo del mes para ese departamento.
     </div>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Departamento</label>
+        <select id="planilla-depto" style="padding:7px 10px;border:1px solid #bfdbfe;border-radius:7px;font-size:.85rem">
+          <option value="ingenieros">Ingenieros</option>
+          <option value="guardias">Guardias</option>
+        </select>
+      </div>
       <div>
         <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Mes</label>
         <input type="month" id="planilla-mes" style="padding:7px 10px;border:1px solid #bfdbfe;border-radius:7px;font-size:.85rem">
       </div>
       <div>
-        <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Planilla anual (.xlsx)</label>
+        <label style="display:block;font-size:.72rem;color:#64748b;margin-bottom:4px">Planilla del departamento (.xlsx)</label>
         <input type="file" id="planilla-archivo" accept=".xlsx" style="font-size:.8rem">
       </div>
       <button type="button" id="planilla-btn" onclick="actualizarPlanillaFrancos()"
@@ -412,12 +419,14 @@ function descargarInformeMensualFrancos(e) {
 <script>
 async function actualizarPlanillaFrancos() {
   const mes = document.getElementById('planilla-mes').value;
+  const depto = document.getElementById('planilla-depto').value;
   const input = document.getElementById('planilla-archivo');
   const boton = document.getElementById('planilla-btn');
   const msg = document.getElementById('planilla-msg');
   if (!mes || !input.files.length) { alert('Seleccioná el mes y la planilla .xlsx.'); return; }
   const fd = new FormData();
   fd.append('mes', mes);
+  fd.append('departamento', depto);
   fd.append('planilla', input.files[0]);
   boton.disabled = true;
   msg.textContent = 'Actualizando…';
@@ -431,7 +440,7 @@ async function actualizarPlanillaFrancos() {
     const url = URL.createObjectURL(blob);
     const enlace = document.createElement('a');
     enlace.href = url;
-    enlace.download = `Horas_Extras_actualizada_${mes}.xlsx`;
+    enlace.download = `Horas_Extras_${depto}_actualizada_${mes}.xlsx`;
     document.body.appendChild(enlace);
     enlace.click();
     enlace.remove();

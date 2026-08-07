@@ -606,3 +606,33 @@ def test_francos_cierre_nuevo_incluye_trazabilidad_automatica(db_temporal, clien
     trazabilidad = resp.get_json()["trazabilidad"]
     assert trazabilidad["cadena_sana"] is True
     assert trazabilidad["desajustes_cadena"] == []
+    assert resp.get_json()["francos_huerfanos"] == []
+
+
+def test_francos_cierre_nuevo_detecta_franco_contado_pero_no_vinculado(db_temporal, client):
+    """Reproduce el patrón del incidente real (Barolín/Telefonía, 07/08/2026):
+    un franco cuenta en tomados_al_hasta (baja el saldo) pero por algún
+    motivo no queda vinculado a cierre_francos_id de ESTE cierre -- acá lo
+    forzamos poniéndolo 'Cerrado' de antemano (simulando cualquier causa que
+    lo excluya de _vincular_movimientos_cierre_francos sin excluirlo de la
+    cuenta de tomados_al_hasta, que no filtra por cierre_francos_id). El
+    cierre no debe fallar, pero sí avisar en la respuesta."""
+    conn = _conn(db_temporal)
+    leg, nombre = "16", "BAROLIN FRANCA"
+    conn.execute(
+        "INSERT INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+        (leg, nombre, "Telefonia"),
+    )
+    fid = _crear_franco(conn, leg, nombre, cargado_en="2026-06-19 09:06:38", fecha_desde="2026-06-22", dias=1)
+    # Ya "Cerrado" de antemano, sin cierre_francos_id -- huérfano a propósito.
+    conn.execute("UPDATE francos_tomados SET estado='Cerrado' WHERE id=?", (fid,))
+    conn.commit()
+
+    resp = client.post("/francos/cierre/nuevo", data={
+        "departamento": "Telefonía", "fecha_hasta": "2026-07-08",
+    })
+    assert resp.status_code == 200, resp.get_json()
+    huerfanos = resp.get_json()["francos_huerfanos"]
+    assert huerfanos == [{
+        "legajo": leg, "tomados_contados_en_saldo": 1, "dias_realmente_vinculados": 0,
+    }]
