@@ -1164,6 +1164,40 @@ Test: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
 `cierre_francos_id`, que es justo lo que `_vincular_movimientos_cierre_francos`
 excluye pero `tomados_al_hasta` no).
 
+### "Generados" fantasma para siempre: franco anterior al primer período conocido (Gomez Mario / Geist Ale)
+
+Mismo día del hallazgo anterior: justo después de cerrar Administración
+(período hasta el 02/08), dos legajos (13-GOMEZ MARIO, 11-GEIST ALE)
+quedaron con **+1 Generados** en vez de 0. La causa: cada uno tiene un
+franco real del **2026-05-02** (sábado) que quedó **fuera de TODAS las
+ventanas de período conocidas**, porque el primer período registrado de
+ambos arranca el **2026-05-04** — dos días después. El fix del incidente
+anterior (comparar contra la ventana de cada período cerrado, en vez de
+contra `fecha_corte` a secas) nunca contempló este hueco: un día que no
+cae dentro de NINGUNA ventana simplemente nunca se excluye, sin importar
+cuántos períodos se cierren después — quedaba sumando +1 "Generados"
+fantasma para siempre.
+
+**Fix:** se agregó un piso fijo de arranque del sistema
+(`GENESIS_SISTEMA = 2026-05-21`, el mismo valor que ya se usa en toda la
+base como default de `fecha_corte`) — cualquier día anterior o igual a
+esa fecha se considera absorbido en la carga inicial de saldo, tenga o no
+un período que lo cubra. Aplicado en `_calcular_saldos()` y en
+`/admin/desglose-generados/<legajo>` (antes de la comparación por
+ventana, no en reemplazo de ella).
+
+Pedido explícito de la usuaria tras este hallazgo: verificar en el
+momento del cierre que **tanto "Generados" como "Tomados"** queden en 0
+para los legajos recién cerrados, en los dos mecanismos (no solo
+`periodo_cerrar`, que ya lo hacía solo para generados). Ambas rutas
+(`periodo_cerrar` y `francos_cierre_nuevo`) ahora agregan
+`"tomados_no_absorbidos"` junto a `"generados_no_absorbidos"` en el campo
+`trazabilidad` de la respuesta (matemáticamente "tomados" siempre debería
+dar 0 justo después de cerrar, pero se verifica en vez de asumirlo).
+
+Test: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
+`test_calcular_saldos_no_cuenta_franco_anterior_al_primer_periodo_conocido`.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

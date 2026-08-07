@@ -273,6 +273,56 @@ def test_calcular_saldos_no_tapa_franco_del_periodo_abierto_por_recierre_tardio(
     assert saldo_leg["generados"] == 1
 
 
+def test_calcular_saldos_no_cuenta_franco_anterior_al_primer_periodo_conocido(db_temporal):
+    """Reproduce el incidente real de producción (07/08/2026, Administración
+    / GOMEZ MARIO y GEIST ALE): un franco real del 2026-05-02 (sábado) quedó
+    fuera de TODAS las ventanas de período conocidas, porque el primer
+    período de estos legajos arranca el 2026-05-04 -- dos días después. El
+    filtro por ventana (fix del incidente anterior, sesión 03/08) nunca lo
+    excluía, así que sumaba +1 "Generados" fantasma para siempre, sin
+    importar cuántos períodos se cerraran después. Ahora hay un piso de
+    arranque del sistema (2026-05-21) que absorbe cualquier día anterior o
+    igual a esa fecha, tenga o no un período que lo cubra."""
+    conn = _conn(db_temporal)
+    leg, nombre = "13", "GOMEZ MARIO"
+
+    conn.execute(
+        "INSERT INTO francos_saldo_inicial (legajo, nombre, saldo, fecha_corte, cargado_en) "
+        "VALUES (?,?,26,?,?)",
+        (leg, nombre, "2026-08-07 13:41:06.778305", "2026-08-07 13:41:07"),
+    )
+    # Primer período conocido: arranca el 04/05, DOS días después del franco
+    # real del legajo (02/05) -- ese hueco es lo que causaba el bug.
+    _crear_periodo(conn, "2026-06-08T10:19:58.673435", "Administración", leg, nombre,
+                    francos=1, fecha_desde="2026-05-04", fecha_hasta="2026-05-31")
+    conn.commit()
+
+    # Semana que todavía queda listada como activa en metadata y cuya
+    # ventana de fechas SÍ cubre el 02/05 -- reproduce el que una semana
+    # vieja, huérfana de cualquier cierre, siga viva en metadata.json y
+    # aportando ese día a _calcular_periodo().
+    servidor._guardar_metadata({
+        "semana_actual": 60,
+        "semanas": [{
+            "numero": 60, "num_depto": 1, "departamento": "Administración",
+            "fecha_desde": "2026-05-01", "fecha_hasta": "2026-05-03",
+            "archivo": "semana_60.csv",
+        }],
+    })
+    servidor.CONFIRM_DIR.mkdir(exist_ok=True, parents=True)
+    (servidor.CONFIRM_DIR / "vieja_mayo.json").write_text(json.dumps({
+        "legajo": leg, "nombre": nombre, "departamento": "Administración", "semana": 60,
+        "confirmado_en": "2026-05-04T10:00:00",
+        "dias": [{"fecha": "2026-05-02", "franco": 1, "ot50": "00:00:00",
+                   "ot100": "06:00:00", "comida": 0, "tiene_ot": True}],
+        "totales": {"ot50": "0h", "ot100": "6h", "comidas": 0, "francos": 1, "tardanzas": 0},
+    }, ensure_ascii=False), encoding="utf-8")
+
+    saldos = servidor._calcular_saldos()
+    saldo_leg = next(s for s in saldos if str(s["legajo"]) == leg)
+    assert saldo_leg["generados"] == 0
+
+
 def test_delta_francos_cierre_solo_cuenta_lo_propio_del_pid(db_temporal):
     conn = _conn(db_temporal)
     leg, nombre = "133", "ZABALA ANTONIO"

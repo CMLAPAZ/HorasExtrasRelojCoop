@@ -3975,6 +3975,7 @@ def admin_desglose_generados(legajo):
     # real de cierre) a secas, que se rompe si el último cierre se recerró
     # tarde (ver comentario en _calcular_saldos).
     corte_fecha = _parse_fecha(str(fecha_corte)[:10])
+    GENESIS_SISTEMA = _parse_fecha("2026-05-21")
     ventanas = [
         (_parse_fecha(str(r["fecha_desde"] or "")[:10]), _parse_fecha(str(r["fecha_hasta"] or "")[:10]))
         for r in periodos_legajo if (r["estado"] or "ACTIVO") != "ANULADO"
@@ -3993,8 +3994,9 @@ def admin_desglose_generados(legajo):
                 if not f:
                     continue
                 excluido = (
-                    any(fd <= f <= fh for fd, fh in ventanas) if ventanas
-                    else bool(corte_fecha and f <= corte_fecha)
+                    (GENESIS_SISTEMA and f <= GENESIS_SISTEMA)
+                    or (any(fd <= f <= fh for fd, fh in ventanas) if ventanas
+                        else bool(corte_fecha and f <= corte_fecha))
                 )
                 if excluido:
                     dias_excluidos_por_corte.append(dia.get("fecha"))
@@ -4594,10 +4596,23 @@ def periodo_cerrar():
             for leg in sorted(legajos_cierre_set)
             if leg in saldos_por_leg and saldos_por_leg[leg]["generados"] != 0
         ]
+        # Mismo chequeo para "Tomados" -- pedido explícito de la usuaria
+        # (07/08/2026): "generados y tomados queden en cero" al cerrar, no
+        # solo generados. Matemáticamente tomados siempre debería dar 0
+        # justo después de cerrar (tomados_al_corte se fija en ese mismo
+        # instante al total actual), pero se verifica igual en vez de
+        # asumirlo -- si alguna vez no da 0, es una señal real de que algo
+        # se calculó mal.
+        tomados_no_absorbidos = [
+            {"legajo": leg, "tomados": saldos_por_leg[leg]["tomados"]}
+            for leg in sorted(legajos_cierre_set)
+            if leg in saldos_por_leg and saldos_por_leg[leg]["tomados"] != 0
+        ]
         trazabilidad = {
-            "cadena_sana": not desajustes_depto and not generados_no_absorbidos,
+            "cadena_sana": not desajustes_depto and not generados_no_absorbidos and not tomados_no_absorbidos,
             "desajustes_cadena": desajustes_depto,
             "generados_no_absorbidos": generados_no_absorbidos,
+            "tomados_no_absorbidos": tomados_no_absorbidos,
         }
     except Exception as exc_verif:
         trazabilidad = {"error": f"No se pudo auto-verificar: {exc_verif}"}
@@ -5038,23 +5053,36 @@ def francos_cierre_nuevo():
 
     # Auto-verificación de trazabilidad al cerrar (mismo criterio que
     # periodo_cerrar): la cadena de cierres_francos de este depto sigue
-    # sana. No comparamos "Generados en 0" acá porque el patrón de carga
-    # manual (francos_semana_manual/francos_generados) no se resetea en el
-    # mismo sentido que el período de fichadas -- ver
-    # _verificar_cadena_cierres_francos para el chequeo real de la cadena.
+    # sana, y "Generados"/"Tomados" quedan en 0 para cada legajo recién
+    # cerrado -- gen_extra_al_corte y tomados_al_corte se fijan en este
+    # mismo instante al total actual, así que matemáticamente deberían dar
+    # 0 justo después, pero se verifica en vez de asumirlo (pedido
+    # explícito de la usuaria, 07/08/2026, tras el incidente de un franco
+    # "huérfano" en Telefonía: "generados y tomados queden en cero").
     trazabilidad = None
     try:
         with _get_db() as conn_verif:
             chequeo = _verificar_cadena_cierres_francos(conn_verif)
+        desajustes_depto = [
+            d for d in chequeo["desajustes"]
+            if _normalizar_departamento_web(d.get("departamento", "")) == departamento
+        ]
+        saldos_por_leg = {s["legajo"]: s for s in _calcular_saldos()}
+        generados_no_absorbidos = [
+            {"legajo": leg, "generados": saldos_por_leg[leg]["generados"]}
+            for leg in sorted(legajos)
+            if leg in saldos_por_leg and saldos_por_leg[leg]["generados"] != 0
+        ]
+        tomados_no_absorbidos = [
+            {"legajo": leg, "tomados": saldos_por_leg[leg]["tomados"]}
+            for leg in sorted(legajos)
+            if leg in saldos_por_leg and saldos_por_leg[leg]["tomados"] != 0
+        ]
         trazabilidad = {
-            "cadena_sana": not any(
-                _normalizar_departamento_web(d.get("departamento", "")) == departamento
-                for d in chequeo["desajustes"]
-            ),
-            "desajustes_cadena": [
-                d for d in chequeo["desajustes"]
-                if _normalizar_departamento_web(d.get("departamento", "")) == departamento
-            ],
+            "cadena_sana": not desajustes_depto and not generados_no_absorbidos and not tomados_no_absorbidos,
+            "desajustes_cadena": desajustes_depto,
+            "generados_no_absorbidos": generados_no_absorbidos,
+            "tomados_no_absorbidos": tomados_no_absorbidos,
         }
     except Exception as exc_verif:
         trazabilidad = {"error": f"No se pudo auto-verificar: {exc_verif}"}
@@ -7808,6 +7836,17 @@ def _calcular_saldos():
     # (nunca tuvieron un cierre real) se mantiene la comparación contra
     # fecha_corte como piso, para no perder el filtro de la carga inicial de
     # saldo.
+    # Piso de arranque del sistema: cualquier día anterior o igual a esta
+    # fecha se considera ya absorbido en la carga inicial de saldo, sin
+    # importar si cae o no dentro de la ventana de un período conocido --
+    # necesario porque el primer período de un legajo puede empezar días
+    # después del arranque real (ej. Gomez Mario/Geist Ale, Administración:
+    # su primer período conocido arranca el 04/05, pero tenían un franco
+    # real del 02/05 que quedó fuera de TODAS las ventanas conocidas y por
+    # eso nunca se excluía -- sumaba +1 "Generados" fantasma para siempre,
+    # detectado 07/08/2026 justo después de cerrar). Mismo valor que ya se
+    # usa como default de fecha_corte en toda la base.
+    GENESIS_SISTEMA = _parse_fecha("2026-05-21")
     empleados_conocidos_cache = _empleados_conocidos()
     deptos_activos = sorted({
         e["departamento"] for e in empleados_conocidos_cache if e.get("departamento")
@@ -7826,6 +7865,8 @@ def _calcular_saldos():
                     continue
                 f = _parse_fecha(dia.get("fecha", ""))
                 if not f:
+                    continue
+                if GENESIS_SISTEMA and f <= GENESIS_SISTEMA:
                     continue
                 if ventanas:
                     if any(fd <= f <= fh for fd, fh in ventanas):
