@@ -4725,20 +4725,24 @@ _MESES_PLANILLA = {
 }
 
 
-def _cierres_francos_del_mes(conn, mes):
-    """Último cierre activo del mes para cada departamento exportable."""
-    encontrados = {}
-    rows = conn.execute(
+def _ultimo_cierre_francos_activo(conn, departamento):
+    """Último cierre ACTIVO de un departamento, sin importar en qué mes cae
+    su fecha_hasta -- para la planilla, la usuaria pidió explícitamente
+    "copiando los tomados del último cierre de ingenieros, no otro
+    cálculo" (08/08/2026): antes se elegía el cierre buscando cuál tenía
+    fecha_hasta dentro del mes de la pestaña a actualizar, pero eso podía
+    traer un cierre viejo si el más reciente quedó fechado en otro mes
+    (mismo patrón que el resto de los informes mensuales: la fecha de
+    corte de un cierre no siempre cae en el mes de sus datos reales). El
+    "mes" del formulario ahora solo elige la pestaña de la planilla donde
+    se escribe, no de dónde sale el dato."""
+    row = conn.execute(
         "SELECT * FROM cierres_francos "
-        "WHERE COALESCE(estado, 'ACTIVO') <> 'ANULADO' "
-        "AND substr(fecha_hasta, 1, 7)=? ORDER BY id DESC",
-        (mes,),
-    ).fetchall()
-    for row in rows:
-        departamento = _normalizar_departamento_web(row["departamento"] or "")
-        if departamento in ("guardias", "ingenieros") and departamento not in encontrados:
-            encontrados[departamento] = dict(row)
-    return encontrados
+        "WHERE COALESCE(estado, 'ACTIVO') <> 'ANULADO' AND LOWER(departamento)=? "
+        "ORDER BY cerrado_en DESC, id DESC LIMIT 1",
+        (departamento,),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def _actualizar_planilla_francos(contenido, mes, departamento, cierre):
@@ -4819,14 +4823,13 @@ def francos_planilla_actualizar():
         return jsonify({"error": "Seleccioná la planilla Excel en formato .xlsx."}), 400
 
     with _get_db() as conn:
-        cierres = _cierres_francos_del_mes(conn, mes)
-    if departamento not in cierres:
+        cierre = _ultimo_cierre_francos_activo(conn, departamento)
+    if not cierre:
         return jsonify({
-            "error": f"No se puede actualizar: falta el cierre activo del mes para "
-                     f"{_nombre_departamento_visible(departamento)}."
+            "error": f"No hay ningún cierre activo de {_nombre_departamento_visible(departamento)} todavía."
         }), 409
     try:
-        salida = _actualizar_planilla_francos(archivo.read(), mes, departamento, cierres[departamento])
+        salida = _actualizar_planilla_francos(archivo.read(), mes, departamento, cierre)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return send_file(

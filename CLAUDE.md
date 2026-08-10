@@ -1198,6 +1198,41 @@ dar 0 justo después de cerrar, pero se verifica en vez de asumirlo).
 Test: `tests/test_ciclo_cierre_anular_recerrar_francos.py` —
 `test_calcular_saldos_no_cuenta_franco_anterior_al_primer_periodo_conocido`.
 
+## Implementado en sesión 08/08/2026 — planilla Excel: usar siempre el último cierre activo, no el cierre "del mes"
+
+Después del split por depto (sesión 07/08/2026), la usuaria detectó que
+"Actualizar planilla mensual" de Ingenieros **repitió los tomados de
+junio** en vez de traer los de julio (4 días de Mancioni + 1 de Gatti
+quedaron sin volcar; tuvo que corregir la planilla a mano). Causa:
+`_cierres_francos_del_mes(conn, mes)` elegía el cierre cuya `fecha_hasta`
+cae en el mes pedido — mismo patrón de bug que el de "informes mensuales
+combinados" (sesión 05/08/2026): el cierre real de julio de Ingenieros
+tenía `fecha_hasta`/`cerrado_en` que no calzaba con el string `"2026-07"`
+esperado, así que la búsqueda por mes no lo encontraba y silenciosamente
+devolvía (o reusaba) el cierre de junio.
+
+La usuaria rechazó explícitamente la primera propuesta (agregar un
+selector de cierre en la UI para elegir cuál usar) — pidió algo más
+simple: **"que lo hagas copiando los tomados del último cierre de
+ingenieros, no otro cálculo"**. La planilla no necesita encontrar "el
+cierre de este mes": el flujo real es cerrar el depto y enseguida
+actualizar su planilla con lo que ese cierre acaba de dejar grabado.
+
+**Fix:** `_cierres_francos_del_mes(conn, mes)` (que buscaba por depto+mes
+para Ingenieros y Guardias combinados) fue reemplazada por
+`_ultimo_cierre_francos_activo(conn, departamento)` — devuelve el cierre
+`ACTIVO` más reciente de ESE departamento por `cerrado_en DESC, id DESC`,
+sin ningún filtro de mes. `francos_planilla_actualizar()` ahora llama a
+esta función con el depto elegido; "Mes" en el formulario solo controla a
+qué pestaña del Excel se escribe (que hoja abrir), no qué cierre se lee.
+Mensaje de error actualizado a `"No hay ningún cierre activo de {depto}
+todavía."` (antes mencionaba "el mes").
+
+Tests: `tests/test_actualizar_planilla_francos.py` — sin cambios de fondo
+en la firma de `_actualizar_planilla_francos` (ya tomaba un cierre
+puntual desde el split anterior); se verificó que los 4 tests existentes
+siguen pasando con la nueva función de selección.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
