@@ -13,7 +13,7 @@ Uso (PowerShell desde la carpeta del proyecto):
 param([switch]$Desinstalar)
 
 $AppName    = "CM HorasExtras"
-$AppVersion = "1.2.0"
+$AppVersion = "1.3.0"
 $Publisher  = "CM La Paz Online"
 $ExeName    = "CM_HorasExtras.exe"
 $InstallDir = "C:\APPS\CM_HorasExtras"   # carpeta de instalación real

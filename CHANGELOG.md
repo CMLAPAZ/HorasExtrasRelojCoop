@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## [1.3.0] - 2026-08-10
+
+### Agregado
+
+- **Control de Puntualidad integrado a la app de escritorio** — el módulo antes independiente (`puntualidad_ui.py`) ahora se abre desde `main.py`.
+- **Botón "Confirmaciones web"** abre directamente `cmhoras.pythonanywhere.com` desde la app.
+- **Numeración de semanas independiente por departamento.**
+- **Rango de fechas exacto** en el título del informe PDF.
+- `excluidos_sa.json` configurable (antes hardcodeado) para omitir marca SA en empleados con lactancia.
+- Legajos excluidos del cálculo de OT ahora configurables.
+
+### Cambiado
+
+- Eliminado el botón "Servidor local" — la app usa exclusivamente PythonAnywhere.
+- El proceso del servidor se reinicia solo si quedó corriendo de una sesión anterior.
+
+### Corregido
+
+- Empleados con OT excluida: los informes ocultan el dato en vez de borrarlo internamente; ahora solo pone en cero 50%/100%, mantiene francos/comidas/tardanzas.
+
 ## [1.2.0] - 2026-04-14
 
 ### Corregido

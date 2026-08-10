@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # ─── Fuente y paleta global ──────────────────────────────────────────────────
 _F        = "Segoe UI"
@@ -1448,16 +1448,19 @@ _style.map("Treeview",
            foreground=[("selected", C_TITLE)])
 _style.configure("TCombobox", font=FONT_BASE)
 
+_icono_ok = False
 try:
     if os.path.exists(ICON_ICO):
-        ventana.iconbitmap(ICON_ICO)
+        ventana.iconbitmap(default=ICON_ICO)
+        _icono_ok = True
 except Exception:
     pass
-try:
-    if os.path.exists(ICON_PNG):
-        ventana.iconphoto(True, tk.PhotoImage(file=ICON_PNG))
-except Exception:
-    pass
+if not _icono_ok:
+    try:
+        if os.path.exists(ICON_PNG):
+            ventana.iconphoto(True, tk.PhotoImage(file=ICON_PNG))
+    except Exception:
+        pass
 
 # ── Login ─────────────────────────────────────────────────────────────────────
 ventana.update_idletasks()
