@@ -1233,6 +1233,32 @@ en la firma de `_actualizar_planilla_francos` (ya tomaba un cierre
 puntual desde el split anterior); se verificó que los 4 tests existentes
 siguen pasando con la nueva función de selección.
 
+## Implementado en sesión 10/08/2026 — release v1.3.0 del exe de escritorio
+
+`main.py` acumulaba cambios reales desde el release v1.2.0 (abril 2026)
+sin haberse versionado: integración de Puntualidad al escritorio,
+`excluidos_sa.json` configurable, botón de confirmaciones web,
+numeración de semanas por depto, etc. (ver CHANGELOG.md para el detalle
+completo). Bump de versión a 1.3.0 en `main.py`, `recursos/version.txt`,
+`file_version_info.txt` e `instalar.ps1`.
+
+**Icono de la barra de tareas ("el barquito"):** `recursos/logo.ico` solo
+tenía los tamaños 16/32/48px — en algunos escenarios de Windows (DPI
+alto, taskbar) no encontraba un tamaño adecuado y caía al ícono genérico.
+Regenerado con el set completo (16/24/32/48/64/128/256px) desde
+`recursos/logo.png`. Además, `main.py` llamaba a `ventana.iconbitmap(...)`
+y siempre a continuación `ventana.iconphoto(True, ...)` — el bitmap
+sintetizado por `iconphoto` podía pisar el ícono nativo que Windows toma
+del `.ico` para la barra de tareas. Ahora `iconphoto` solo corre como
+fallback si `iconbitmap` falla.
+
+Build: `py -m PyInstaller CM_HorasExtras.spec --noconfirm` con el venv de
+`C:\PyEnvs\CM_HorasExtras` (el `build_exe.ps1` del repo asume un `.venv`
+local que no existe en esta máquina; se corrió el mismo comando a mano).
+Instalado con `instalar.ps1` (copia el exe a `C:\APPS\CM_HorasExtras`,
+actualiza `recursos\version.txt` y refresca accesos directos de
+Escritorio y Menú Inicio — no pisa el `config.json` ya instalado).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
