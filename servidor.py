@@ -7231,6 +7231,37 @@ def admin_sincronizar_saldo_inicial_desde_cierre_francos(cid):
     })
 
 
+@app.route("/admin/diagnostico-depto-francos/<depto>")
+def admin_diagnostico_depto_francos(depto):
+    """Solo lectura: por qué un departamento no aparece en el selector de
+    Cerrar Francos (deptos_conocidos = _departamentos_francos_disponibles()
+    menos Redes/Administración). Muestra el estado normalizado, si está
+    oculto (recursos/francos_deptos_ocultos.json), si _empleados_conocidos()
+    lo trae, y las filas crudas de empleados_extra (incluidas inactivo=0)
+    para detectar mayúsculas/tildes distintas o un activo=0 inesperado."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    norm = _normalizar_departamento_web(depto)
+    visible = _nombre_departamento_visible(depto)
+    oculto = _depto_francos_oculto(depto)
+    empleados_conocidos = [e for e in _empleados_conocidos() if _normalizar_departamento_web(e["departamento"]) == norm]
+    deptos_disponibles = _departamentos_francos_disponibles()
+    with _get_db() as conn:
+        filas_extra = [dict(r) for r in conn.execute(
+            "SELECT legajo, nombre, departamento, activo FROM empleados_extra "
+            "WHERE LOWER(departamento) LIKE ?", (f"%{norm[:6]}%",)
+        )]
+    return jsonify({
+        "depto_pedido": depto,
+        "normalizado": norm,
+        "nombre_visible": visible,
+        "oculto_en_francos": oculto,
+        "aparece_en_deptos_conocidos": visible in deptos_disponibles,
+        "deptos_conocidos_actual": deptos_disponibles,
+        "empleados_conocidos_para_este_depto": empleados_conocidos,
+        "filas_empleados_extra_relacionadas": filas_extra,
+    })
+
+
 @app.route("/admin/diagnostico-francos-huerfanos")
 def admin_diagnostico_francos_huerfanos():
     """Solo lectura: busca francos_tomados marcados 'Cerrado' que no
