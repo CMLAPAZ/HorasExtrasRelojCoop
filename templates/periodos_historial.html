@@ -223,12 +223,12 @@
                 <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}" target="_blank">Ver confirmaciones</a>
                 <a class="btn" href="/periodos/francos_pdf/{{ c.id }}" target="_blank">Ver francos</a>
                 <a class="btn" href="/periodos/{{ c.id }}/informe_completo" target="_blank">Ver saldos</a>
-                {% if c.liquidado %}
-                  <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, true)">Quitar liquidado</button>
-                {% else %}
-                  <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, false)">Marcar liquidado</button>
-                {% endif %}
                 {% if c.estado != 'ANULADO' %}
+                  {% if c.liquidado %}
+                    <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, true)">Quitar liquidado</button>
+                  {% else %}
+                    <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, false)">Marcar liquidado</button>
+                  {% endif %}
                   <button type="button" class="btn btn-danger" onclick="anularCierre({{ c.id }})">Anular</button>
                 {% endif %}
               </div>
