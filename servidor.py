@@ -9050,15 +9050,30 @@ def plus_vacacional():
     depto_visible = _nombre_departamento_visible(depto_param)
 
     with _get_db() as conn:
-        periodos_rows = conn.execute("""
-            SELECT DISTINCT p.id, p.fecha_desde, p.fecha_hasta, p.cerrado_en
+        # No comparar pe.departamento por igualdad exacta de string: el valor
+        # guardado en periodo_cerrar viene tal cual del resumen (puede quedar
+        # "redes", "REDES", etc. según cómo haya llegado el dato), así que una
+        # comparación exacta puede descartar en silencio un cierre real ya
+        # ACTIVO. Se normaliza en Python, igual criterio que
+        # _legajos_actuales_del_depto().
+        candidatos = conn.execute("""
+            SELECT DISTINCT p.id, p.fecha_desde, p.fecha_hasta, p.cerrado_en, pe.departamento
             FROM periodos p
             JOIN periodo_empleados pe ON pe.periodo_id = p.id
             WHERE COALESCE(p.estado, 'ACTIVO') = 'ACTIVO'
-              AND pe.departamento = ?
             ORDER BY p.fecha_desde DESC
-            LIMIT 6
-        """, (depto_visible,)).fetchall()
+        """).fetchall()
+        vistos = set()
+        periodos_rows = []
+        for p in candidatos:
+            if _normalizar_departamento_web(p["departamento"]) != depto_param:
+                continue
+            if p["id"] in vistos:
+                continue
+            vistos.add(p["id"])
+            periodos_rows.append(p)
+            if len(periodos_rows) == 6:
+                break
 
         if not periodos_rows:
             return render_template("plus_vacacional.html",

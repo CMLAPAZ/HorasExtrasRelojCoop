@@ -1259,6 +1259,39 @@ Instalado con `instalar.ps1` (copia el exe a `C:\APPS\CM_HorasExtras`,
 actualiza `recursos\version.txt` y refresca accesos directos de
 Escritorio y Menú Inicio — no pisa el `config.json` ya instalado).
 
+## Implementado en sesión 11/08/2026 — Plus Vacacional no mostraba cierres con departamento mal capitalizado
+
+La usuaria reportó "el plus de julio no se agregó" para Redes y
+Administración, con ambos cierres de julio ya ACTIVOS y visibles en
+`/periodos/historial`. Causa: `plus_vacacional()` (`/plus-vacacional`)
+filtraba `periodo_empleados.departamento = ?` por **igualdad exacta de
+string** contra `_nombre_departamento_visible()` (ej. `"Redes"`). El
+valor que `periodo_cerrar` graba en `periodo_empleados.departamento` es
+el que venga tal cual en el resumen de ese cierre puntual — no pasa por
+`_normalizar_departamento_web()` antes de guardarse — así que un cierre
+real y ACTIVO con `"redes"` o `"REDES"` guardado quedaba invisible para
+siempre en Plus Vacacional, sin ningún error ni aviso.
+
+**Fix:** la consulta ya no filtra por departamento en SQL — trae todos
+los períodos ACTIVOS y filtra/dedupe en Python normalizando con
+`_normalizar_departamento_web()`, mismo criterio que
+`_legajos_actuales_del_depto()` (sesión 05/08/2026). No se tocó
+`periodo_cerrar` (instrucción de la usuaria: no tocar la lógica de
+cierre) — el problema era solo cómo Plus Vacacional lee después.
+
+También detectado antes de esta corrección (mismo día): Telefonía
+"desaparecida" del selector de Cerrar Francos tras anular un cierre
+resultó ser caché del navegador, no un bug — confirmado con la nueva
+ruta de solo lectura `GET /admin/diagnostico-depto-francos/<depto>`
+(muestra si un depto está oculto, si aparece en `deptos_conocidos` y las
+filas crudas de `empleados_extra`, para no tener que adivinar contra la
+DB de producción la próxima vez que "desaparezca" algo).
+
+Tests: `tests/test_plus_vacacional_normaliza_departamento.py` — cierre
+con `"redes"` minúscula, cierre con `"ADMINISTRACION"` sin tilde, y un
+test de no-mezcla (Redes no debe traer legajos de Administración ni
+viceversa, regla número uno del proyecto).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
