@@ -210,6 +210,11 @@
               {% else %}
                 <span class="badge ok">Activo</span>
               {% endif %}
+              {% if c.liquidado %}
+                <span class="badge ok" title="Liquidado el {{ c.liquidado_en }}">Liquidado</span>
+              {% else %}
+                <span class="badge pend">Sin liquidar</span>
+              {% endif %}
             </td>
             <td>
               <span class="mobile-label">Acciones</span>
@@ -218,6 +223,11 @@
                 <a class="btn" href="/periodos/confirmaciones_pdf/{{ c.id }}" target="_blank">Ver confirmaciones</a>
                 <a class="btn" href="/periodos/francos_pdf/{{ c.id }}" target="_blank">Ver francos</a>
                 <a class="btn" href="/periodos/{{ c.id }}/informe_completo" target="_blank">Ver saldos</a>
+                {% if c.liquidado %}
+                  <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, true)">Quitar liquidado</button>
+                {% else %}
+                  <button type="button" class="btn" onclick="marcarLiquidado({{ c.id }}, false)">Marcar liquidado</button>
+                {% endif %}
                 {% if c.estado != 'ANULADO' %}
                   <button type="button" class="btn btn-danger" onclick="anularCierre({{ c.id }})">Anular</button>
                 {% endif %}
@@ -242,6 +252,17 @@ if (buscar) {
       tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
   });
+}
+
+async function marcarLiquidado(id, quitar) {
+  const accion = quitar ? 'quitar la marca de liquidado de' : 'marcar como liquidado';
+  if (!confirm(`¿Confirmás ${accion} este cierre? Plus Vacacional solo cuenta los cierres liquidados.`)) return;
+  const fd = new FormData();
+  if (quitar) fd.append('quitar', '1');
+  const res = await fetch(`/periodos/marcar-liquidado/${id}`, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) { alert('Error: ' + data.error); return; }
+  location.reload();
 }
 
 async function anularCierre(id) {

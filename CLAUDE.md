@@ -1292,6 +1292,43 @@ con `"redes"` minúscula, cierre con `"ADMINISTRACION"` sin tilde, y un
 test de no-mezcla (Redes no debe traer legajos de Administración ni
 viceversa, regla número uno del proyecto).
 
+### "Cerrado" no es "liquidado" — Plus Vacacional solo debe contar meses pagados
+
+Mismo día, la usuaria aclaró una regla de negocio que el sistema no
+modelaba: para pagar el plus vacacional se usan los últimos 6 meses ya
+**liquidados** (pagados en el ciclo de sueldos) — el último cierre recién
+hecho en el sistema todavía no está liquidado y no debe sumar todavía.
+No había ningún campo para esto; un período solo tenía estado
+ACTIVO/ANULADO.
+
+**Decisión de la usuaria: marcado manual**, no inferido por fecha ("vos
+lo marcás a mano" — evita asumir que el ciclo de pago es siempre
+regular). Implementado:
+
+- `periodos` gana columna `liquidado_en` (timestamp, vacío por default —
+  todo cierre nuevo arranca "Sin liquidar").
+- `POST /periodos/marcar-liquidado/<pid>` — marca (o desmarca con
+  `quitar=1`) un período. Sin relación con `estado`; es un campo
+  independiente.
+- Botón "Marcar liquidado" / "Quitar liquidado" por cada cierre en
+  `/periodos/historial`, junto al badge "Liquidado" / "Sin liquidar".
+- `plus_vacacional()` ahora exige `estado='ACTIVO' AND liquidado_en != ''`
+  (antes solo `estado='ACTIVO'`).
+
+**Anular ya lo resuelve solo**: un período anulado no vuelve a aparecer
+en Plus Vacacional aunque haya estado marcado liquidado, porque el
+filtro por `estado='ACTIVO'` ya lo excluye — no hace falta limpiar
+`liquidado_en` al anular. Verificado con una prueba manual antes de
+cerrar el tema (anular un período liquidado → desaparece de
+`/plus-vacacional` sin tocar nada más).
+
+Tests agregados al mismo archivo: `test_plus_vacacional_no_cuenta_cierre_sin_liquidar`,
+`test_marcar_liquidado_hace_aparecer_el_cierre_en_plus_vacacional`
+(incluye el flujo de deshacer con `quitar=1`).
+
+Documentado también en `manual_usuario.html` (secciones "Historial de
+cierres" y "Plus Vacacional").
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

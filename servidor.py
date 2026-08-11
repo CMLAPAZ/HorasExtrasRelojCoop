@@ -200,6 +200,13 @@ def _init_db():
             conn.execute("ALTER TABLE periodos ADD COLUMN francos_corregido_en TEXT DEFAULT ''")
         except Exception:
             pass
+        # Marca manual de "liquidado" (pagado en el ciclo de sueldos) --
+        # separado de "cerrado" (ACTIVO en el sistema). Plus Vacacional solo
+        # debe contar meses ya liquidados (pedido de la usuaria 11/08/2026).
+        try:
+            conn.execute("ALTER TABLE periodos ADD COLUMN liquidado_en TEXT DEFAULT ''")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS francos_generados (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4631,6 +4638,7 @@ def periodos_historial():
                    p.fecha_desde, p.fecha_hasta,
                    COALESCE(p.estado, 'ACTIVO') as estado,
                    p.fecha_anulacion, p.motivo_anulacion, p.usuario_anulacion,
+                   p.liquidado_en,
                    GROUP_CONCAT(DISTINCT pe.departamento) as departamentos,
                    COUNT(pe.id) as total,
                    SUM(pe.confirmado) as confirmados
@@ -4670,6 +4678,8 @@ def periodos_historial():
             "fecha_anulacion": (r["fecha_anulacion"] or "")[:16].replace("T", " "),
             "motivo_anulacion": r["motivo_anulacion"] or "",
             "usuario_anulacion": r["usuario_anulacion"] or "",
+            "liquidado_en": (r["liquidado_en"] or "")[:16].replace("T", " "),
+            "liquidado":    bool(r["liquidado_en"]),
             "departamentos": r["departamentos"] or "",
             "total":       total,
             "confirmados": conf,
@@ -5342,6 +5352,27 @@ def francos_cierre_pdf(cid):
         return "Error generando PDF.", 500
     return send_file(matches[-1], mimetype="application/pdf", as_attachment=False,
                      download_name=f"francos_{depto_visible.lower()}_{fecha_hasta}.pdf")
+
+
+@app.route("/periodos/marcar-liquidado/<int:pid>", methods=["POST"])
+def periodo_marcar_liquidado(pid):
+    """Marca/desmarca un período como liquidado (pagado en el ciclo de
+    sueldos) -- estado independiente de ACTIVO/ANULADO. Plus Vacacional
+    (/plus-vacacional) solo cuenta períodos liquidados: un cierre recién
+    hecho en el sistema todavía no fue pagado, así que no debe sumarse al
+    plus hasta que se marque acá explícitamente (pedido de la usuaria,
+    11/08/2026 -- "el ultimo cerrado no se sumaria porque no esta
+    liquidado")."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    quitar = request.form.get("quitar") == "1"
+    with _get_db() as conn:
+        p = conn.execute("SELECT id, liquidado_en FROM periodos WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return jsonify({"error": "Cierre no encontrado."}), 404
+        nuevo_valor = "" if quitar else datetime.now().isoformat()
+        conn.execute("UPDATE periodos SET liquidado_en=? WHERE id=?", (nuevo_valor, pid))
+        conn.commit()
+    return jsonify({"ok": True, "liquidado": not quitar})
 
 
 @app.route("/periodos/anular/<int:pid>", methods=["POST"])
@@ -9061,6 +9092,7 @@ def plus_vacacional():
             FROM periodos p
             JOIN periodo_empleados pe ON pe.periodo_id = p.id
             WHERE COALESCE(p.estado, 'ACTIVO') = 'ACTIVO'
+              AND COALESCE(p.liquidado_en, '') != ''
             ORDER BY p.fecha_desde DESC
         """).fetchall()
         vistos = set()

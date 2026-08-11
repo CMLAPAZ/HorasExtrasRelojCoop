@@ -133,8 +133,9 @@
 
     {% if not labels %}
     <div class="sin-datos">
-      No hay cierres registrados para <strong>{{ departamento }}</strong> todav&iacute;a.<br>
-      El informe estará disponible a partir del primer cierre mensual.
+      No hay cierres <strong>liquidados</strong> registrados para <strong>{{ departamento }}</strong> todav&iacute;a.<br>
+      Un cierre nuevo no cuenta ac&aacute; hasta que se marque como "Liquidado" en
+      <a href="/periodos/historial">Cierres</a> (se paga reci&eacute;n en el ciclo de sueldos siguiente).
     </div>
 
     {% else %}
@@ -213,7 +214,9 @@
   </div>
 
   <p style="font-size:.72rem;color:#94a3b8;text-align:center;padding-bottom:12px">
-    Las horas reflejan los cierres mensuales definitivos registrados en el sistema.
+    Solo se cuentan los últimos {{ labels|length if labels else 6 }} cierres marcados como
+    <strong>Liquidado</strong> en <a href="/periodos/historial">Cierres</a> — un cierre recién
+    hecho todavía no pagado en el ciclo de sueldos no suma acá hasta que se marque.
     Para empleados sin actividad en un período la celda muestra 0:00.
   </p>
 

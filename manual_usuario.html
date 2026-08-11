@@ -1255,6 +1255,11 @@ li{margin-bottom:5px;font-size:.9rem}
     <p>Desde la pantalla de "Cierres" se puede generar un único PDF con los cierres de <strong>todos los departamentos de un mes</strong>, con salto de página entre cada uno.</p>
     <p>Sirve para tener un solo archivo con todo lo cerrado ese mes, en vez de descargar el informe completo de cada departamento por separado.</p>
   </div>
+
+  <div class="card">
+    <div class="card-ttl">Botón "Marcar liquidado"</div>
+    <p>Cada cierre de Redes/Administración muestra un badge "Sin liquidar" hasta que se marca como <strong>Liquidado</strong> con este botón — usalo recién cuando ese mes ya se pagó en el ciclo de sueldos, no al cerrar el período. Solo los cierres marcados como liquidados cuentan para <a href="#plus-vacacional" style="color:var(--acc)">Plus Vacacional</a>. Se puede deshacer con "Quitar liquidado" si fue un error.</p>
+  </div>
 </section>
 
 <!-- ── PLUS VACACIONAL ── -->
@@ -1271,23 +1276,24 @@ li{margin-bottom:5px;font-size:.9rem}
 
   <div class="card">
     <div class="card-ttl">Qué muestra</div>
-    <p>Una tabla con la suma de <strong>OT50 + OT100</strong> (horas extras al 50% y al 100%) de cada empleado, mes por mes, de los <strong>últimos 6 cierres activos</strong> del departamento — más el total. Sirve como base para calcular el plus vacacional de cada persona.</p>
+    <p>Una tabla con la suma de <strong>OT50 + OT100</strong> (horas extras al 50% y al 100%) de cada empleado, mes por mes, de los <strong>últimos 6 cierres liquidados</strong> del departamento — más el total. Sirve como base para calcular el plus vacacional de cada persona.</p>
     <p>Solo está disponible para <strong>Redes</strong> y <strong>Administración</strong> (los departamentos con fichadas); se elige cuál ver con los links "Redes" / "Administración" arriba de la tabla.</p>
   </div>
 
   <div class="card">
     <div class="card-ttl">Cómo usarlo</div>
     <div class="steps">
-      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Hacer clic en "Plus Vac." en el menú</div><div class="sd">Muestra Redes por defecto.</div></div></div>
-      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Elegir el departamento arriba de la tabla</div><div class="sd">"Redes" o "Administración".</div></div></div>
-      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">"🖨 Imprimir / PDF"</div><div class="sd">Genera un PDF listo para entregar.</div></div></div>
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Cerrar el período (ver <a href="#cierre" style="color:var(--acc)">Cierre de período</a>)</div><div class="sd">El cierre solo aparece en Cierres — todavía no cuenta para el plus.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Marcarlo "Liquidado" en Cierres, cuando esté pagado</div><div class="sd">Botón "Marcar liquidado" en cada fila de <a href="#historial" style="color:var(--acc)">Cierres</a>, una vez que ese mes ya se pagó en el ciclo de sueldos.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Hacer clic en "Plus Vac." en el menú</div><div class="sd">Muestra Redes por defecto; elegí "Redes" o "Administración" arriba de la tabla.</div></div></div>
+      <div class="step"><div class="snum">4</div><div class="sbody"><div class="st">"🖨 Imprimir / PDF"</div><div class="sd">Genera un PDF listo para entregar.</div></div></div>
     </div>
   </div>
 
   <div class="alert a-info">
     <span class="a-ico">ℹ️</span>
-    <div class="a-body"><strong>Solo cuenta cierres ya hechos</strong>
-    Si el departamento todavía no tiene ningún período cerrado, el informe va a estar vacío — hay que cerrar al menos un período primero (ver sección <a href="#cierre" style="color:var(--acc)">Cierre de período</a>).</div>
+    <div class="a-body"><strong>Cerrado no es lo mismo que liquidado</strong>
+    Un período recién cerrado en el sistema todavía no fue pagado en el ciclo de sueldos, así que Plus Vacacional no lo cuenta hasta que lo marques "Liquidado" a mano en Cierres. Si el departamento no tiene ningún cierre marcado como liquidado, el informe va a estar vacío.</div>
   </div>
 </section>
 
