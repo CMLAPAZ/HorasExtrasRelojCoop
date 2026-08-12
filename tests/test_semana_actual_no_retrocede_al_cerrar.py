@@ -117,3 +117,28 @@ def test_semana_nueva_despues_de_cerrar_no_reutiliza_numero_de_semana_cerrada(db
     meta = servidor._cargar_metadata()
     nuevo_numero = meta["semana_actual"] + 1
     assert nuevo_numero == 6, "la próxima semana debe numerarse 6, no reutilizar 1"
+
+
+def test_reparar_semana_actual_sube_al_maximo_real_en_disco(db_temporal, client):
+    """Repara el daño que ya causaron cierres anteriores al fix: semana_actual
+    quedó en 2 aunque hay semana_N.csv reales hasta el 18 en disco (de otro
+    depto ya cerrado) -- la próxima semana cargada correría riesgo de
+    reutilizar un número ya usado. GET sin confirmar es solo diagnóstico;
+    con ?confirmar=si aplica el valor correcto."""
+    servidor._guardar_metadata({"semana_actual": 2, "semanas": []})
+    servidor.SEMANAS_DIR.mkdir(exist_ok=True)
+    for n in (9, 18):
+        (servidor.SEMANAS_DIR / f"semana_{n}.csv").write_text("legajo,fecha\n150,2026-07-01\n", encoding="utf-8")
+
+    resp_dry = client.get("/admin/reparar-semana-actual")
+    data_dry = resp_dry.get_json()
+    assert data_dry["semana_actual_hoy"] == 2
+    assert data_dry["semana_actual_correcto"] == 18
+    assert data_dry["requiere_correccion"] is True
+    assert data_dry["aplicado"] is False
+    assert servidor._cargar_metadata()["semana_actual"] == 2, "sin confirmar=si no debe aplicar nada"
+
+    resp_aplicado = client.get("/admin/reparar-semana-actual?confirmar=si")
+    data_aplicado = resp_aplicado.get_json()
+    assert data_aplicado["aplicado"] is True
+    assert servidor._cargar_metadata()["semana_actual"] == 18

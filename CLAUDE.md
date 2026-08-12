@@ -1359,21 +1359,69 @@ contador global es monotónico y nunca se reutiliza, solo se sacan las
 semanas cerradas de la lista visible (que es lo único que necesita pasar
 para que no aparezcan más en el panel).
 
-**No confirmado todavía si esto explica el caso puntual de legajo 150**
-(la usuaria aclaró que es el único de 27 afectado, lo cual no descarta el
-mismo mecanismo -- alcanza con que las horas de ESE empleado en el día
-pisado hayan cambiado entre la versión vieja y la nueva del CSV, mientras
-los demás coincidan por casualidad). Se agregó
-`GET /admin/diagnostico-csv-semanas-cierre/<pid>` (solo lectura): para un
-cierre puntual, compara el rango de fechas que devuelve HOY cada
-`semana_N.csv` de ese cierre contra `periodos.fecha_desde/fecha_hasta` —
-si no coinciden, ese CSV fue pisado. Pendiente correrlo contra
-`/admin/diagnostico-csv-semanas-cierre/7` en producción para confirmar o
-descartar antes de investigar otra causa (ej. una fichada duplicada
-puntual de MELGAREJO MANUEL que `procesador.py` interprete distinto al
-recalcular vs. lo que quedó confirmado).
+Se agregó `GET /admin/diagnostico-csv-semanas-cierre/<pid>` (solo
+lectura): para un cierre puntual, compara el rango de fechas que devuelve
+HOY cada `semana_N.csv` de ese cierre contra
+`periodos.fecha_desde/fecha_hasta` — si no coinciden, ese CSV fue pisado.
+**Corrida en producción contra el cierre #7: `alguna_sobreescrita: false`**
+— las 10 semanas (números globales 9-18) tienen sus fechas correctas. Este
+mecanismo NO era la causa del caso de legajo 150, pero de paso reveló algo
+más urgente: `semana_actual_hoy` ya estaba en **2** (por retrocesos previos
+del bug, de cierres de otros deptos antes de este fix), mientras el rango
+histórico usado llega a 18 — la próxima semana cargada iba a numerarse 3,
+con riesgo inmediato de pisar un `semana_N.csv` histórico de otro depto
+todavía vigente en disco. Se agregó `GET /admin/reparar-semana-actual`
+(solo lectura, `?confirmar=si` aplica): sube `semana_actual` al máximo
+real entre los `semana_*.csv` en disco, `metadata["semanas"]` activas, y
+`periodos.semana_hasta` de TODOS los cierres alguna vez hechos.
 
 Tests: `tests/test_semana_actual_no_retrocede_al_cerrar.py`.
+
+### Causa real encontrada: `reprocesar_semana()` con `solo_legajos` no actualizaba el CSV para siempre
+
+La usuaria aclaró la pista clave: legajo 150 había sido **corregido
+individualmente el 02/08** (después de cargar la semana 5 de julio),
+usando el reprocesamiento parcial de una semana (`solo_legajos`, campo del
+formulario "Actualizar solo estos legajos" en el panel). Esa corrección sí
+quedó reflejada en `_sesion`/confirmaciones/`periodo_empleados` (por eso
+el cierre #7 y "Confirmaciones del cierre" mostraban bien 38h) — el resto
+de los 26 empleados nunca fue tocado, por eso coincidían perfecto en todos
+lados. Solo legajo 150 divergía.
+
+**Causa raíz:** en `reprocesar_semana()`, el caso `solo_legajos` actualiza
+`_sesion` correctamente para los legajos indicados, pero el comentario
+`# Solo pisar el CSV si se actualizaron todos (parcial no reemplaza el
+archivo)` mostraba la intención real: **se saltaba por completo** la
+escritura de `semana_N.csv` cuando era parcial, a propósito, para no
+perder a los demás empleados con un archivo que solo trae a algunos. Esto
+significa que `semana_N.csv` queda **desactualizado para siempre** para
+cualquier legajo corregido así — cualquier informe que relea el CSV desde
+cero ("Ver acumulado", "Informe de fichadas") sigue mostrando el valor
+viejo indefinidamente, sin ningún aviso, aunque los datos permanentes
+(`periodo_empleados`, confirmaciones) ya estén bien.
+
+**Fix:** en el caso `solo_legajos`, en vez de saltear la escritura del
+CSV, se mezcla: se leen las filas existentes de `semana_N.csv`, se sacan
+las filas de los legajos que se están corrigiendo, se agregan las filas
+nuevas de esos mismos legajos desde el archivo subido, y se guarda el
+resultado combinado — el resto de los empleados del CSV queda intacto,
+byte por byte. Con guardas defensivas (si el CSV existente no existe
+todavía, o si el archivo subido no tiene columna `Legajo` reconocible, se
+mantiene el comportamiento viejo de no tocar el CSV en vez de romper con
+un error).
+
+**No se tocó nada de `procesador.py` ni de la lógica de cálculo** — el fix
+es puramente en cómo `reprocesar_semana()` persiste el CSV cuando el
+reprocesamiento es parcial.
+
+Test: `tests/test_reprocesar_semana_parcial_actualiza_csv.py` — reproduce
+el escenario real (CSV con 2 legajos, corrección parcial de uno solo,
+verifica que el otro legajo queda intacto y que el corregido refleja el
+dato nuevo). De paso se encontró que `tests/test_reprocesar_semana.py` no
+aislaba `SEMANAS_DIR` — antes era inofensivo porque `solo_legajos` nunca
+leía el CSV, pero con este fix hubiera tocado (de lectura, no escritura —
+`_guardar_semana_csv` seguía mockeado) el `semanas/semana_1.csv` real del
+proyecto. Se agregó el aislamiento con `tmp_path`.
 
 ## Notas importantes
 

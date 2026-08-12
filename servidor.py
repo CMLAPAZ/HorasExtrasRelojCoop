@@ -2349,12 +2349,35 @@ def reprocesar_semana(n):
 
     _guardar_sesion(_sesion)
 
-    # Solo pisar el CSV si se actualizaron todos (parcial no reemplaza el archivo)
     if not solo_legajos:
+        # Reprocesamiento completo: el archivo nuevo trae a todos, se puede
+        # pisar el CSV entero sin perder a nadie.
         _guardar_semana_csv(n, df)
         semana_existente["fecha_desde"] = fecha_desde
         semana_existente["fecha_hasta"] = fecha_hasta
         semana_existente["legajos"] = [emp["legajo"] for emp in empleados_nuevos]
+    else:
+        # Reprocesamiento parcial (corrección de uno o pocos legajos): antes
+        # se saltaba por completo la actualización del CSV para no pisar a
+        # los demás empleados con un archivo que solo trae a algunos -- pero
+        # eso dejaba el CSV desactualizado PARA SIEMPRE para el legajo
+        # corregido, aunque _sesion/periodo_empleados sí tuvieran el dato
+        # bien. Cualquier informe que releyera el CSV desde cero ("Ver
+        # acumulado", "Informe de fichadas") seguía mostrando el valor viejo
+        # sin ningún aviso (bug real encontrado 12/08/2026: legajo 150,
+        # corregido individualmente el 02/08, mostraba OT100 correcto en
+        # todos lados salvo en ese informe). Ahora se mezcla: se sacan del
+        # CSV existente las filas de los legajos corregidos y se agregan las
+        # filas nuevas de esos mismos legajos desde el archivo subido -- el
+        # resto de los empleados queda intacto.
+        existente = _cargar_semana_csv(n)
+        if existente is not None and "Legajo" in df.columns:
+            existente = _normalizar_columnas(existente)
+            if "Legajo" in existente.columns:
+                legajos_str = {str(l) for l in legajos_a_actualizar}
+                resto = existente[~existente["Legajo"].astype(str).isin(legajos_str)]
+                filas_nuevas = df[df["Legajo"].astype(str).isin(legajos_str)]
+                _guardar_semana_csv(n, pd.concat([resto, filas_nuevas], ignore_index=True))
 
     semana_existente["tokens"] = tokens_finales
     semana_existente["fecha_upload"] = datetime.now().isoformat()
@@ -7331,6 +7354,59 @@ def admin_diagnostico_csv_semanas_cierre(pid):
             r.get("csv_existe") and not r.get("coincide_con_el_cierre", True) for r in resultado
         ),
     })
+
+
+@app.route("/admin/reparar-semana-actual")
+def admin_reparar_semana_actual():
+    """Solo lectura por default (?confirmar=si aplica): corrige
+    meta["semana_actual"] al valor real más alto ya usado, para reparar el
+    daño que ya causaron cierres anteriores al bug corregido en
+    periodo_cerrar() (ver sesión 12/08/2026) -- el contador puede haber
+    quedado retrocedido MUY por debajo de números que ya tienen un
+    semana_N.csv real en disco (de cierres de OTROS departamentos), lo que
+    significa que la PRÓXIMA semana cargada, con el número que sea, corre
+    riesgo inmediato de pisar un CSV histórico todavía vigente en disco.
+
+    El valor correcto = máximo entre: los números de semana_N.csv que
+    existen hoy en disco, los que siguen en metadata["semanas"] (activos),
+    y periodos.semana_hasta de TODOS los cierres alguna vez hechos (incluso
+    ya cerrados, cuyo CSV nunca se borra)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    confirmar = request.args.get("confirmar") == "si"
+
+    numeros_en_disco = []
+    if SEMANAS_DIR.exists():
+        for f in SEMANAS_DIR.glob("semana_*.csv"):
+            try:
+                numeros_en_disco.append(int(f.stem.split("_", 1)[1]))
+            except (IndexError, ValueError):
+                pass
+
+    meta = _cargar_metadata()
+    numeros_metadata = [s.get("numero", 0) for s in meta.get("semanas", [])]
+
+    with _get_db() as conn:
+        numeros_periodos = [r["semana_hasta"] or 0 for r in conn.execute(
+            "SELECT semana_hasta FROM periodos"
+        )]
+
+    actual = meta.get("semana_actual", 0)
+    correcto = max([actual, 0] + numeros_en_disco + numeros_metadata + numeros_periodos)
+
+    resultado = {
+        "semana_actual_hoy": actual,
+        "semana_actual_correcto": correcto,
+        "requiere_correccion": correcto != actual,
+        "max_en_disco": max(numeros_en_disco, default=0),
+        "max_en_metadata_activas": max(numeros_metadata, default=0),
+        "max_en_periodos_historicos": max(numeros_periodos, default=0),
+        "aplicado": False,
+    }
+    if confirmar and correcto != actual:
+        meta["semana_actual"] = correcto
+        _guardar_metadata(meta)
+        resultado["aplicado"] = True
+    return jsonify(resultado)
 
 
 @app.route("/admin/diagnostico-depto-francos/<depto>")

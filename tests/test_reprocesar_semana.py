@@ -72,12 +72,17 @@ def _emp_ana():
 # ──────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
-def _patch_io(monkeypatch):
-    """Bloquea toda escritura en disco y parchea autenticación."""
+def _patch_io(monkeypatch, tmp_path):
+    """Bloquea toda escritura en disco y parchea autenticación.
+
+    SEMANAS_DIR apunta a un tmp_path -- sin esto, el branch solo_legajos
+    de reprocesar_semana() lee semana_N.csv desde la carpeta real del
+    proyecto (semanas/), no un archivo de prueba."""
     monkeypatch.setattr(servidor, "_autenticado", lambda: True)
     monkeypatch.setattr(servidor, "_guardar_sesion", lambda s: None)
     monkeypatch.setattr(servidor, "_guardar_metadata", lambda m: None)
     monkeypatch.setattr(servidor, "_guardar_semana_csv", lambda n, df: None)
+    monkeypatch.setattr(servidor, "SEMANAS_DIR", tmp_path)
     monkeypatch.setattr(servidor, "_wa_url", lambda *a, **kw: "")
 
 
