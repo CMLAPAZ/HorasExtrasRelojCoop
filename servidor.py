@@ -4479,7 +4479,17 @@ def periodo_cerrar():
             except Exception:
                 pass
 
-    # Actualizar metadata: solo quitar las semanas cerradas
+    # Actualizar metadata: solo quitar las semanas cerradas de la lista
+    # visible. A propósito NO se toca meta["semana_actual"] acá (a
+    # diferencia de eliminar_semana, que sí lo hace): eliminar_semana borra
+    # el semana_N.csv físico, así que ese número queda libre de verdad.
+    # periodo_cerrar NO borra los CSV (quedan en disco, ya sin fichas en
+    # metadata) -- si acá también retrocediéramos el contador, la PRÓXIMA
+    # semana cargada (de cualquier depto) podría recibir el mismo número
+    # global que una semana recién cerrada y pisar su semana_N.csv,
+    # rompiendo cualquier informe que vuelva a leer ese CSV desde cero
+    # (ej. "Ver acumulado") aunque los datos permanentes del cierre
+    # -periodo_empleados, confirmaciones archivadas- sigan intactos.
     meta = _cargar_metadata()
     meta["semanas"] = [
         s for s in meta.get("semanas", [])
@@ -4488,7 +4498,6 @@ def periodo_cerrar():
             and _normalizar_departamento_web(s.get("departamento", "") or "Todos") == departamento
         )
     ]
-    meta["semana_actual"] = max((s.get("numero", 0) for s in meta["semanas"]), default=0)
     _guardar_metadata(meta)
 
     # ── Actualización automática de saldo_inicial ──────────────────────────
@@ -7259,6 +7268,68 @@ def admin_sincronizar_saldo_inicial_desde_cierre_francos(cid):
         "cierre_francos_id": cid, "departamento": departamento, "fecha_hasta": fecha_hasta,
         "diferencias": diffs, "no_aplicables": no_aplicables,
         "legajos_corregidos": aplicado, "aplicado": bool(aplicado),
+    })
+
+
+@app.route("/admin/diagnostico-csv-semanas-cierre/<int:pid>")
+def admin_diagnostico_csv_semanas_cierre(pid):
+    """Solo lectura: detecta si los archivos semana_N.csv de un cierre YA
+    CERRADO fueron sobreescritos por semanas más nuevas que reutilizaron el
+    mismo número global.
+
+    periodo_cerrar() quita las semanas cerradas de metadata["semanas"] pero
+    NO borra sus semana_N.csv (a diferencia de eliminar_semana(), que sí los
+    borra) -- y sin embargo también recalculaba
+    meta["semana_actual"] = max(numero de las semanas que quedan), igual que
+    eliminar_semana(). Si el depto recién cerrado tenía el número global más
+    alto del sistema, el contador retrocede y la PRÓXIMA semana cargada
+    (de cualquier departamento) puede recibir el mismo número global que una
+    semana ya cerrada -- pisando su semana_N.csv en disco. Los datos
+    permanentes (periodo_empleados, confirmaciones archivadas) no se ven
+    afectados; sólo los informes que releen el CSV desde cero (ej. "Ver
+    acumulado") quedan mal después de la sobreescritura.
+
+    Compara, para cada número global en periodos.semana_desde..semana_hasta
+    de este cierre, el rango de fechas que el CSV en disco dice tener hoy
+    contra periodos.fecha_desde/fecha_hasta -- si no coincide, ese CSV fue
+    pisado."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        p = conn.execute("SELECT * FROM periodos WHERE id=?", (pid,)).fetchone()
+    if not p:
+        return jsonify({"error": "Cierre no encontrado."}), 404
+
+    desde, hasta = p["semana_desde"], p["semana_hasta"]
+    esperado_desde, esperado_hasta = p["fecha_desde"] or "", p["fecha_hasta"] or ""
+    resultado = []
+    for n in range(desde, hasta + 1):
+        csv_path = SEMANAS_DIR / f"semana_{n}.csv"
+        if not csv_path.exists():
+            resultado.append({"numero": n, "csv_existe": False})
+            continue
+        try:
+            df = _cargar_semana_csv(n)
+            _, fd_actual, fh_actual = _procesar_empleados(_normalizar_columnas(df))
+        except Exception as exc:
+            resultado.append({"numero": n, "csv_existe": True, "error": str(exc)})
+            continue
+        coincide = (str(fd_actual) <= esperado_hasta) and (str(fh_actual) >= esperado_desde) if fd_actual and fh_actual else False
+        resultado.append({
+            "numero": n,
+            "csv_existe": True,
+            "fechas_actuales_del_csv": f"{fd_actual} al {fh_actual}",
+            "coincide_con_el_cierre": coincide,
+        })
+
+    return jsonify({
+        "periodo_id": pid,
+        "rango_semanas_globales": [desde, hasta],
+        "fechas_esperadas_del_cierre": f"{esperado_desde} al {esperado_hasta}",
+        "semana_actual_hoy": _cargar_metadata().get("semana_actual"),
+        "detalle_por_semana": resultado,
+        "alguna_sobreescrita": any(
+            r.get("csv_existe") and not r.get("coincide_con_el_cierre", True) for r in resultado
+        ),
     })
 
 

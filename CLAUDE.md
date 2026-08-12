@@ -1329,6 +1329,52 @@ Tests agregados al mismo archivo: `test_plus_vacacional_no_cuenta_cierre_sin_liq
 Documentado también en `manual_usuario.html` (secciones "Historial de
 cierres" y "Plus Vacacional").
 
+## Implementado en sesión 12/08/2026 — semana_actual podía retroceder y reutilizar el número de una semana ya cerrada
+
+La usuaria reportó: legajo 150 (MELGAREJO MANUEL, Redes) muestra OT100=38h
+en el informe de cierre #7 (`periodo_empleados`, permanente) y en el PDF
+"Confirmaciones del cierre", pero **36h en "Ver acumulado"** (que relee
+`semana_N.csv` desde cero y reprocesa con `procesador.py`, en vez de usar
+los datos guardados del cierre). El resto de los 27 empleados de ese
+cierre coincide bien entre ambos informes — solo el legajo 150 difiere.
+
+**Bug real encontrado en el código** (independientemente de si explica
+este caso puntual): `periodo_cerrar()` sacaba las semanas cerradas de
+`metadata["semanas"]` y ADEMÁS recalculaba
+`meta["semana_actual"] = max(numero de las que quedan)` — el mismo patrón
+que usa `eliminar_semana()`. La diferencia crítica: `eliminar_semana()` sí
+borra el `semana_N.csv` físico (ese número queda libre de verdad),
+`periodo_cerrar()` **nunca borra los CSV** — solo los saca de la lista
+visible, quedan en disco. Si el departamento recién cerrado tenía el
+número global más alto del sistema, el contador retrocedía y la PRÓXIMA
+semana cargada (de cualquier departamento) podía recibir el mismo número
+global que una semana recién cerrada, pisando su `semana_N.csv` — los
+datos permanentes (`periodo_empleados`, confirmaciones archivadas) no se
+ven afectados, pero cualquier informe que relea el CSV desde cero (Ver
+semana, Ver acumulado, `/admin/recalcular-horas-cierre`) queda mal después
+de la sobreescritura, sin ningún aviso.
+
+**Fix:** `periodo_cerrar()` ya no toca `meta["semana_actual"]` — el
+contador global es monotónico y nunca se reutiliza, solo se sacan las
+semanas cerradas de la lista visible (que es lo único que necesita pasar
+para que no aparezcan más en el panel).
+
+**No confirmado todavía si esto explica el caso puntual de legajo 150**
+(la usuaria aclaró que es el único de 27 afectado, lo cual no descarta el
+mismo mecanismo -- alcanza con que las horas de ESE empleado en el día
+pisado hayan cambiado entre la versión vieja y la nueva del CSV, mientras
+los demás coincidan por casualidad). Se agregó
+`GET /admin/diagnostico-csv-semanas-cierre/<pid>` (solo lectura): para un
+cierre puntual, compara el rango de fechas que devuelve HOY cada
+`semana_N.csv` de ese cierre contra `periodos.fecha_desde/fecha_hasta` —
+si no coinciden, ese CSV fue pisado. Pendiente correrlo contra
+`/admin/diagnostico-csv-semanas-cierre/7` en producción para confirmar o
+descartar antes de investigar otra causa (ej. una fichada duplicada
+puntual de MELGAREJO MANUEL que `procesador.py` interprete distinto al
+recalcular vs. lo que quedó confirmado).
+
+Tests: `tests/test_semana_actual_no_retrocede_al_cerrar.py`.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
