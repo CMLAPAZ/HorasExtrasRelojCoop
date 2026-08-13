@@ -951,8 +951,8 @@ li{margin-bottom:5px;font-size:.9rem}
     <p>Al anular un cierre se restauran los saldos anteriores automáticamente. Solo el último cierre activo de un departamento se puede anular — los anteriores quedan bloqueados.</p>
     <div class="alert a-info" style="margin-top:10px">
       <span class="a-ico">ℹ️</span>
-      <div class="a-body"><strong>La planilla Excel se actualiza cuando ambos cierres del mes están activos</strong>
-      Una vez que Ingenieros <em>y</em> Guardias tienen su cierre activo del mes, Carola puede usar el botón "Actualizar planilla" en el sistema. Eso rellena las columnas de "Franco Original" y "Franco Tomado" del mes correspondiente en la planilla Excel. Si falta el cierre de alguno de los dos, el botón no funciona.</div>
+      <div class="a-body"><strong>Planilla Excel: una por departamento, independiente</strong>
+      Desde julio 2026 Ingenieros y Guardias tienen cada uno su propia planilla Excel. El botón "Actualizar planilla mensual" (en Cierres) pide elegir el departamento y copia los datos del <strong>último cierre activo de ESE depto</strong> — no hace falta que el otro departamento también tenga cierre. El "Mes" del formulario solo elige qué pestaña de la planilla se completa.</div>
     </div>
   </div>
 
@@ -1100,7 +1100,7 @@ li{margin-bottom:5px;font-size:.9rem}
     <div class="card-ttl">Cómo ver los saldos</div>
     <div class="steps">
       <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Ir a "Francos" en el menú</div></div></div>
-      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Desplazarse hasta la tabla de saldos</div><div class="sd">La tabla está organizada por departamento.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Elegir el departamento en el filtro de arriba de todo</div><div class="sd">Es lo primero de la pantalla. Hasta que no elijas un departamento (o "Todos los departamentos"), no se muestra nada abajo salvo el formulario para registrar un franco nuevo — así nunca ves mezclados los saldos/francos de otro departamento sin querer.</div></div></div>
       <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Leer los colores del saldo</div><div class="sd">Verde = tiene francos disponibles. Rojo = debe más de los que tiene. Gris = en cero.</div></div></div>
     </div>
   </div>
@@ -1109,6 +1109,12 @@ li{margin-bottom:5px;font-size:.9rem}
     <span class="a-ico">⚠️</span>
     <div class="a-body"><strong>Saldo negativo</strong>
     Si una persona tiene saldo negativo, significa que tomó más francos de los que le corresponden. No corregirlo vos misma: avisá a Carola con el nombre y el número.</div>
+  </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">ℹ️</span>
+    <div class="a-body"><strong>"Francos Generados — Carga Manual" solo aparece para Guardias/Internet/Telefonía/Ingenieros</strong>
+    Redes y Administración calculan sus francos automáticamente a partir de las fichadas — por eso, al elegir esos dos departamentos en el filtro de arriba, esa sección (y las demás de carga manual) no aparecen. Solo se muestran al elegir un departamento sin fichadas, o "Todos los departamentos".</div>
   </div>
 </section>
 
