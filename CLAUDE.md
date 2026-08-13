@@ -1423,6 +1423,55 @@ leía el CSV, pero con este fix hubiera tocado (de lectura, no escritura —
 `_guardar_semana_csv` seguía mockeado) el `semanas/semana_1.csv` real del
 proyecto. Se agregó el aislamiento con `tmp_path`.
 
+### Corrección del dato histórico de Melgarejo Manuel (legajo 150) + herramientas nuevas
+
+Para arreglar el `semana_18.csv` que había quedado con la salida vieja
+(13:00 en vez de 15:00 del 2026-08-02) sin tener que resubir el archivo
+completo, se agregaron dos rutas de solo lectura/dry-run:
+
+- `GET /admin/buscar-fichada/<legajo>?fecha=YYYY-MM-DD` — recorre todos
+  los `semana_N.csv` en disco y devuelve las filas crudas que coinciden,
+  agrupadas por número de semana. Sirve para ubicar en qué archivo quedó
+  una fichada vieja sin tener que adivinar o abrir cada CSV a mano.
+- `GET /admin/corregir-punch/<n>?legajo=&fecha=&tipo=&hora_vieja=&hora_nueva=`
+  (dry-run por default, `?confirmar=si` aplica) — corrige UNA fila exacta
+  de un `semana_N.csv`, sin resubir el archivo entero. Exige coincidencia
+  única (legajo+fecha+tipo+hora_vieja); si hay 0 o más de 1, no aplica
+  nada por seguridad.
+
+Aplicado en producción 13/08/2026: `semana_18.csv`, legajo 150, SALIDA
+`2026-08-02 13:00:00` → `2026-08-02 15:00:00`. Confirmado por la usuaria:
+"Ver acumulado" ahora muestra 38h (antes 36h), igual que el cierre.
+
+**Verificación pedida por la usuaria ("¿se arregla en todos los
+lugares?")** — revisado en el código, no de memoria:
+
+- **Corrección de fichadas ANTES de cerrar el período** (el flujo normal
+  de la usuaria, vía `reprocesar_semana` con `solo_legajos`): con el fix
+  de esta sesión, ya propaga sola a los 4 lugares que muestran horas de un
+  empleado — `_sesion` (pantalla de confirmación), `semana_N.csv`
+  ("Ver acumulado", sección "Detalle de horas" del informe completo),
+  `periodo_empleados` (informe de cierre, sección "Resumen de totales" del
+  informe completo — se llena recién al cerrar, desde `_calcular_periodo()`,
+  que ya lee el dato corregido), y las confirmaciones archivadas (PDF
+  "Confirmaciones del cierre" — se archivan al cerrar con lo que haya en
+  ese momento). No hace falta ningún paso manual extra.
+- **Corrección DESPUÉS de cerrar el período** (caso raro, no es el flujo
+  habitual de la usuaria): `reprocesar_semana` ya no funciona (la semana
+  no figura "activa" en metadata, 404). Hay que usar
+  `/admin/corregir-punch` o `/admin/reemplazar-csv-semana` para el CSV, Y
+  ADEMÁS correr `/admin/recalcular-horas-cierre/<pid>?confirmar=si` a
+  mano para que `periodo_empleados` (el número oficial, el que se paga)
+  tome la corrección — **no pasa solo**. Incluso hecho eso, las
+  confirmaciones archivadas (`confirmaciones/periodo_XXX/*.json`) NO se
+  actualizan con ninguna herramienta existente: el PDF "Confirmaciones del
+  cierre" seguiría mostrando el detalle semana a semana viejo, aunque el
+  total del pie (que lee `periodo_empleados`) sí quedaría bien. **Decisión
+  de la usuaria: no cerrar este hueco por ahora** — no es su flujo
+  habitual (corrige antes de cerrar); si hace falta corregir algo después
+  de un cierre, hacerlo paso a paso a mano como se hizo con Melgarejo, sin
+  asumir que un solo comando lo deja todo consistente.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**
