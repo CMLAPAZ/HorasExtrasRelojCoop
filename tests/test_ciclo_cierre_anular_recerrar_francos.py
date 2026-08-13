@@ -437,6 +437,90 @@ def test_ciclo_cerrar_anular_recerrar_preserva_cadena_de_saldos(db_temporal, cli
     conn.close()
 
 
+def test_periodo_cerrar_no_pisa_saldo_de_cierre_posterior_al_recerrar(db_temporal, client, monkeypatch):
+    """Escenario planteado por la usuaria (13/08/2026): anular un cierre
+    viejo, corregirlo y volver a cerrarlo cuando YA existe un cierre
+    posterior (semanas más nuevas) para el mismo legajo. El recierre del
+    período viejo no debe pisar el saldo que el cierre posterior ya dejó
+    grabado -- si lo pisara, tomaría por base el saldo YA AVANZADO del
+    cierre posterior y lo sumaría de nuevo, duplicando, además de dejar
+    fecha_corte del recierre (hecha HOY) más "reciente" que la del cierre
+    posterior aunque sus semanas sean anteriores."""
+    leg, nombre, depto = "133", "ZABALA ANTONIO", "Redes"
+
+    def _meta(numero, fecha_desde, fecha_hasta):
+        servidor._guardar_metadata({
+            "semana_actual": numero,
+            "semanas": [{
+                "numero": numero, "num_depto": numero, "departamento": depto,
+                "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+            }],
+        })
+
+    def _resumen(francos):
+        return [{
+            "legajo": leg, "nombre": nombre, "departamento": depto,
+            "ot50": "0h", "ot100": "0h", "comidas": 0, "francos": francos, "tardanzas": 0,
+            "semanas": [1], "confirmado": True, "pendientes": [], "dias": [],
+            "excluido_ot": False, "liquida_ot": True, "observacion_liquidacion": "",
+        }]
+
+    # Cierre #1: semana 1, sin francos generados.
+    _meta(1, "2026-06-01", "2026-06-07")
+    monkeypatch.setattr(servidor, "_calcular_periodo",
+                         lambda desde, hasta, departamento=None: _resumen(0))
+    form1 = {"desde": "1", "hasta": "1", "departamento": depto,
+             "fecha_desde": "2026-06-01", "fecha_hasta": "2026-06-07"}
+    resp1 = client.post("/periodo/cerrar", data=form1)
+    assert resp1.status_code == 200, resp1.get_json()
+
+    conn = _conn(db_temporal)
+    pid1 = conn.execute("SELECT id FROM periodos ORDER BY id DESC LIMIT 1").fetchone()["id"]
+    conn.close()
+
+    resp_anular = client.post(f"/periodos/anular/{pid1}", data={"motivo": "test"})
+    assert resp_anular.status_code == 200, resp_anular.get_json()
+
+    # Cierre #2: semana 2, POSTERIOR, con 2 francos generados -- avanza el saldo.
+    _meta(2, "2026-06-08", "2026-06-14")
+    monkeypatch.setattr(servidor, "_calcular_periodo",
+                         lambda desde, hasta, departamento=None: _resumen(2))
+    form2 = {"desde": "2", "hasta": "2", "departamento": depto,
+             "fecha_desde": "2026-06-08", "fecha_hasta": "2026-06-14"}
+    resp2 = client.post("/periodo/cerrar", data=form2)
+    assert resp2.status_code == 200, resp2.get_json()
+
+    conn = _conn(db_temporal)
+    saldo_tras_cierre2 = conn.execute(
+        "SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+    ).fetchone()["saldo"]
+    conn.close()
+    assert saldo_tras_cierre2 == 2  # 0 base + 2 generados
+
+    # Recerrar el cierre #1 (semana vieja, anulada) -- ya existe el cierre
+    # #2 (semana 2, posterior) para el mismo legajo.
+    _meta(1, "2026-06-01", "2026-06-07")
+    monkeypatch.setattr(servidor, "_calcular_periodo",
+                         lambda desde, hasta, departamento=None: _resumen(0))
+    resp3 = client.post("/periodo/cerrar", data=form1)
+    assert resp3.status_code == 200, resp3.get_json()
+    data3 = resp3.get_json()
+    assert leg in data3.get("saldo_inicial_no_tocado_por_cierre_posterior", []), (
+        "el recierre debe reportar explícitamente que no tocó este legajo "
+        "por tener un cierre posterior"
+    )
+
+    conn = _conn(db_temporal)
+    saldo_final = conn.execute(
+        "SELECT saldo FROM francos_saldo_inicial WHERE legajo=?", (leg,)
+    ).fetchone()["saldo"]
+    conn.close()
+    assert saldo_final == 2, (
+        "el recierre de la semana vieja NO debe pisar el saldo que ya "
+        "avanzó el cierre posterior (#2)"
+    )
+
+
 # ──────────────────────────────────────────────────────────────
 # 3. Revertir por francos_tomados_id no es ambiguo con duplicados exactos
 #    (misma tupla legajo/tipo/fechas/días capturados por el mismo cierre)

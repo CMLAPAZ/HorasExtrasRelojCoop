@@ -4258,6 +4258,46 @@ def periodo_resumen():
     return jsonify(_calcular_periodo(desde, hasta, departamento))
 
 
+@app.route("/periodo/cierre-anulado-previo")
+def periodo_cierre_anulado_previo():
+    """Solo lectura: si existe un cierre ANULADO para este departamento que
+    se superpone con el rango de fechas elegido, devuelve su fecha de
+    cierre original -- para mostrarla en la pantalla de "Cerrar período"
+    antes de recerrar, sin que la usuaria tenga que ir a buscarla a mano
+    en Cierres. No bloquea nada, es solo informativo (pedido de la
+    usuaria, 13/08/2026: "el sistema debe decir cual fue esa fecha de
+    cierre anterior")."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    departamento = _normalizar_departamento_web(request.args.get("departamento", ""))
+    fecha_desde = request.args.get("fecha_desde", "").strip()
+    fecha_hasta = request.args.get("fecha_hasta", "").strip()
+    if not departamento or not fecha_desde or not fecha_hasta:
+        return jsonify({"error": "Departamento y rango de fechas requeridos."}), 400
+
+    with _get_db() as conn:
+        candidatos = conn.execute("""
+            SELECT DISTINCT p.id, p.cerrado_en, p.fecha_desde, p.fecha_hasta,
+                   p.fecha_anulacion, p.motivo_anulacion, pe.departamento
+            FROM periodos p
+            JOIN periodo_empleados pe ON pe.periodo_id = p.id
+            WHERE p.estado = 'ANULADO'
+              AND p.fecha_desde <= ? AND p.fecha_hasta >= ?
+            ORDER BY p.cerrado_en DESC
+        """, (fecha_hasta, fecha_desde)).fetchall()
+
+    for c in candidatos:
+        if _normalizar_departamento_web(c["departamento"] or "") == departamento:
+            return jsonify({
+                "encontrado": True,
+                "periodo_id": c["id"],
+                "cerrado_en_original": (c["cerrado_en"] or "")[:16].replace("T", " "),
+                "fecha_desde": c["fecha_desde"], "fecha_hasta": c["fecha_hasta"],
+                "fecha_anulacion": (c["fecha_anulacion"] or "")[:16].replace("T", " "),
+                "motivo_anulacion": c["motivo_anulacion"] or "",
+            })
+    return jsonify({"encontrado": False})
+
+
 @app.route("/periodo/exportar")
 def periodo_exportar():
     if not _autenticado(): return jsonify({"error":"No autorizado"}), 401
@@ -4537,6 +4577,31 @@ def periodo_cerrar():
         nombres_conocidos = {str(e["legajo"]): e["nombre"] for e in _empleados_conocidos()}
 
         with _get_db() as conn:
+            # Legajos que ya tienen un cierre ACTIVO posterior (fecha_hasta
+            # mayor a la de este cierre) del mismo departamento -- pasa al
+            # recerrar un período viejo (anular -> corregir -> volver a
+            # cerrar) cuando ya se cerraron semanas más nuevas en el medio.
+            # Ese cierre posterior ya avanzó francos_saldo_inicial más allá
+            # de este punto; si este cierre lo pisara con su propio cálculo
+            # (que parte del saldo "actual", no del que correspondía antes
+            # de sus propias semanas), el saldo quedaría duplicado/corrido y
+            # la fecha_corte de este recierre (hecha HOY) quedaría más
+            # "reciente" que la del cierre posterior aunque sus semanas sean
+            # anteriores -- rompe la cadena saldo_final == saldo_inicial
+            # siguiente. Pedido explícito de la usuaria (13/08/2026).
+            legajos_con_cierre_posterior = set()
+            if fecha_hasta_req:
+                rows_post = conn.execute("""
+                    SELECT DISTINCT pe.legajo
+                    FROM periodos p
+                    JOIN periodo_empleados pe ON pe.periodo_id = p.id
+                    WHERE COALESCE(p.estado, 'ACTIVO') = 'ACTIVO'
+                      AND p.id != ?
+                      AND p.fecha_hasta > ?
+                      AND pe.departamento = ?
+                """, (pid, fecha_hasta_req, _nombre_departamento_visible(departamento))).fetchall()
+                legajos_con_cierre_posterior = {str(r["legajo"]) for r in rows_post}
+
             # Guardar snapshot de saldos anteriores para poder revertir al anular
             saldo_ant = {}
             for leg in legajos_cierre_set:
@@ -4574,8 +4639,15 @@ def periodo_cerrar():
             # pid en periodo_empleados.francos y francos_cierre_detalle.
             deltas = _delta_francos_cierre(conn, pid, legajos_cierre_set)
 
-            # Actualizar saldo_inicial con el saldo nuevo calculado
+            # Actualizar saldo_inicial con el saldo nuevo calculado -- salvo
+            # los legajos con cierre posterior (ver más arriba): para esos,
+            # el saldo en vivo ya lo dejó bien el cierre más nuevo, y este
+            # cierre (más viejo) no debe tocarlo.
+            legajos_omitidos = []
             for leg in legajos_cierre_set:
+                if leg in legajos_con_cierre_posterior:
+                    legajos_omitidos.append(leg)
+                    continue
                 base = saldo_ant[leg]
                 d = deltas.get(leg, {"generados_periodo": 0, "tomados_periodo": 0})
                 gen_extra_nuevo = max(0, gen_extra_totales.get(leg, 0) - base["gen_extra_al_corte"])
@@ -4605,14 +4677,18 @@ def periodo_cerrar():
                     fecha_corte,
                 ))
             conn.commit()
-        actualizados = len(legajos_cierre_set)
+        actualizados = len(legajos_cierre_set) - len(legajos_omitidos)
         print(f"[INFO] saldo_inicial actualizado para {actualizados} empleados del cierre #{pid} ({departamento})")
+        if legajos_omitidos:
+            print(f"[INFO] saldo_inicial NO tocado (cierre posterior ya existente) para: {legajos_omitidos} en cierre #{pid}")
         saldo_warning = None
     except Exception as exc_saldo:
         import traceback
         tb = traceback.format_exc()
         saldo_warning = str(exc_saldo)
+        legajos_omitidos = []
         print(f"[ERROR] saldo_inicial NO actualizado en cierre #{pid}: {exc_saldo}\n{tb}")
+    legajos_omitidos_set = set(legajos_omitidos)
 
     # Auto-verificación de trazabilidad al cerrar -- para no depender de
     # que alguien se acuerde de correr /admin/verificar-cadena-saldos-francos
@@ -4630,9 +4706,15 @@ def periodo_cerrar():
             if _normalizar_departamento_web(d.get("departamento", "")) == departamento
         ]
         saldos_por_leg = {s["legajo"]: s for s in _calcular_saldos()}
+        # Los legajos con cierre posterior (ver arriba) no tienen por qué dar
+        # 0 acá -- a propósito no se les tocó francos_saldo_inicial, así que
+        # su "Generados"/"Tomados" en vivo sigue reflejando el cierre más
+        # nuevo, no este recierre. No es una señal de error, se excluyen del
+        # chequeo para no generar una falsa alarma.
+        legajos_a_chequear = sorted(legajos_cierre_set - legajos_omitidos_set)
         generados_no_absorbidos = [
             {"legajo": leg, "generados": saldos_por_leg[leg]["generados"]}
-            for leg in sorted(legajos_cierre_set)
+            for leg in legajos_a_chequear
             if leg in saldos_por_leg and saldos_por_leg[leg]["generados"] != 0
         ]
         # Mismo chequeo para "Tomados" -- pedido explícito de la usuaria
@@ -4644,7 +4726,7 @@ def periodo_cerrar():
         # se calculó mal.
         tomados_no_absorbidos = [
             {"legajo": leg, "tomados": saldos_por_leg[leg]["tomados"]}
-            for leg in sorted(legajos_cierre_set)
+            for leg in legajos_a_chequear
             if leg in saldos_por_leg and saldos_por_leg[leg]["tomados"] != 0
         ]
         trazabilidad = {
@@ -4658,7 +4740,9 @@ def periodo_cerrar():
 
     return jsonify({"ok": True, "periodo_archivado": f"periodo_{ts}.json",
                     "trazabilidad": trazabilidad,
-                    **({"saldo_warning": saldo_warning} if saldo_warning else {})})
+                    **({"saldo_warning": saldo_warning} if saldo_warning else {}),
+                    **({"saldo_inicial_no_tocado_por_cierre_posterior": sorted(legajos_omitidos_set)}
+                       if legajos_omitidos_set else {})})
 
 
 @app.route("/periodos/historial")

@@ -204,6 +204,7 @@
     </div>
   </div>
   <div class="aviso hidden" id="aviso-pendientes"></div>
+  <div class="aviso hidden" id="aviso-cierre-anulado-previo" style="background:#fef3c7;border-color:#f59e0b;color:#78350f"></div>
   <div class="filtro-deptos hidden" id="filtro-deptos"></div>
   <div id="resumen-body"></div>
 </div>
@@ -360,6 +361,29 @@ async function previsualizar() {
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return false; }
   const wrap = document.getElementById('resumen-wrap');
+
+  // Aviso informativo: si hay un cierre ANULADO previo que se superpone
+  // con este rango, mostrar cuándo se había cerrado originalmente.
+  const avisoAnulado = document.getElementById('aviso-cierre-anulado-previo');
+  try {
+    const paramsAnulado = new URLSearchParams({
+      departamento, fecha_desde: semDesde.fechaDesde, fecha_hasta: semHasta.fechaHasta,
+    });
+    const resAnulado = await fetch(`/periodo/cierre-anulado-previo?${paramsAnulado.toString()}`);
+    const dataAnulado = await resAnulado.json();
+    if (dataAnulado.encontrado) {
+      avisoAnulado.textContent =
+        `Hay un cierre anulado anterior que se superpone con este rango (#${dataAnulado.periodo_id}): ` +
+        `se había cerrado originalmente el ${dataAnulado.cerrado_en_original}, ` +
+        `anulado el ${dataAnulado.fecha_anulacion}` +
+        (dataAnulado.motivo_anulacion ? ` (motivo: ${dataAnulado.motivo_anulacion})` : '') + '.';
+      avisoAnulado.classList.remove('hidden');
+    } else {
+      avisoAnulado.classList.add('hidden');
+    }
+  } catch (e) {
+    avisoAnulado.classList.add('hidden');
+  }
 
   const deptoVisible = nombreDepartamentoVisible(departamento);
   const tituloPeriodoVisual = semDesde.semanaVisible === semHasta.semanaVisible
@@ -604,6 +628,15 @@ async function cerrarPeriodo() {
   const res  = await fetch('/periodo/cerrar', { method:'POST', body:fd });
   const data = await res.json();
   if (data.error) { alert('Error: ' + data.error); return; }
+
+  const omitidos = data.saldo_inicial_no_tocado_por_cierre_posterior;
+  if (omitidos && omitidos.length) {
+    alert(
+      `Atención: ya existe un cierre POSTERIOR (semanas más nuevas) para estos legajos, ` +
+      `así que su saldo de francos NO se tocó en este cierre (queda como lo dejó el cierre más nuevo):\n\n` +
+      omitidos.join(', ')
+    );
+  }
 
   // Preparar encabezado de impresión con título de cierre
   const ahora = new Date().toLocaleString('es-AR');
