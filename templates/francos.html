@@ -181,6 +181,21 @@ if (window.history && window.history.replaceState) {
 </script>
 {% endif %}
 
+<!-- Filtro de departamento -- primero que todo, controla qué se ve más abajo -->
+<div class="card no-print" id="card-filtro-depto-top">
+  <div class="card-title">Departamento</div>
+  <select id="filtro-depto-francos" title="Filtrar por departamento" onchange="filtrarDeptoFrancos()" style="max-width:360px">
+    <option value="">— Seleccioná un departamento —</option>
+    <option value="__todos__">Todos los departamentos</option>
+    {% for grupo in saldos_por_depto %}
+    <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
+    {% endfor %}
+  </select>
+  <p style="font-size:.8rem;color:#64748b;margin-top:8px">
+    Elegí un departamento para ver sus saldos, francos y cargas. Mientras no elijas ninguno, solo se muestra el formulario para registrar un franco nuevo.
+  </p>
+</div>
+
 <!-- Formulario alta -->
 <div class="card card-form-f">
   <div class="card-title">Registrar Franco Tomado</div>
@@ -272,13 +287,6 @@ if (window.history && window.history.replaceState) {
   <div class="card-header">
     <div class="card-title-inline">Saldo Actual por Empleado</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <select id="filtro-depto-francos" title="Filtrar por departamento" onchange="filtrarDeptoFrancos()" style="padding:6px 10px;font-size:.84rem;border:1px solid #d7dde5;border-radius:7px">
-        <option value="">— Seleccioná un departamento —</option>
-        <option value="__todos__">Todos los departamentos</option>
-        {% for grupo in saldos_por_depto %}
-        <option value="{{ grupo.departamento }}">{{ grupo.departamento | upper }}</option>
-        {% endfor %}
-      </select>
       <a id="btn-dl-francos" href="/francos/saldos/exportar" style="display:none;height:34px;padding:0 14px;background:#172033;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;align-items:center">⬇ CSV</a>
       <a id="btn-pdf-francos" href="#" target="_blank" style="display:none;height:34px;padding:0 14px;background:#1e3a5f;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;align-items:center">👁 Ver PDF</a>
       <button class="btn-print-f no-print" onclick="imprimirSaldosFrancos()">🖨 Imprimir</button>
@@ -356,14 +364,16 @@ if (window.history && window.history.replaceState) {
 </div>
 {% endif %}
 
-<!-- Francos generados manualmente -->
-<div class="card no-print">
+<!-- Francos generados manualmente -- solo para deptos sin fichadas
+     (Guardias/Internet/Telefonía/Ingenieros); Redes/Administración calculan
+     francos automáticamente y no deben poder cargarse acá. -->
+<div class="card no-print" id="card-generados-manual-f" style="display:none">
   <div class="card-header">
     <div>
       <div class="card-title-inline">Francos Generados — Carga Manual</div>
       <p style="font-size:.82rem;color:#64748b;margin-top:4px">
-        Usá este formulario para cargar francos generados que el sistema no calcula automáticamente:
-        correcciones de períodos anteriores, ajustes puntuales, o cualquier franco que no salga del procesamiento de fichadas.
+        Usá este formulario para cargar francos generados de los departamentos sin fichadas (Guardias, Internet, Telefonía, Ingenieros):
+        correcciones de períodos anteriores, ajustes puntuales, o cualquier franco que no salga del procesamiento automático.
       </p>
     </div>
   </div>
@@ -373,7 +383,7 @@ if (window.history && window.history.replaceState) {
         <label for="sel-depto-gen">Departamento</label>
         <select id="sel-depto-gen" onchange="filtrarLegajosGen()" required>
           <option value="">— Seleccionar —</option>
-          {% for dep in departamentos %}
+          {% for dep in departamentos_manual %}
           <option value="{{ dep }}">{{ dep | upper }}</option>
           {% endfor %}
           <option value="__otro__">Otro / No listado</option>
@@ -416,7 +426,7 @@ if (window.history && window.history.replaceState) {
       </thead>
       <tbody>
         {% for g in gen_manual %}
-        <tr>
+        <tr data-depto="{{ g.departamento }}">
           <td>{{ g.legajo }}</td>
           <td>{{ g.nombre }}</td>
           <td style="color:#64748b;font-size:.82rem">{{ g.departamento }}</td>
@@ -455,7 +465,7 @@ if (window.history && window.history.replaceState) {
 
 <!-- Francos manuales por semana -->
 {% if deptos_manuales %}
-<div class="card no-print">
+<div class="card no-print" id="card-deptos-manuales-f" style="display:none">
   <div class="card-header">
     <div class="card-title-inline">Francos generados — Guardias / Internet / Telefonía / Ingenieros</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -472,7 +482,7 @@ if (window.history && window.history.replaceState) {
   </div>
 
   {% for grupo in deptos_manuales %}
-  <div style="margin-bottom:16px">
+  <div style="margin-bottom:16px" class="bloque-depto-manual-f" data-depto="{{ grupo.departamento }}">
     <div class="depto-header-f">{{ grupo.departamento | upper }} — {{ grupo.empleados | length }} empleados</div>
     <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem">
       <thead>
@@ -516,7 +526,7 @@ if (window.history && window.history.replaceState) {
      un error de carga aunque no sea del mes actual (el formulario de arriba
      solo edita el mes en curso) -->
 {% if semana_manual_abiertas %}
-<div class="card no-print">
+<div class="card no-print" id="card-semana-manual-abiertas-f" style="display:none">
   <div class="card-header">
     <div class="card-title-inline">Cargas semanales pendientes (todos los meses)</div>
   </div>
@@ -536,7 +546,7 @@ if (window.history && window.history.replaceState) {
       </thead>
       <tbody>
         {% for f in semana_manual_abiertas %}
-        <tr>
+        <tr data-depto="{{ f.departamento }}">
           <td>{{ f.legajo }}</td>
           <td>{{ f.nombre }}</td>
           <td style="color:#64748b;font-size:.82rem">{{ f.departamento }}</td>
@@ -817,6 +827,11 @@ function calcularDias() {
   el.textContent = count + ' día' + (count !== 1 ? 's' : '') + ' hábil' + (count !== 1 ? 'es' : '') + ' (sin feriados — el total exacto se calcula al guardar)';
 }
 
+function esDeptoAutomatico(dep) {
+  const d = dep.toLowerCase();
+  return d === 'redes' || d.startsWith('administra');
+}
+
 function filtrarDeptoFrancos() {
   const dep = document.getElementById('filtro-depto-francos').value;
   const msg = document.getElementById('msg-sin-depto-francos');
@@ -826,6 +841,22 @@ function filtrarDeptoFrancos() {
   const filasSaldo = document.querySelectorAll('.fila-depto-f,.fila-emp-f,.fila-subt-f');
   const filasReg   = document.querySelectorAll('.fila-reg-depto-f,.fila-reg-f');
   const pt = document.getElementById('print-titulo-depto');
+  const btnPdf = document.getElementById('btn-pdf-francos');
+
+  // Tarjetas de carga manual (solo para deptos sin fichadas) -- ocultas por
+  // completo si no hay depto elegido, o si el elegido es Redes/Administración.
+  const cardGenManual   = document.getElementById('card-generados-manual-f');
+  const cardDeptosMan   = document.getElementById('card-deptos-manuales-f');
+  const cardSemanaAbierta = document.getElementById('card-semana-manual-abiertas-f');
+  const filasGenManual  = document.querySelectorAll('#card-generados-manual-f tbody tr[data-depto]');
+  const bloquesDeptoMan = document.querySelectorAll('.bloque-depto-manual-f');
+  const filasSemanaAbierta = document.querySelectorAll('#card-semana-manual-abiertas-f tbody tr[data-depto]');
+
+  const mostrarCargaManual = dep === '__todos__' || (!!dep && !esDeptoAutomatico(dep));
+  if (cardGenManual)   cardGenManual.style.display   = mostrarCargaManual ? '' : 'none';
+  if (cardDeptosMan)   cardDeptosMan.style.display   = mostrarCargaManual ? '' : 'none';
+  if (cardSemanaAbierta) cardSemanaAbierta.style.display = mostrarCargaManual ? '' : 'none';
+
   if (!dep) {
     filasSaldo.forEach(tr => tr.style.display = 'none');
     filasReg.forEach(tr => tr.style.display = 'none');
@@ -837,10 +868,12 @@ function filtrarDeptoFrancos() {
     return;
   }
   if (msg) msg.style.display = 'none';
-  const btnPdf = document.getElementById('btn-pdf-francos');
   if (dep === '__todos__') {
     filasSaldo.forEach(tr => tr.style.display = '');
     filasReg.forEach(tr => tr.style.display = '');
+    filasGenManual.forEach(tr => tr.style.display = '');
+    bloquesDeptoMan.forEach(el => el.style.display = '');
+    filasSemanaAbierta.forEach(tr => tr.style.display = '');
     if (totalGen) totalGen.style.display = '';
     if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar'; }
     if (btnPdf) { btnPdf.style.display = 'inline-flex'; btnPdf.href = '/francos/pdf_depto?depto=__todos__'; }
@@ -851,6 +884,9 @@ function filtrarDeptoFrancos() {
   if (totalGen) totalGen.style.display = 'none';
   filasSaldo.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   filasReg.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  filasGenManual.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
+  bloquesDeptoMan.forEach(el => { el.style.display = el.dataset.depto === dep ? '' : 'none'; });
+  filasSemanaAbierta.forEach(tr => { tr.style.display = tr.dataset.depto === dep ? '' : 'none'; });
   if (btn) { btn.style.display = 'inline-flex'; btn.href = '/francos/saldos/exportar?depto=' + encodeURIComponent(dep); }
   if (btnPdf) { btnPdf.style.display = 'inline-flex'; btnPdf.href = '/francos/pdf_depto?depto=' + encodeURIComponent(dep); }
   if (titulo) { titulo.textContent = dep.toUpperCase(); titulo.style.display = 'block'; }
@@ -868,6 +904,7 @@ function actualizarInputsSemana() {
   });
 }
 actualizarInputsSemana();
+filtrarDeptoFrancos();
 
 async function guardarManualSemana() {
   const sem = document.getElementById('sel-semana-manual').value;

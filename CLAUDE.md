@@ -1472,6 +1472,52 @@ lugares?")** — revisado en el código, no de memoria:
   de un cierre, hacerlo paso a paso a mano como se hizo con Melgarejo, sin
   asumir que un solo comando lo deja todo consistente.
 
+## Implementado en sesión 13/08/2026 — filtro de departamento al frente en /francos
+
+La usuaria pidió explícitamente reorganizar `/francos`: "debería tener un
+filtro al inicio... No quiero ver abajo nada pero nada de otros
+departamentos... cargar generados solo debe aparecer en los
+departamentos que se cargan a mano no en redes o administracion."
+
+**Antes**: el selector de departamento existía pero estaba escondido
+adentro de la tarjeta de Saldos (mitad de página), y no era el filtro
+inicial que se cargaba solo — sin tocarlo, todas las filas de Saldos y
+Listado ya se mostraban igual (el `<tr id="msg-sin-depto-francos">`
+convivía con las filas reales). Además, ninguna de las secciones de
+carga manual (Generados — Carga Manual, Guardias/Internet/Telefonía/
+Ingenieros por semana, Cargas semanales pendientes) respetaba el filtro
+— siempre mostraban TODOS los departamentos mezclados. Y el desplegable
+de "Francos Generados — Carga Manual" listaba Redes y Administración
+como opciones válidas, aunque esos deptos calculan francos
+automáticamente por fichadas y nunca deberían recibir una carga manual.
+
+**Fix** (`templates/francos.html` + `servidor.py`, solo UI — no se tocó
+ningún cálculo):
+
+- El selector de depto se movió a una tarjeta nueva, la primera de la
+  página, antes de "Registrar Franco Tomado".
+- `filtrarDeptoFrancos()` ahora corre también al cargar la página (antes
+  solo corría al cambiar el selector), así que el estado inicial real es
+  "nada seleccionado → no se ve nada de abajo salvo el formulario para
+  cargar un franco nuevo" — antes se veía todo mezclado igual.
+- Se agregó `data-depto` a las filas de "Francos Generados — Carga
+  Manual" y "Cargas semanales pendientes", y `data-depto` a cada bloque
+  de "Guardias/Internet/Telefonía/Ingenieros por semana" — las tres
+  tarjetas ahora se ocultan por completo si no hay depto elegido, o si el
+  elegido es Redes/Administración (`esDeptoAutomatico()`), y filtran sus
+  filas/bloques al elegir un depto puntual, igual que ya hacían Saldos y
+  Listado.
+- Nueva variable `departamentos_manual` en `francos()` (deptos menos
+  Redes/Administración) — el desplegable de "Francos Generados — Carga
+  Manual" ahora solo ofrece deptos sin fichadas, así no se puede cargar
+  un generado manual para Redes/Administración desde el formulario.
+
+No se tocó `_calcular_saldos()`, `_departamentos_francos_disponibles()`
+ni ninguna ruta de escritura — es puramente cómo se filtra/oculta lo que
+ya se calculaba igual. Verificado que `/francos` sigue devolviendo 200 y
+renderizando bien (`tests/test_normalizacion_departamentos.py::test_francos_un_unico_grupo_redes`
+sigue pasando).
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

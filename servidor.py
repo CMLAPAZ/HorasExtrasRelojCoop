@@ -8599,6 +8599,15 @@ def francos():
         "actual":    sum(g["total_actual"]    for g in saldos_por_depto_f),
     }
     departamentos = _departamentos_francos_disponibles(empleados_raw)
+    # Redes/Administración calculan francos automáticamente por fichadas --
+    # nunca deben poder cargarse "Generados" a mano para ellos (pedido
+    # explícito de la usuaria, 13/08/2026: "cargar generados solo debe
+    # aparecer en los departamentos que se cargan a mano no en redes o
+    # administracion").
+    departamentos_manual = [
+        d for d in departamentos
+        if _normalizar_departamento_web(d) not in ("redes", "administracion")
+    ]
     # Deptos manuales con valores guardados por semana/mes
     mes_actual = datetime.now().strftime("%Y-%m")
     with _get_db() as conn:
@@ -8647,6 +8656,7 @@ def francos():
                            total_general=total_general_f,
                            empleados_grupos=empleados_grupos,
                            departamentos=departamentos,
+                           departamentos_manual=departamentos_manual,
                            gen_manual=gen_manual,
                            deptos_manuales=deptos_manuales_list,
                            semana_manual_abiertas=semana_manual_abiertas,
