@@ -7447,6 +7447,61 @@ def admin_buscar_fichada(legajo):
     return jsonify({"legajo": legajo, "fecha_filtro": fecha_filtro or None, "encontrado_en": resultado})
 
 
+@app.route("/admin/corregir-punch/<int:n>")
+def admin_corregir_punch(n):
+    """Solo lectura por default (?confirmar=si aplica): corrige la hora de
+    UN punch puntual (una fila) en un semana_N.csv, identificado por
+    legajo + fecha + tipo + hora vieja exacta -- evita tener que
+    resubir/reemplazar el archivo entero para arreglar un solo dato.
+
+    Params: legajo, fecha (YYYY-MM-DD), tipo (ENTRADA/SALIDA),
+    hora_vieja (HH:MM:SS), hora_nueva (HH:MM:SS).
+
+    Requiere una coincidencia EXACTA de legajo+fecha+tipo+hora_vieja; si
+    encuentra 0 o más de 1 fila, no aplica nada (evita corregir la fila
+    equivocada por ambigüedad)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo     = str(request.args.get("legajo", "")).strip()
+    fecha      = request.args.get("fecha", "").strip()
+    tipo       = request.args.get("tipo", "").strip().upper()
+    hora_vieja = request.args.get("hora_vieja", "").strip()
+    hora_nueva = request.args.get("hora_nueva", "").strip()
+    confirmar  = request.args.get("confirmar") == "si"
+    if not (legajo and fecha and tipo and hora_vieja and hora_nueva):
+        return jsonify({"error": "Faltan parámetros: legajo, fecha, tipo, hora_vieja, hora_nueva."}), 400
+
+    df = _cargar_semana_csv(n)
+    if df is None:
+        return jsonify({"error": f"No existe semana_{n}.csv"}), 404
+    df = _normalizar_columnas(df)
+    if "Legajo" not in df.columns or "FechaHora" not in df.columns or "Tipo" not in df.columns:
+        return jsonify({"error": "El CSV no tiene columnas reconocibles (Legajo/FechaHora/Tipo)."}), 400
+
+    fh_vieja = f"{fecha} {hora_vieja}"
+    fh_nueva = f"{fecha} {hora_nueva}"
+    mask = (
+        (df["Legajo"].astype(str) == legajo)
+        & (df["Tipo"].astype(str).str.upper() == tipo)
+        & (df["FechaHora"].astype(str) == fh_vieja)
+    )
+    coincidencias = int(mask.sum())
+
+    resultado = {
+        "numero_semana": n, "legajo": legajo, "tipo": tipo,
+        "fecha_hora_vieja": fh_vieja, "fecha_hora_nueva": fh_nueva,
+        "coincidencias": coincidencias, "aplicado": False,
+    }
+    if coincidencias != 1:
+        resultado["error"] = "Se esperaba exactamente 1 coincidencia -- no se aplica nada por seguridad."
+        return jsonify(resultado), 409 if coincidencias else 404
+
+    if confirmar:
+        df.loc[mask, "FechaHora"] = fh_nueva
+        _guardar_semana_csv(n, df)
+        resultado["aplicado"] = True
+    return jsonify(resultado)
+
+
 @app.route("/admin/diagnostico-depto-francos/<depto>")
 def admin_diagnostico_depto_francos(depto):
     """Solo lectura: por qué un departamento no aparece en el selector de
