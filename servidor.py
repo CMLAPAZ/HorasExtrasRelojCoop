@@ -7409,6 +7409,44 @@ def admin_reparar_semana_actual():
     return jsonify(resultado)
 
 
+@app.route("/admin/buscar-fichada/<legajo>")
+def admin_buscar_fichada(legajo):
+    """Solo lectura: recorre TODOS los semana_N.csv en disco y devuelve las
+    filas crudas (fecha/hora, tipo) de un legajo puntual, agrupadas por
+    número de semana. Filtro opcional ?fecha=YYYY-MM-DD.
+
+    Pensada para ubicar en qué archivo quedó una fichada vieja/sin
+    corregir después de un reprocesamiento parcial (solo_legajos) hecho
+    antes del fix de la sesión 12/08/2026 -- sin esto, corregir un punch
+    puntual en un semana_N.csv significa adivinar el número de semana."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    fecha_filtro = request.args.get("fecha", "").strip()
+    legajo = str(legajo)
+
+    resultado = []
+    if SEMANAS_DIR.exists():
+        for f in sorted(SEMANAS_DIR.glob("semana_*.csv")):
+            try:
+                n = int(f.stem.split("_", 1)[1])
+            except (IndexError, ValueError):
+                continue
+            try:
+                df = _normalizar_columnas(pd.read_csv(f, encoding="utf-8"))
+            except Exception:
+                continue
+            if "Legajo" not in df.columns or "FechaHora" not in df.columns:
+                continue
+            filas = df[df["Legajo"].astype(str) == legajo]
+            if fecha_filtro:
+                filas = filas[filas["FechaHora"].astype(str).str.startswith(fecha_filtro)]
+            if len(filas):
+                resultado.append({
+                    "numero_semana": n,
+                    "filas": filas[["FechaHora", "Tipo"]].to_dict("records"),
+                })
+    return jsonify({"legajo": legajo, "fecha_filtro": fecha_filtro or None, "encontrado_en": resultado})
+
+
 @app.route("/admin/diagnostico-depto-francos/<depto>")
 def admin_diagnostico_depto_francos(depto):
     """Solo lectura: por qué un departamento no aparece en el selector de
