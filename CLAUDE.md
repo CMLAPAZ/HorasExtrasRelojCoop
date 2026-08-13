@@ -1518,6 +1518,59 @@ ya se calculaba igual. Verificado que `/francos` sigue devolviendo 200 y
 renderizando bien (`tests/test_normalizacion_departamentos.py::test_francos_un_unico_grupo_redes`
 sigue pasando).
 
+### Bug real encontrado al desplegar el filtro: data-depto sin normalizar en las secciones manuales
+
+La usuaria probó el filtro nuevo y reportó: "pongo redes y aparecen igual
+todos abajo". Causa real: `data-depto` en las tres secciones manuales
+(Generados — Carga Manual, Guardias/Internet/Telefonía/Ingenieros por
+semana, Cargas semanales pendientes) usaba el valor **crudo** de la
+columna `departamento` tal cual está guardado en
+`francos_generados`/`francos_semana_manual`/`empleados_extra` (ej.
+`"GUARDIAS"` en mayúsculas), mientras el `<select>` de arriba y las
+secciones de Saldos/Listado (que sí pasan por `_nombre_departamento_visible()`
+vía `_calcular_saldos()`/`_empleados_conocidos()`) usan el nombre visible
+canónico (`"Guardias"`). El filtro compara por igualdad exacta de string
+en JS, así que nunca matcheaban.
+
+**Fix:** se normaliza `departamento` con `_nombre_departamento_visible()`
+en `francos()` para `gen_manual`, `semana_manual_abiertas` y las claves
+de `deptos_manuales`, antes de pasarlos al template — mismo patrón que
+ya se usa en el resto del proyecto para este tipo de bug (ver
+`_legajos_actuales_del_depto`, Plus Vacacional, etc.).
+
+Test: `tests/test_normalizacion_departamentos.py::test_francos_data_depto_normalizado_en_secciones_manuales`
+— inserta `"GUARDIAS"` (mayúsculas) directo en las tres tablas y verifica
+que el HTML renderizado usa `"Guardias"` en todos lados, nunca la forma
+sin normalizar.
+
+### Herramientas para fichadas faltantes/duplicadas: agregar-punch y eliminar-punch
+
+Mismo día, mismo patrón que Melgarejo pero en Administración: legajo 7
+(MARTIN ANA CAROLINA) tenía el 2026-07-17 **sin fichada de entrada** (el
+reloj no la registró) y **dos SALIDA duplicadas** a 8 segundos de
+diferencia (13:01:10 y 13:01:18) — cada una generaba su propio bloque
+roto "SALIDA sin ENTRADA previa". La corrección real (entrada 06:00:00)
+ya estaba en la confirmación/cierre, pero no en `semana_14.csv` (mismo
+bug de `reprocesar_semana` con `solo_legajos`, arreglado el día
+anterior, pero esta corrección puntual es de antes del fix).
+
+`/admin/corregir-punch` no alcanza para este caso porque no permite
+agregar una fila nueva ni eliminar una duplicada, solo editar una
+existente. Se agregaron dos rutas complementarias, mismo patrón
+dry-run/`?confirmar=si`:
+
+- `GET /admin/agregar-punch/<n>?legajo=&fecha=&tipo=&hora=` — agrega una
+  fila nueva (para una fichada faltante). No aplica si ya existe una fila
+  idéntica. Si no se pasan `nombre`/`departamento`, los copia de otra
+  fila del mismo legajo en ese CSV.
+- `GET /admin/eliminar-punch/<n>?legajo=&fecha=&tipo=&hora=` — elimina
+  una fila exacta (para una fichada duplicada). Exige coincidencia única,
+  igual criterio que `corregir-punch`.
+
+Tests: `tests/test_corregir_punch.py` — agregar sin duplicar, eliminar
+solo la fila indicada (la otra salida y el resto de las filas quedan
+intactas), y los casos sin coincidencia que no deben aplicar nada.
+
 ## Notas importantes
 
 - `sesion.json` y `config_email.json` **no se commitean nunca**

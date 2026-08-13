@@ -95,3 +95,81 @@ def test_sin_coincidencia_exacta_no_aplica(semanas_dir, client):
     data = resp.get_json()
     assert data["coincidencias"] == 0
     assert data["aplicado"] is False
+
+
+def _csv_con_entrada_faltante_y_salida_duplicada(semanas_dir):
+    """Caso real (13/08/2026): legajo 7 (MARTIN ANA CAROLINA, Administración)
+    -- el reloj no registró la ENTRADA del 2026-07-17, y quedaron dos
+    SALIDA a 8 segundos de diferencia (doble marca)."""
+    df = pd.DataFrame([
+        {"Legajo": "7", "Nombre": "MARTIN ANA CAROLINA", "Departamento": "ADMINISTRACION",
+         "FechaHora": "2026-07-16 05:50:10", "Tipo": "ENTRADA"},
+        {"Legajo": "7", "Nombre": "MARTIN ANA CAROLINA", "Departamento": "ADMINISTRACION",
+         "FechaHora": "2026-07-17 13:01:10", "Tipo": "SALIDA"},
+        {"Legajo": "7", "Nombre": "MARTIN ANA CAROLINA", "Departamento": "ADMINISTRACION",
+         "FechaHora": "2026-07-17 13:01:18", "Tipo": "SALIDA"},
+    ])
+    servidor._guardar_semana_csv(14, df)
+
+
+def test_agregar_punch_agrega_la_entrada_faltante(semanas_dir, client):
+    _csv_con_entrada_faltante_y_salida_duplicada(semanas_dir)
+    resp = client.get(
+        "/admin/agregar-punch/14",
+        query_string={"legajo": "7", "fecha": "2026-07-17", "tipo": "ENTRADA",
+                       "hora": "06:00:00", "confirmar": "si"},
+    )
+    data = resp.get_json()
+    assert data["aplicado"] is True
+    assert data["nombre"] == "MARTIN ANA CAROLINA"
+    assert data["departamento"] == "ADMINISTRACION"
+
+    df = servidor._normalizar_columnas(servidor._cargar_semana_csv(14))
+    assert len(df) == 4
+    fechas = set(df["FechaHora"].astype(str))
+    assert "2026-07-17 06:00:00" in fechas
+
+
+def test_agregar_punch_no_duplica_si_ya_existe(semanas_dir, client):
+    _csv_con_entrada_faltante_y_salida_duplicada(semanas_dir)
+    resp = client.get(
+        "/admin/agregar-punch/14",
+        query_string={"legajo": "7", "fecha": "2026-07-16", "tipo": "ENTRADA",
+                       "hora": "05:50:10", "confirmar": "si"},
+    )
+    assert resp.status_code == 409
+    data = resp.get_json()
+    assert data["ya_existe"] == 1
+    assert data["aplicado"] is False
+    df = servidor._normalizar_columnas(servidor._cargar_semana_csv(14))
+    assert len(df) == 3
+
+
+def test_eliminar_punch_saca_solo_la_salida_duplicada(semanas_dir, client):
+    _csv_con_entrada_faltante_y_salida_duplicada(semanas_dir)
+    resp = client.get(
+        "/admin/eliminar-punch/14",
+        query_string={"legajo": "7", "fecha": "2026-07-17", "tipo": "SALIDA",
+                       "hora": "13:01:10", "confirmar": "si"},
+    )
+    data = resp.get_json()
+    assert data["aplicado"] is True
+
+    df = servidor._normalizar_columnas(servidor._cargar_semana_csv(14))
+    assert len(df) == 2
+    fechas = set(df["FechaHora"].astype(str))
+    assert "2026-07-17 13:01:10" not in fechas
+    assert "2026-07-17 13:01:18" in fechas          # la otra salida queda
+    assert "2026-07-16 05:50:10" in fechas          # y lo demás intacto
+
+
+def test_eliminar_punch_sin_coincidencia_no_aplica(semanas_dir, client):
+    _csv_con_entrada_faltante_y_salida_duplicada(semanas_dir)
+    resp = client.get(
+        "/admin/eliminar-punch/14",
+        query_string={"legajo": "7", "fecha": "2026-07-17", "tipo": "SALIDA",
+                       "hora": "23:59:59", "confirmar": "si"},
+    )
+    assert resp.status_code == 404
+    df = servidor._normalizar_columnas(servidor._cargar_semana_csv(14))
+    assert len(df) == 3

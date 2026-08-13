@@ -7586,6 +7586,112 @@ def admin_corregir_punch(n):
     return jsonify(resultado)
 
 
+@app.route("/admin/agregar-punch/<int:n>")
+def admin_agregar_punch(n):
+    """Solo lectura por default (?confirmar=si aplica): agrega UNA fila
+    nueva (legajo+fecha+tipo+hora) a un semana_N.csv -- para el caso de
+    una fichada FALTANTE (ej. el reloj no registró la entrada ese día).
+    Complementa a /admin/corregir-punch, que solo corrige una fila ya
+    existente.
+
+    Params: legajo, fecha (YYYY-MM-DD), tipo (ENTRADA/SALIDA),
+    hora (HH:MM:SS). nombre/departamento son opcionales -- si no vienen,
+    se copian de otra fila del mismo legajo en este CSV.
+
+    No aplica si ya existe una fila idéntica (evita duplicar)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo = str(request.args.get("legajo", "")).strip()
+    nombre = request.args.get("nombre", "").strip()
+    departamento = request.args.get("departamento", "").strip()
+    fecha  = request.args.get("fecha", "").strip()
+    tipo   = request.args.get("tipo", "").strip().upper()
+    hora   = request.args.get("hora", "").strip()
+    confirmar = request.args.get("confirmar") == "si"
+    if not (legajo and fecha and tipo and hora):
+        return jsonify({"error": "Faltan parámetros: legajo, fecha, tipo, hora."}), 400
+
+    df = _cargar_semana_csv(n)
+    if df is None:
+        return jsonify({"error": f"No existe semana_{n}.csv"}), 404
+    df = _normalizar_columnas(df)
+    if "Legajo" not in df.columns or "FechaHora" not in df.columns or "Tipo" not in df.columns:
+        return jsonify({"error": "El CSV no tiene columnas reconocibles (Legajo/FechaHora/Tipo)."}), 400
+
+    fh_nueva = f"{fecha} {hora}"
+    mask_dup = (
+        (df["Legajo"].astype(str) == legajo)
+        & (df["Tipo"].astype(str).str.upper() == tipo)
+        & (df["FechaHora"].astype(str) == fh_nueva)
+    )
+    resultado = {
+        "numero_semana": n, "legajo": legajo, "tipo": tipo,
+        "fecha_hora_nueva": fh_nueva, "ya_existe": int(mask_dup.sum()), "aplicado": False,
+    }
+    if resultado["ya_existe"]:
+        resultado["error"] = "Ya existe una fila idéntica -- no se agrega de nuevo."
+        return jsonify(resultado), 409
+
+    if confirmar:
+        filas_legajo = df[df["Legajo"].astype(str) == legajo]
+        if not nombre and len(filas_legajo) and "Nombre" in df.columns:
+            nombre = str(filas_legajo.iloc[0].get("Nombre", ""))
+        if not departamento and len(filas_legajo) and "Departamento" in df.columns:
+            departamento = str(filas_legajo.iloc[0].get("Departamento", ""))
+        nueva_fila = {"Legajo": legajo, "Nombre": nombre, "Departamento": departamento,
+                      "FechaHora": fh_nueva, "Tipo": tipo}
+        df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
+        _guardar_semana_csv(n, df)
+        resultado["aplicado"] = True
+        resultado["nombre"] = nombre
+        resultado["departamento"] = departamento
+    return jsonify(resultado)
+
+
+@app.route("/admin/eliminar-punch/<int:n>")
+def admin_eliminar_punch(n):
+    """Solo lectura por default (?confirmar=si aplica): elimina UNA fila
+    exacta (legajo+fecha+tipo+hora) de un semana_N.csv -- para el caso de
+    una fichada DUPLICADA (doble marca del reloj a segundos de
+    diferencia). Requiere coincidencia única; si hay 0 o más de 1, no
+    aplica nada por seguridad."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    legajo = str(request.args.get("legajo", "")).strip()
+    fecha  = request.args.get("fecha", "").strip()
+    tipo   = request.args.get("tipo", "").strip().upper()
+    hora   = request.args.get("hora", "").strip()
+    confirmar = request.args.get("confirmar") == "si"
+    if not (legajo and fecha and tipo and hora):
+        return jsonify({"error": "Faltan parámetros: legajo, fecha, tipo, hora."}), 400
+
+    df = _cargar_semana_csv(n)
+    if df is None:
+        return jsonify({"error": f"No existe semana_{n}.csv"}), 404
+    df = _normalizar_columnas(df)
+    if "Legajo" not in df.columns or "FechaHora" not in df.columns or "Tipo" not in df.columns:
+        return jsonify({"error": "El CSV no tiene columnas reconocibles (Legajo/FechaHora/Tipo)."}), 400
+
+    fh = f"{fecha} {hora}"
+    mask = (
+        (df["Legajo"].astype(str) == legajo)
+        & (df["Tipo"].astype(str).str.upper() == tipo)
+        & (df["FechaHora"].astype(str) == fh)
+    )
+    coincidencias = int(mask.sum())
+    resultado = {
+        "numero_semana": n, "legajo": legajo, "tipo": tipo,
+        "fecha_hora": fh, "coincidencias": coincidencias, "aplicado": False,
+    }
+    if coincidencias != 1:
+        resultado["error"] = "Se esperaba exactamente 1 coincidencia -- no se aplica nada por seguridad."
+        return jsonify(resultado), 409 if coincidencias else 404
+
+    if confirmar:
+        df = df[~mask].reset_index(drop=True)
+        _guardar_semana_csv(n, df)
+        resultado["aplicado"] = True
+    return jsonify(resultado)
+
+
 @app.route("/admin/diagnostico-depto-francos/<depto>")
 def admin_diagnostico_depto_francos(depto):
     """Solo lectura: por qué un departamento no aparece en el selector de
@@ -8614,6 +8720,12 @@ def francos():
         gen_manual = [dict(r) for r in conn.execute(
             "SELECT * FROM francos_generados ORDER BY cargado_en DESC, id DESC"
         ) if not _depto_francos_oculto(r["departamento"])]
+        # Normalizar el nombre visible del depto para que coincida
+        # exactamente con el valor del <select> y el resto de data-depto de
+        # la página (ej. "GUARDIAS" en la fila vs "Guardias" en el filtro
+        # rompía el filtrado -- reportado por la usuaria 13/08/2026).
+        for r in gen_manual:
+            r["departamento"] = _nombre_departamento_visible(r["departamento"] or "")
         emps_extra = conn.execute(
             "SELECT legajo, nombre, departamento FROM empleados_extra WHERE activo=1 ORDER BY departamento, CAST(legajo AS INTEGER)"
         ).fetchall()
@@ -8636,13 +8748,15 @@ def francos():
             WHERE cierre_francos_id IS NULL
             ORDER BY mes DESC, CAST(legajo AS INTEGER), semana_num
         """) if not _depto_francos_oculto(r["departamento"])]
+        for r in semana_manual_abiertas:
+            r["departamento"] = _nombre_departamento_visible(r["departamento"] or "")
     _DEPTOS_AUTO = {"redes", "administracion"}
     deptos_manuales = {}
     for e in emps_extra:
         dep_norm = _normalizar_departamento_web(e["departamento"] or "")
         if dep_norm in _DEPTOS_AUTO or _depto_francos_oculto(e["departamento"]):
             continue
-        dep = e["departamento"] or "Sin departamento"
+        dep = _nombre_departamento_visible(e["departamento"] or "") or "Sin departamento"
         deptos_manuales.setdefault(dep, []).append({
             "legajo": e["legajo"], "nombre": e["nombre"],
             "semanas": manual_guardados.get(str(e["legajo"]), {}),

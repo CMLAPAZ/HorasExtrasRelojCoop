@@ -198,3 +198,46 @@ def test_francos_un_unico_grupo_redes(db_temporal, monkeypatch, client):
 
     assert body.count('class="fila-depto-f" data-depto="Redes"') == 1
     assert 'data-depto="redes"' not in body
+
+
+def test_francos_data_depto_normalizado_en_secciones_manuales(db_temporal):
+    """El filtro de depto de /francos (arriba de la página) compara por
+    igualdad exacta de string contra el data-depto de cada fila. Si
+    francos_generados/francos_semana_manual/empleados_extra guardan el
+    departamento con una capitalización distinta ("GUARDIAS" en vez de
+    "Guardias"), el filtro nunca matchea esas filas -- reportado por la
+    usuaria (13/08/2026): "pongo redes y aparecen igual todos abajo".
+
+    Las tres secciones (Generados manual, Guardias/Internet/Telefonía/
+    Ingenieros por semana, Cargas semanales pendientes) deben normalizar
+    su data-depto al mismo nombre visible canónico que usa el <select> de
+    arriba (Saldos/_calcular_saldos, ya normalizado)."""
+    with servidor._get_db() as conn:
+        conn.execute(
+            "INSERT INTO empleados_extra (legajo, nombre, departamento, activo) VALUES (?,?,?,1)",
+            ("113", "MAYDANA JOSE", "GUARDIAS"),
+        )
+        conn.execute(
+            "INSERT INTO francos_generados (legajo, nombre, departamento, descripcion, dias, cargado_en) "
+            "VALUES (?,?,?,?,?,?)",
+            ("113", "MAYDANA JOSE", "GUARDIAS", "Ajuste", 1, "2026-08-01 10:00:00"),
+        )
+        conn.execute(
+            "INSERT INTO francos_semana_manual (legajo, nombre, departamento, semana_num, mes, dias, guardado_en) "
+            "VALUES (?,?,?,?,?,?,?)",
+            ("113", "MAYDANA JOSE", "GUARDIAS", 1, "2026-08", 1, "2026-08-01 10:00:00"),
+        )
+        conn.commit()
+
+    servidor.app.config["TESTING"] = True
+    servidor._autenticado = lambda: True
+    with servidor.app.test_client() as c:
+        resp = c.get("/francos")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+
+    # El <select> de arriba y las tres secciones manuales deben coincidir
+    # en el mismo valor canónico "Guardias" -- nunca "GUARDIAS".
+    assert '<option value="Guardias">' in body
+    assert 'data-depto="GUARDIAS"' not in body
+    assert 'data-depto="Guardias"' in body
