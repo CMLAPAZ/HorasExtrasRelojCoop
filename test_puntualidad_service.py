@@ -489,6 +489,38 @@ def test_madrugada_imputable_al_dia_anterior(cfg_vacia):
     assert "2026-01-06" not in fechas
 
 
+def test_madrugada_corta_no_arrastra_la_cuadrilla_a_hora_temprana(cfg_vacia):
+    """
+    Reproduce un caso real: un empleado ficha un tramo corto y aislado de
+    madrugada (01:42-02:07) antes de su turno real, mientras el resto de su
+    cuadrilla entra normalmente ~05:48-05:59. Esa fichada de madrugada no
+    debe usarse como "primera entrada del día" para inferir la cuadrilla del
+    legajo 143 (lo dejaría en 04:30 en vez de agruparlo con sus compañeros
+    en 06:00, marcándolo TARDE por una fichada que ni siquiera es su turno).
+    """
+    df = _df(
+        ("143", "2026-08-28", "01:42", "ENTRADA", "redes", "Labanca"),
+        ("143", "2026-08-28", "02:07", "SALIDA",  "redes", "Labanca"),
+        ("143", "2026-08-28", "05:46", "ENTRADA", "redes", "Labanca"),
+        ("143", "2026-08-28", "13:23", "SALIDA",  "redes", "Labanca"),
+        ("147", "2026-08-28", "05:48", "ENTRADA", "redes", "Almada"),
+        ("147", "2026-08-28", "13:28", "SALIDA",  "redes", "Almada"),
+        ("145", "2026-08-28", "05:52", "ENTRADA", "redes", "Barrientos Cris"),
+        ("145", "2026-08-28", "13:00", "SALIDA",  "redes", "Barrientos Cris"),
+        ("120", "2026-08-28", "05:59", "ENTRADA", "redes", "Barrientos Rob"),
+        ("120", "2026-08-28", "13:00", "SALIDA",  "redes", "Barrientos Rob"),
+        ("151", "2026-08-28", "05:48", "ENTRADA", "redes", "Barrientos Rod"),
+        ("151", "2026-08-28", "13:00", "SALIDA",  "redes", "Barrientos Rod"),
+    )
+    js = calcular_jornadas_puntualidad(df, feriados=set())
+    j143 = next(x for x in js if x["legajo"] == "143" and x["fecha"] == "2026-08-28")
+
+    assert j143["hora_entrada"] == "05:46"
+    assert j143["hora_programada"] == "06:00"
+    assert j143["estado_jornada"] == "PUNTUAL"
+    assert j143["es_tarde"] == 0
+
+
 # ─── Tests de funciones puras de estado ──────────────────────────────────────
 
 def test_obtener_estado_mensual_limites():

@@ -160,6 +160,7 @@ def calcular_jornadas_puntualidad(
         feriados=feriados,
         dias_paro=dias_paro,
         excluir_legajos=EXCLUIR_DE_INFERENCIA,
+        config=config,
     )
 
     jornadas = []
