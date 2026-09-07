@@ -782,9 +782,9 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
         lineas = [f"Hola {nombre_corto}, tus horas extras registradas son:"]
         if dias:
             for d in dias:
-                if not d.get("tiene_ot") and not d.get("ot50") and not d.get("ot100") and not d.get("franco") and not d.get("comida"):
+                if not d.get("tiene_ot") and not d.get("ot50") and not d.get("ot100") and not d.get("franco") and not d.get("comida") and not d.get("tarde"):
                     continue
-                if d.get("ot50") == "00:00:00" and d.get("ot100") == "00:00:00" and not d.get("franco") and not d.get("comida"):
+                if d.get("ot50") == "00:00:00" and d.get("ot100") == "00:00:00" and not d.get("franco") and not d.get("comida") and not d.get("tarde"):
                     continue
                 dia_nombre = d.get("dia_semana") or _dia_semana(d.get("fecha", ""))
                 fecha_fmt  = d.get("fecha_fmt") or d.get("fecha", "")[5:]
@@ -793,6 +793,7 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
                 if d.get("ot100") and d["ot100"] != "00:00:00": partes.append(f"{d['ot100'][:5]} (100%)")
                 if d.get("franco"):  partes.append("Franco")
                 if d.get("comida"):  partes.append("Comida")
+                if d.get("tarde"):   partes.append("Llegada tarde")
                 if partes:
                     prefijo = f"{dia_nombre} {fecha_fmt}" if dia_nombre else fecha_fmt
                     lineas.append(f"• {prefijo}: {', '.join(partes)}")
