@@ -210,44 +210,14 @@ def _clasificar_franja_por_minutos(minutos_promedio):
 # cálculo, semana, cuadrilla ni cierre automático.
 LEGAJOS_EXCLUIR_PROCESAMIENTO = {"100", "101"}
 EXCLUIR_DE_INFERENCIA = LEGAJOS_EXCLUIR_PROCESAMIENTO
-def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro=None, excluir_legajos=None):
+def _clasificar_grupos_cuadrilla(primeras_por_legajo):
     """
-    Infiere cuadrilla por departamento y día usando SOLO la primera entrada real
-    de cada legajo. Excluye de la inferencia:
-      - asignaciones especiales vigentes
-      - feriados
-      - fines de semana
-      - días de paro
+    Agrupa las primeras entradas de un mismo (depto, fecha) por cercanía
+    horaria (corte de grupo cuando el gap entre entradas consecutivas es
+    >= 25 min) y clasifica cada grupo en una franja horaria.
     Devuelve {(depto, fecha, legajo): hora_base_grupal}
     """
     por_dia = defaultdict(list)
-    primeras_por_legajo = {}
-    asignaciones = asignaciones or []
-    feriados = feriados or set()
-    dias_paro = dias_paro or set()
-    excluir_legajos = {str(x).strip() for x in (excluir_legajos or set())}
-        
-    for depto, legajo, nombre, dt, tipo in registros:
-        if tipo != "ENTRADA":
-            continue
-
-        depto = normalizar_depto(depto)
-        d = dt.date()
-        fecha_str = d.strftime("%Y-%m-%d")
-        legajo_txt = str(legajo).strip()
-        if legajo_txt in excluir_legajos:
-            continue
-
-        if is_weekend(d) or d in feriados or fecha_str in dias_paro:
-            continue
-
-        if obtener_inicio_asignado(asignaciones, legajo_txt, d):
-            continue
-
-        clave = (depto, d, legajo_txt)
-        if clave not in primeras_por_legajo or dt < primeras_por_legajo[clave]:
-            primeras_por_legajo[clave] = dt
-
     for (depto, d, legajo), dt in primeras_por_legajo.items():
         por_dia[(depto, d)].append((legajo, dt))
 
@@ -284,6 +254,83 @@ def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro
                 res[(depto, d, legajo)] = hora
 
     return res
+
+
+def inferir_inicio_grupal(registros, asignaciones=None, feriados=None, dias_paro=None, excluir_legajos=None, config=None):
+    """
+    Infiere cuadrilla por departamento y día usando SOLO la primera entrada real
+    de cada legajo. Excluye de la inferencia:
+      - asignaciones especiales vigentes
+      - feriados
+      - fines de semana
+      - días de paro
+      - tramos cortos de madrugada que, por la misma convención que
+        _debe_imputarse_al_dia_anterior, corresponden al día anterior
+        (ej. una entrada/salida aislada a la 1-2am que no es el inicio
+        real del turno del día)
+    Devuelve {(depto, fecha, legajo): hora_base_grupal}
+    """
+    asignaciones = asignaciones or []
+    feriados = feriados or set()
+    dias_paro = dias_paro or set()
+    excluir_legajos = {str(x).strip() for x in (excluir_legajos or set())}
+    config = config if config is not None else cargar_config()
+
+    entradas_por_legajo_fecha = defaultdict(list)
+
+    for depto, legajo, nombre, dt, tipo in registros:
+        if tipo != "ENTRADA":
+            continue
+
+        depto = normalizar_depto(depto)
+        d = dt.date()
+        fecha_str = d.strftime("%Y-%m-%d")
+        legajo_txt = str(legajo).strip()
+        if legajo_txt in excluir_legajos:
+            continue
+
+        if is_weekend(d) or d in feriados or fecha_str in dias_paro:
+            continue
+
+        if obtener_inicio_asignado(asignaciones, legajo_txt, d):
+            continue
+
+        entradas_por_legajo_fecha[(depto, d, legajo_txt)].append(dt)
+
+    primeras_provisorio = {
+        clave: min(dts) for clave, dts in entradas_por_legajo_fecha.items()
+    }
+    inicio_grupal_provisorio = _clasificar_grupos_cuadrilla(primeras_provisorio)
+
+    # Con la cuadrilla provisoria ya armada, descartamos como candidatas a
+    # "primera entrada del día" las entradas de tramos cortos de madrugada
+    # que _debe_imputarse_al_dia_anterior consideraría del día anterior.
+    for (depto, legajo, nombre), eventos in _agrupar_por_empleado(registros).items():
+        legajo_txt = str(legajo).strip()
+        if legajo_txt in excluir_legajos:
+            continue
+
+        depto_n = normalizar_depto(depto)
+
+        for e, s, motivo in _limpiar_y_emparejar(eventos):
+            if motivo is not None:
+                continue
+
+            if _debe_imputarse_al_dia_anterior(
+                e=e, s=s, depto=depto_n, legajo=legajo_txt,
+                inicio_grupal=inicio_grupal_provisorio, asignaciones=asignaciones,
+                dias_paro=dias_paro, feriados=feriados, config=config,
+            ):
+                clave = (depto_n, e.date(), legajo_txt)
+                dts = entradas_por_legajo_fecha.get(clave)
+                if dts and e in dts:
+                    dts.remove(e)
+
+    primeras_por_legajo = {
+        clave: min(dts) for clave, dts in entradas_por_legajo_fecha.items() if dts
+    }
+
+    return _clasificar_grupos_cuadrilla(primeras_por_legajo)
 
 
 # =========================================================
@@ -801,7 +848,8 @@ def procesar_fichadas(
         asignaciones=asignaciones,
         feriados=feriados,
         dias_paro=dias_paro,
-        excluir_legajos=EXCLUIR_DE_INFERENCIA
+        excluir_legajos=EXCLUIR_DE_INFERENCIA,
+        config=config
     )
 
     resultados = {}
