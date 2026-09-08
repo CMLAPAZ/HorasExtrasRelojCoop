@@ -230,6 +230,10 @@ def test_calcular_periodo_incluye_excluido_con_ot_real(monkeypatch):
     monkeypatch.setattr(servidor, "_leer_historial", lambda *a, **kw: [item])
     monkeypatch.setattr(servidor, "_cargar_metadata", lambda: _meta_sem1())
     monkeypatch.setattr(servidor, "_sesion", {})
+    # No depender de recursos/excluidos_ot.json real -- ese archivo cambia
+    # con el tiempo (legajo 10 se sacó el 08/09/2026, era un dato viejo de
+    # Mancioni de antes de que tuviera su propio legajo 100).
+    monkeypatch.setattr(servidor, "_cargar_excluidos_ot", lambda: {_LEG_EXCLUIDO})
 
     resumen = servidor._calcular_periodo(1, 1, "administracion")
 
