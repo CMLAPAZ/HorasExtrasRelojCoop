@@ -71,6 +71,8 @@
 
     /* ── FRANCOS CIERRE ─── */
     .badge-aprobado{background:#dcfce7;color:#166534;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    .badge-anulado{background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
+    tr.franco-anulado td{opacity:.55;text-decoration:line-through}
     .badge-pendiente{background:#fff7ed;color:#92400e;font-size:.72rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .badge-dias{background:#dbeafe;color:#1e40af;font-size:.78rem;font-weight:750;padding:3px 10px;border-radius:999px}
     .info-box{border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;font-size:.88rem;font-weight:700;margin-bottom:12px}
@@ -223,7 +225,7 @@
         </thead>
         <tbody>
           {% for r in francos_cierre %}
-            <tr>
+            <tr{% if r.fue_anulado %} class="franco-anulado"{% endif %}>
               <td>{{ r.legajo }}</td>
               <td>{{ r.nombre }}</td>
               <td style="font-size:.78rem;color:#64748b">{{ r.tipo }}</td>
@@ -234,7 +236,8 @@
               </td>
               <td><span class="badge-dias">{{ r.dias }}</span></td>
               <td>
-                {% if r.estado == 'Aprobado' %}<span class="badge-aprobado">Aprobado</span>
+                {% if r.fue_anulado %}<span class="badge-anulado">Anulado</span>
+                {% elif r.estado == 'Aprobado' %}<span class="badge-aprobado">Aprobado</span>
                 {% else %}<span class="badge-pendiente">Pendiente</span>{% endif %}
               </td>
               <td style="font-size:.82rem;color:#64748b">{{ r.fecha_emision or '—' }}</td>

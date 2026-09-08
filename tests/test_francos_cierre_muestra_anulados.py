@@ -85,7 +85,6 @@ def test_estado_obs_franco_cierre_con_anulacion():
     assert estado == "Anulado"
     assert obs == "Anul. 08/09/2026"
     assert fue_anulado is True
-    assert fue_anulado is True
 
 
 # ─── Integración: PDF "Ver francos" del cierre ──────────────────────────
@@ -148,3 +147,57 @@ def test_pdf_ver_francos_muestra_anulado_en_vez_de_aprobado(db_temporal, client)
     assert "08/09/2026" in texto  # fecha corta en Obs., formato DD/MM/YYYY
     # El otro franco (no anulado) debe seguir figurando como Aprobado.
     assert "BARRIENTOS ROBERTO" in texto
+
+
+# ─── Integración: pantalla web /periodos/ver/<id> ───────────────────────
+
+def test_periodos_ver_muestra_anulado_en_seccion_francos(db_temporal, client):
+    """Mismo caso que el test anterior, pero para la pantalla web
+    (periodo_detalle.html), no el PDF -- es una cuarta ubicación distinta
+    que lee francos_cierre_detalle por su cuenta y tampoco cruzaba contra
+    francos_anulaciones_cerrados."""
+    conn = _conn(db_temporal)
+    leg, nombre = "151", "BARRIENTOS RODRIGO"
+    cur = conn.execute(
+        "INSERT INTO periodos (cerrado_en, semana_desde, semana_hasta, archivo, "
+        "fecha_desde, fecha_hasta, estado) VALUES (?,?,?,?,?,?,?)",
+        ("2026-09-08T12:39:00", 1, 4, "periodo_test.json",
+         "2026-08-03", "2026-08-30", "ACTIVO"),
+    )
+    pid = cur.lastrowid
+
+    cur2 = conn.execute(
+        "INSERT INTO francos_tomados (legajo, nombre, tipo, fecha_desde, fecha_hasta, "
+        "fechas_sueltas, dias, estado, cargado_en) VALUES (?,?,?,?,?,?,?,?,?)",
+        (leg, nombre, "UNICO", "2026-08-21", "2026-08-21", "[]", 1, "Cerrado", "2026-08-10 09:00:00"),
+    )
+    ft_id = cur2.lastrowid
+
+    conn.execute(
+        "INSERT INTO francos_cierre_detalle (periodo_id, legajo, nombre, departamento, tipo, "
+        "fecha_desde, fecha_hasta, fechas_sueltas, dias, estado, fecha_emision, autorizado_por, "
+        "observaciones, francos_tomados_id) VALUES (?,?,?,?, 'UNICO', ?, ?, '[]', ?, 'Aprobado', "
+        "'', '', '', ?)",
+        (pid, leg, nombre, "Redes", "2026-08-21", "2026-08-21", 1, ft_id),
+    )
+    conn.execute(
+        "INSERT INTO francos_anulaciones_cerrados (francos_tomados_id, legajo, nombre, "
+        "departamento, tipo, fecha_desde, fecha_hasta, fechas_sueltas, dias, motivo, usuario, "
+        "anulado_en, periodo_origen_id, periodo_aplicado_id, aplicado_en) VALUES "
+        "(?,?,?,?, 'UNICO', ?, ?, '[]', ?, ?, ?, ?, ?, NULL, '')",
+        (ft_id, leg, nombre, "Redes", "2026-08-21", "2026-08-21", 1,
+         "cargado por error", "Carola", "2026-09-08 10:00:00", pid),
+    )
+    conn.commit()
+    conn.close()
+
+    resp = client.get(f"/periodos/ver/{pid}")
+    assert resp.status_code == 200
+    texto = resp.get_data(as_text=True)
+
+    assert 'class="badge-anulado"' in texto
+    assert "Anul. 08/09/2026" in texto
+    # No debe seguir mostrando el badge verde de "Aprobado" para esa fila.
+    idx_badge_anulado = texto.index('class="badge-anulado"')
+    idx_barrientos = texto.index("BARRIENTOS RODRIGO")
+    assert abs(idx_badge_anulado - idx_barrientos) < 500

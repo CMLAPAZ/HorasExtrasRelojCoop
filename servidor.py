@@ -5700,11 +5700,15 @@ def periodos_ver(pid):
     with _get_db() as conn2:
         rows_ft = conn2.execute("""
             SELECT legajo, nombre, tipo, fecha_desde, fecha_hasta, fechas_sueltas,
-                   dias, estado, fecha_emision, autorizado_por, observaciones
+                   dias, estado, fecha_emision, autorizado_por, observaciones,
+                   francos_tomados_id
             FROM francos_cierre_detalle
             WHERE periodo_id = ?
             ORDER BY departamento, CAST(legajo AS INTEGER), fecha_desde
         """, (pid,)).fetchall()
+        anulados_info_ver = _anulados_por_franco_id(
+            conn2, [r["francos_tomados_id"] for r in rows_ft]
+        )
     for r in rows_ft:
         d = dict(r)
         if d["tipo"] == "SUELTAS":
@@ -5714,6 +5718,13 @@ def periodos_ver(pid):
                 d["fechas_lista"] = []
         else:
             d["fechas_lista"] = []
+        # francos_cierre_detalle es un snapshot inmutable -- si el franco se
+        # anuló después del cierre, esta fila seguiría diciendo "Aprobado"
+        # para siempre sin este cruce (ver _estado_obs_franco_cierre).
+        estado_mostrado, obs_mostrada, fue_anulado = _estado_obs_franco_cierre(d, anulados_info_ver)
+        d["estado"] = estado_mostrado
+        d["observaciones"] = obs_mostrada
+        d["fue_anulado"] = fue_anulado
         francos_cierre.append(d)
     with _get_db() as conn3:
         devoluciones = [dict(r) for r in conn3.execute(
