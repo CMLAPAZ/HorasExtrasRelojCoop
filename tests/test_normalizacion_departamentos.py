@@ -108,7 +108,11 @@ def test_empleados_conocidos_unifica_redes_minuscula_y_mayuscula(db_temporal, mo
     assert deptos["133"] == "Redes"
     assert deptos["1"] == "Redes"
 
-    grupos = {e["departamento"] for e in empleados}
+    # Acotado a los legajos de este caso -- _empleados_conocidos() siempre
+    # trae también a Ingenieros (100/101, vía empleados_extra), que no es
+    # lo que este test verifica (que Zabala y el otro empleado no queden
+    # separados en "redes" vs "Redes").
+    grupos = {deptos[leg] for leg in ("133", "1")}
     assert grupos == {"Redes"}, f"Debe quedar un único grupo 'Redes', no {grupos}"
 
 

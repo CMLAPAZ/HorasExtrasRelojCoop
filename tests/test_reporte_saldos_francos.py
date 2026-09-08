@@ -80,7 +80,10 @@ def test_calcular_saldos_unifica_administracion_con_y_sin_tilde(db_temporal):
     assert deptos["11"] == "Administración"
 
     grupos = _por_depto(saldos)
-    assert set(grupos.keys()) == {"Administración"}
+    # "Ingenieros" (100-Mancioni/101-Gatti) siempre aparece vía empleados_extra,
+    # sin relación con lo que este test verifica (que Administración no quede
+    # partida en "administracion"/"Administración").
+    assert {k for k in grupos if k != "Ingenieros"} == {"Administración"}
     assert len(grupos["Administración"]) == 2
 
 
@@ -113,7 +116,9 @@ def test_redes_unico_grupo_en_reporte(db_temporal):
     saldos = rep._calcular_saldos()
     grupos = _por_depto(saldos)
 
-    assert set(grupos.keys()) == {"Redes"}
+    # "Ingenieros" siempre aparece vía empleados_extra (100/101); no es lo
+    # que este test verifica (que Redes no quede partida en "redes"/"Redes").
+    assert {k for k in grupos if k != "Ingenieros"} == {"Redes"}
     assert len(grupos["Redes"]) == 2
 
 

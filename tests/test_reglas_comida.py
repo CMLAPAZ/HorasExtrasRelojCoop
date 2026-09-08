@@ -16,14 +16,18 @@ def _row(legajo, nombre, depto, fecha_hora, tipo):
 
 def test_comida_dia_habil_bloque_largo():
     # Día hábil: un solo tramo 06:00–14:00 (8h) -> con umbral_1=7h30, debería marcar 1 comida
+    # Legajo 150: cualquiera que no esté en LEGAJOS_EXCLUIR_PROCESAMIENTO
+    # ({"100","101"}, reasignados a Ingenieros en jul-2026 y excluidos de
+    # todo procesamiento biométrico) -- 100/101 ya no sirven como legajo de
+    # prueba genérico para Redes.
     data = [
-        _row("100","Juan","REDES","2025-09-01 06:00:00","ENTRADA"),
-        _row("100","Juan","REDES","2025-09-01 14:00:00","SALIDA"),
+        _row("150","Juan","REDES","2025-09-01 06:00:00","ENTRADA"),
+        _row("150","Juan","REDES","2025-09-01 14:00:00","SALIDA"),
     ]
     df = pd.DataFrame(data)
     res = P.procesar_fichadas(df, feriados=set())
     # _df_to_registros normaliza el departamento a minúsculas
-    key = ("redes", "100", "Juan")
+    key = ("redes", "150", "Juan")
     por_dia = res[key]
     d = list(sorted(por_dia.keys()))[0]
     tot = por_dia[d]["totales"]
