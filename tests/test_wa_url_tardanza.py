@@ -21,15 +21,29 @@ def _decodificar(wa_url):
     return urllib.parse.unquote(query)
 
 
-def test_dia_con_ot_y_tardanza_incluye_llegada_tarde(con_telefono):
+def test_dia_con_ot_y_tardanza_incluye_llegada_tarde_con_horario(con_telefono):
     dias = [{
         "fecha": "2026-08-27", "fecha_fmt": "08-27", "dia_semana": "Jueves",
         "ot50": "05:00:00", "ot100": "00:00:00",
         "franco": 0, "comida": 1, "tarde": 1,
+        "tramos": [{"entrada": "06:09", "salida": "18:05"}],
     }]
     url = servidor._wa_url("150", "MELGAREJO MANUEL", "http://x/e/tok", dias=dias)
     texto = _decodificar(url)
-    assert "Jueves 08-27: 05:00 (50%), Comida, Llegada tarde" in texto
+    assert "Jueves 08-27: 05:00 (50%), Comida, Llegada tarde (entró 06:09)" in texto
+
+
+def test_dia_con_tardanza_sin_tramos_no_rompe(con_telefono):
+    """Si por algún motivo el día no trae 'tramos', debe degradar
+    limpiamente a solo 'Llegada tarde' sin horario, no romper."""
+    dias = [{
+        "fecha": "2026-08-27", "fecha_fmt": "08-27", "dia_semana": "Jueves",
+        "ot50": "05:00:00", "ot100": "00:00:00",
+        "franco": 0, "comida": 0, "tarde": 1,
+    }]
+    url = servidor._wa_url("150", "MELGAREJO MANUEL", "http://x/e/tok", dias=dias)
+    texto = _decodificar(url)
+    assert "Jueves 08-27: 05:00 (50%), Llegada tarde" in texto
 
 
 def test_dia_sin_tardanza_no_menciona_llegada_tarde(con_telefono):
@@ -46,12 +60,15 @@ def test_dia_sin_tardanza_no_menciona_llegada_tarde(con_telefono):
 
 def test_dia_con_tardanza_sin_ot_ni_franco_ni_comida_igual_aparece(con_telefono):
     """Un dia con jornada normal completa (sin extras) pero llegada tarde
-    no debe descartarse por los filtros de 'no tiene nada que mostrar'."""
+    no debe descartarse por los filtros de 'no tiene nada que mostrar'
+    (caso real: CAINO, que antes recibia solo '- Tardanzas: 1' sin decir
+    que dia ni a que hora)."""
     dias = [{
         "fecha": "2026-08-27", "fecha_fmt": "08-27", "dia_semana": "Jueves",
         "ot50": "00:00:00", "ot100": "00:00:00",
         "franco": 0, "comida": 0, "tarde": 1,
+        "tramos": [{"entrada": "06:14", "salida": "13:05"}],
     }]
     url = servidor._wa_url("150", "MELGAREJO MANUEL", "http://x/e/tok", dias=dias)
     texto = _decodificar(url)
-    assert "Jueves 08-27: Llegada tarde" in texto
+    assert "Jueves 08-27: Llegada tarde (entró 06:14)" in texto

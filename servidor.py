@@ -793,7 +793,13 @@ def _wa_url(legajo, nombre, url, totales=None, dias=None):
                 if d.get("ot100") and d["ot100"] != "00:00:00": partes.append(f"{d['ot100'][:5]} (100%)")
                 if d.get("franco"):  partes.append("Franco")
                 if d.get("comida"):  partes.append("Comida")
-                if d.get("tarde"):   partes.append("Llegada tarde")
+                if d.get("tarde"):
+                    tramos = d.get("tramos") or []
+                    hora_entrada = tramos[0].get("entrada") if tramos else ""
+                    if hora_entrada:
+                        partes.append(f"Llegada tarde (entró {hora_entrada})")
+                    else:
+                        partes.append("Llegada tarde")
                 if partes:
                     prefijo = f"{dia_nombre} {fecha_fmt}" if dia_nombre else fecha_fmt
                     lineas.append(f"• {prefijo}: {', '.join(partes)}")
