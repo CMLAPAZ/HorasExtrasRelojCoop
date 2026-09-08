@@ -1870,6 +1870,29 @@ def _cargar_excluidos_ot():
     except Exception:
         return set()
 
+def _cargar_excluidos_ot_detalle():
+    """Lista [{legajo, nombre}] para la pantalla de administración,
+    preservando el orden del archivo."""
+    ruta = Path("recursos/excluidos_ot.json")
+    try:
+        data = json.loads(ruta.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    legajos = data.get("legajos", [])
+    nombres = data.get("nombres", [])
+    return [
+        {"legajo": str(legajos[i]), "nombre": nombres[i] if i < len(nombres) else ""}
+        for i in range(len(legajos))
+    ]
+
+def _guardar_excluidos_ot_detalle(detalle):
+    ruta = Path("recursos/excluidos_ot.json")
+    data = {
+        "legajos": [d["legajo"] for d in detalle],
+        "nombres": [d["nombre"] for d in detalle],
+    }
+    ruta.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
 def _cargar_francos_deptos_ocultos():
     """Deptos cuyo módulo de Francos está oculto temporalmente (ver
     recursos/francos_deptos_ocultos.json). El depto sigue existiendo en el
@@ -9293,7 +9316,8 @@ def configuracion_email():
     return render_template("configuracion_email.html",
                            cfg=cfg,
                            supervisores=supervisores,
-                           departamentos=departamentos)
+                           departamentos=departamentos,
+                           excluidos_ot=_cargar_excluidos_ot_detalle())
 
 
 @app.route("/configuracion/email/smtp", methods=["POST"])
@@ -9334,6 +9358,40 @@ def supervisores_eliminar(sid):
         conn.execute("DELETE FROM supervisores WHERE id=?", (sid,))
         conn.commit()
     return redirect(url_for("configuracion_email"))
+
+
+@app.route("/configuracion/excluidos-ot/nuevo", methods=["POST"])
+def excluidos_ot_nuevo():
+    """Agrega un legajo a recursos/excluidos_ot.json: sus horas quedan
+    registradas para control en los informes/PDF de cierre, pero nunca se
+    suman al total del departamento (otra categoría, no se liquidan)."""
+    if not _autenticado(): return _requiere_auth()
+    legajo = request.form.get("legajo", "").strip()
+    nombre = request.form.get("nombre", "").strip()
+    if not legajo:
+        return redirect(url_for("configuracion_email") + "?error=excl_legajo_requerido")
+
+    detalle = _cargar_excluidos_ot_detalle()
+    if any(d["legajo"] == legajo for d in detalle):
+        return redirect(url_for("configuracion_email") + "?error=excl_ya_existe")
+
+    if not nombre:
+        conocido = next(
+            (e for e in _empleados_conocidos() if str(e.get("legajo")) == legajo), None
+        )
+        nombre = conocido["nombre"] if conocido else ""
+
+    detalle.append({"legajo": legajo, "nombre": nombre})
+    _guardar_excluidos_ot_detalle(detalle)
+    return redirect(url_for("configuracion_email") + "?ok=excluido")
+
+
+@app.route("/configuracion/excluidos-ot/eliminar/<legajo>", methods=["POST"])
+def excluidos_ot_eliminar(legajo):
+    if not _autenticado(): return _requiere_auth()
+    detalle = [d for d in _cargar_excluidos_ot_detalle() if d["legajo"] != str(legajo)]
+    _guardar_excluidos_ot_detalle(detalle)
+    return redirect(url_for("configuracion_email") + "?ok=excl_eliminado")
 
 
 @app.route("/configuracion/feriados", methods=["GET"])

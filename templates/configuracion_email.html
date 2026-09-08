@@ -108,6 +108,10 @@
 <div class="ok-box">Supervisor agregado correctamente.</div>
 {% elif request.args.get('ok') == 'reporte' %}
 <div class="ok-box">Reporte enviado correctamente a {{ request.args.get('sup_nombre','') }}.</div>
+{% elif request.args.get('ok') == 'excluido' %}
+<div class="ok-box">Legajo agregado a la lista de excluidos de horas extras.</div>
+{% elif request.args.get('ok') == 'excl_eliminado' %}
+<div class="ok-box">Legajo quitado de la lista de excluidos de horas extras.</div>
 {% endif %}
 
 {% if request.args.get('error') %}
@@ -118,6 +122,10 @@
     No hay datos para los departamentos de este supervisor.
   {% elif request.args.get('error') == 'email' %}
     Error al enviar el email. Verificá la configuración SMTP.
+  {% elif request.args.get('error') == 'excl_legajo_requerido' %}
+    Ingresá el legajo a excluir.
+  {% elif request.args.get('error') == 'excl_ya_existe' %}
+    Ese legajo ya está en la lista de excluidos.
   {% else %}
     Error en el formulario.
   {% endif %}
@@ -245,6 +253,59 @@
   </div>
   {% else %}
   <p style="color:#94a3b8;font-size:.88rem">No hay supervisores configurados.</p>
+  {% endif %}
+</div>
+
+<!-- Legajos excluidos de horas extras -->
+<div class="card">
+  <div class="card-title">Legajos excluidos de horas extras (otra categoría)</div>
+  <p class="hint" style="margin-bottom:14px">
+    Las horas de estos legajos quedan registradas en los informes/PDF de cierre
+    para control, pero nunca se suman al total del departamento — no se
+    liquidan como horas extras.
+  </p>
+  <form method="post" action="/configuracion/excluidos-ot/nuevo">
+    <div class="grid-3" style="margin-bottom:14px">
+      <div>
+        <label for="excl_legajo">Legajo</label>
+        <input type="text" id="excl_legajo" name="legajo" placeholder="Ej: 3" required>
+      </div>
+      <div>
+        <label for="excl_nombre">Nombre (opcional)</label>
+        <input type="text" id="excl_nombre" name="nombre" placeholder="Se completa solo si se deja vacío">
+      </div>
+      <button type="submit" class="btn">Agregar</button>
+    </div>
+  </form>
+
+  {% if excluidos_ot %}
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Legajo</th>
+          <th>Nombre</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ex in excluidos_ot %}
+        <tr>
+          <td>{{ ex.legajo }}</td>
+          <td>{{ ex.nombre }}</td>
+          <td class="td-accion">
+            <form method="post" action="/configuracion/excluidos-ot/eliminar/{{ ex.legajo }}"
+                  onsubmit="return confirm('¿Quitar al legajo {{ ex.legajo }} de la lista de excluidos? Sus horas volverán a sumarse en los próximos cierres.')">
+              <button type="submit" class="btn-sm">Quitar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#94a3b8;font-size:.88rem">No hay legajos excluidos configurados.</p>
   {% endif %}
 </div>
 
