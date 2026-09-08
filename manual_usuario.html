@@ -571,7 +571,7 @@ li{margin-bottom:5px;font-size:.9rem}
         <tr><td><strong>Cierres</strong></td><td>Historial de todos los cierres mensuales realizados.</td></tr>
         <tr><td><strong>Historial</strong></td><td>Lista de confirmaciones recibidas de los empleados (incluye el acumulado de horas extra por empleado y semana).</td></tr>
         <tr><td><strong>Plus Vac.</strong></td><td>Informe imprimible de horas extras para calcular el plus vacacional (ver sección <a href="#plus-vacacional" style="color:var(--acc)">Plus Vacacional</a>).</td></tr>
-        <tr><td><strong>Admin ▾</strong></td><td>Menú desplegable con tareas administrativas: <strong>Empleados extra</strong> (importar empleados sin fichadas), <strong>Config. Email</strong> (SMTP y supervisores), <strong>Feriados</strong> (agregar/quitar feriados que usa el cálculo de horas extra) y <strong>Ajuste saldo inicial</strong> (corrección manual de saldo, ver sección <a href="#no-tocar" style="color:var(--acc)">Qué NO tocar</a>).</td></tr>
+        <tr><td><strong>Admin ▾</strong></td><td>Menú desplegable con tareas administrativas: <strong>Empleados extra</strong> (importar empleados sin fichadas), <strong>Config. Email</strong> (SMTP, supervisores y legajos excluidos de horas extras), <strong>Feriados</strong> (agregar/quitar feriados que usa el cálculo de horas extra) y <strong>Ajuste saldo inicial</strong> (corrección manual de saldo, ver sección <a href="#no-tocar" style="color:var(--acc)">Qué NO tocar</a>).</td></tr>
         <tr><td><strong>Salir</strong></td><td>Cerrar sesión.</td></tr>
       </tbody>
     </table>
@@ -783,6 +783,12 @@ li{margin-bottom:5px;font-size:.9rem}
     <div class="a-body"><strong>Si un empleado dice que el link no funciona</strong>
     Podés regenerar su link desde la semana usando el botón "Regenerar". Si sigue sin funcionar, avisá a Carola.</div>
   </div>
+
+  <div class="alert a-info">
+    <span class="a-ico">⏰</span>
+    <div class="a-body"><strong>El mensaje avisa si llegó tarde algún día</strong>
+    Si un empleado tuvo una llegada tarde esa semana, el renglón de ese día en el mensaje de WhatsApp lo dice, con la hora de entrada — por ejemplo: <em>"Jueves 08-27: 05:00 (50%), Comida, Llegada tarde (entró 06:09)"</em>. Si no llegó tarde ningún día, no aparece nada especial.</div>
+  </div>
 </section>
 
 <!-- ── CONFIRMACIONES ── -->
@@ -902,6 +908,16 @@ li{margin-bottom:5px;font-size:.9rem}
   <div class="card">
     <div class="card-ttl">Enviar el reporte ahora, sin esperar al viernes</div>
     <p>Cada supervisor de la lista tiene un botón <strong>"Enviar"</strong> — manda el reporte de saldos de sus departamentos en ese momento, con los datos actuales. Sirve para reenviar algo que no llegó, o para probar la configuración después de cambiarla.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl">Legajos excluidos de horas extras (otra categoría)</div>
+    <p>Al final de esta misma página hay una sección para gestionar los legajos que tienen otra categoría y cuyas horas <strong>no se liquidan como extras</strong> (por ejemplo Urrutia Silvia, Barrientos Roberto, Rohr). Sus horas quedan visibles en los informes/PDF de cierre para control, pero nunca se suman al total del departamento.</p>
+    <div class="steps">
+      <div class="step"><div class="snum">1</div><div class="sbody"><div class="st">Completar Legajo y, si querés, Nombre</div><div class="sd">Si dejás el nombre vacío, el sistema lo completa solo si reconoce el legajo.</div></div></div>
+      <div class="step"><div class="snum">2</div><div class="sbody"><div class="st">Presionar "Agregar"</div><div class="sd">Queda excluido desde ese momento en adelante — no cambia nada de lo ya cerrado.</div></div></div>
+      <div class="step"><div class="snum">3</div><div class="sbody"><div class="st">Para revertir, "Quitar" en la lista</div><div class="sd">Sus horas vuelven a sumarse normalmente en los próximos cierres.</div></div></div>
+    </div>
   </div>
 </section>
 
