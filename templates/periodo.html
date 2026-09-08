@@ -67,6 +67,8 @@
     .total-row td{background:#172033;color:#fff;font-weight:800;border-top:2px solid #172033}
     .total-row .ot50{color:#fcd34d}
     .total-row .ot100{color:#fca5a5}
+    .row-excluido td{background:#fff7ed}
+    .badge-excl{background:#fed7aa;color:#9a3412;font-size:.68rem;font-weight:750;padding:2px 7px;border-radius:999px;margin-left:6px;white-space:nowrap}
     .vacio{color:#64748b;font-size:.9rem;padding:22px 0;text-align:center}
     .hidden{display:none}
     .aviso{font-size:.84rem;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;border-radius:8px;margin-bottom:14px}
@@ -526,9 +528,12 @@ function renderTabla() {
           ).join('')
         : (e.semanas || []).join(', ');
       const estado = e.confirmado ? '<span class="ok">✓</span>' : '<span class="pend">⏳</span>';
-      html += `<tr>
+      const notaExcl = e.excluido_ot
+        ? ' <span class="badge-excl" title="Otra categoría: horas de control, no se liquidan ni se suman al total">No liquidable</span>'
+        : '';
+      html += `<tr class="${e.excluido_ot ? 'row-excluido' : ''}">
         <td>${e.legajo}</td>
-        <td class="emp-nombre">${e.nombre}</td>
+        <td class="emp-nombre">${e.nombre}${notaExcl}</td>
         <td class="ot50">${e.ot50  || '0h'}</td>
         <td class="ot100">${e.ot100 || '0h'}</td>
         <td>${e.comidas   || 0}</td>
