@@ -1283,6 +1283,31 @@ def _label_mes(fecha_str):
     except Exception:
         return (fecha_str or "")[:7]
 
+def _label_mes_por_rango(fecha_desde, fecha_hasta):
+    """Mes calendario con más días dentro de [fecha_desde, fecha_hasta].
+
+    Un cierre puede arrancar sus datos a fin de un mes (ej. una semana que
+    cruza el límite), pero pertenece de verdad al mes donde cae la mayoría
+    de sus días -- ni fecha_desde solo ni cerrado_en (que depende de cuándo
+    alguien apretó el botón, no de los datos) responden bien esa pregunta.
+    """
+    try:
+        d0 = datetime.strptime((fecha_desde or "")[:10], "%Y-%m-%d").date()
+        d1 = datetime.strptime((fecha_hasta or "")[:10], "%Y-%m-%d").date()
+    except Exception:
+        return _label_mes(fecha_desde)
+    if d1 < d0:
+        return _label_mes(fecha_desde)
+
+    conteo = {}
+    d = d0
+    while d <= d1:
+        clave = (d.year, d.month)
+        conteo[clave] = conteo.get(clave, 0) + 1
+        d += timedelta(days=1)
+    (anio, mes) = max(conteo, key=lambda k: conteo[k])
+    return f"{_MESES_ES[mes-1]} {anio}"
+
 def _pdf_bytes(pdf):
     data = pdf.output(dest="S")
     if isinstance(data, str):
@@ -9666,7 +9691,12 @@ def plus_vacacional():
             "tiene_horas": total_td.total_seconds() > 0,
         })
 
-    labels = [_label_mes(p["fecha_desde"]) for p in periodos_list]
+    # Etiqueta por el mes con más días dentro del rango del cierre, no por
+    # fecha_desde a secas -- un cierre "de julio" puede arrancar sus datos a
+    # fin de junio (semana que cruza el límite del mes), y etiquetar solo
+    # por fecha_desde lo mostraba como "Junio", duplicando la columna del
+    # cierre real de junio.
+    labels = [_label_mes_por_rango(p["fecha_desde"], p["fecha_hasta"]) for p in periodos_list]
 
     return render_template("plus_vacacional.html",
         departamento=depto_visible, depto_param=depto_param,
