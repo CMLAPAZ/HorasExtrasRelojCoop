@@ -1088,7 +1088,7 @@ def _snapshot_francos_cierre(conn, pid, fecha_corte, legajos=None, departamento=
     return devoluciones_list
 
 
-def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, escribir_archivo=True, devoluciones=None):
+def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, escribir_archivo=True, devoluciones=None, anulados_info=None):
     """Genera PDF con detalle de francos tomados para el cierre.
 
     `fecha_corte` es la fecha/hora REAL de cierre (periodos.cerrado_en) y se
@@ -1152,6 +1152,7 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
                 pdf.cell(ancho, 6, col, 1, 0, "C", fill=True)
             pdf.ln()
 
+        anulados_info = anulados_info or {}
         cabecera()
         depto_act = None
         for r in francos:
@@ -1176,15 +1177,21 @@ def _generar_pdf_francos_cierre(pid, francos, fecha_corte, reimpreso_el=None, es
                     fechas = "  ".join(f"{d[8:10]}/{d[5:7]}" for d in fl if len(d) >= 10)
                 except Exception:
                     fechas = r.get("fecha_desde", "")
+            estado_mostrado, obs_mostrada, fue_anulado = _estado_obs_franco_cierre(r, anulados_info)
+
             pdf.set_font(f, "", 8)
             pdf.cell(ANCHOS[0], 6, str(r.get("legajo","")),        1, 0, "C")
             pdf.cell(ANCHOS[1], 6, r.get("nombre",""),              1, 0, "L")
             pdf.cell(ANCHOS[2], 6, tipo,                            1, 0, "C")
             pdf.cell(ANCHOS[3], 6, fechas,                          1, 0, "L")
             pdf.cell(ANCHOS[4], 6, str(r.get("dias", 0)),           1, 0, "C")
-            pdf.cell(ANCHOS[5], 6, r.get("estado",""),              1, 0, "C")
+            if fue_anulado:
+                pdf.set_text_color(180, 0, 0)
+            pdf.cell(ANCHOS[5], 6, estado_mostrado,                 1, 0, "C")
+            if fue_anulado:
+                pdf.set_text_color(0, 0, 0)
             pdf.cell(ANCHOS[6], 6, r.get("autorizado_por","") or "",1, 0, "L")
-            pdf.cell(ANCHOS[7], 6, r.get("observaciones","") or "", 1, 1, "L")
+            pdf.cell(ANCHOS[7], 6, obs_mostrada,                    1, 1, "L")
 
         # Fila de total general
         total_dias = sum(r.get("dias", 0) or 0 for r in francos)
@@ -5704,6 +5711,13 @@ def _generar_pdf_cierre_completo(pid):
             (pid,)
         ).fetchall()]
 
+        # francos_cierre_detalle es un snapshot inmutable -- si el franco se
+        # anula después del cierre, esta fila seguiría diciendo "Aprobado"
+        # para siempre sin este cruce. Ver _anulados_por_franco_id.
+        anulados_info = _anulados_por_franco_id(
+            conn, [r.get("francos_tomados_id") for r in ft_db]
+        )
+
     saldo_ant = {}
     try:
         saldo_ant = json.loads(p.get("saldo_anterior") or "{}")
@@ -5992,14 +6006,20 @@ def _generar_pdf_cierre_completo(pid):
                 except Exception:
                     fechas = ft.get("fecha_desde", "")
 
+            estado_mostrado, obs_mostrada, fue_anulado = _estado_obs_franco_cierre(ft, anulados_info)
+
             check_pag()
             pdf.cell(ANCH_F[0], 6, str(ft.get("legajo","")),       1, 0, "C")
             pdf.cell(ANCH_F[1], 6, ft.get("nombre",""),             1, 0, "L")
             pdf.cell(ANCH_F[2], 6, tipo,                            1, 0, "C")
             pdf.cell(ANCH_F[3], 6, fechas,                          1, 0, "L")
             pdf.cell(ANCH_F[4], 6, str(ft.get("dias", 0)),          1, 0, "C")
-            pdf.cell(ANCH_F[5], 6, ft.get("estado",""),             1, 0, "C")
-            pdf.cell(ANCH_F[6], 6, ft.get("observaciones","") or "", 1, 1, "L")
+            if fue_anulado:
+                pdf.set_text_color(180, 0, 0)
+            pdf.cell(ANCH_F[5], 6, estado_mostrado,                 1, 0, "C")
+            if fue_anulado:
+                pdf.set_text_color(0, 0, 0)
+            pdf.cell(ANCH_F[6], 6, obs_mostrada,                    1, 1, "L")
 
     # ══════════════════════════════════════════════════════════════════════
     # SECCIÓN 5: Movimientos compensatorios (devoluciones de francos cerrados
@@ -6140,6 +6160,11 @@ def _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
             pdf.set_text_color(0, 0, 0)
 
     if ft_rows:
+        with _get_db() as conn:
+            anulados_info = _anulados_por_franco_id(
+                conn, [r.get("francos_tomados_id") for r in ft_rows]
+            )
+
         pdf.add_page()
         titulo_seccion(f"DETALLE DE FRANCOS TOMADOS — {depto_visible}")
         pdf.set_font(fam, "I", 8)
@@ -6164,14 +6189,20 @@ def _render_seccion_francos_depto(pdf, fam, depto_visible, periodo_label,
                 except Exception:
                     fechas = ft.get("fecha_desde", "")
 
+            estado_mostrado, obs_mostrada, fue_anulado = _estado_obs_franco_cierre(ft, anulados_info)
+
             check_pag()
             pdf.cell(ANCH_F[0], 6, str(ft.get("legajo", "")),        1, 0, "C")
             pdf.cell(ANCH_F[1], 6, ft.get("nombre", ""),             1, 0, "L")
             pdf.cell(ANCH_F[2], 6, tipo,                             1, 0, "C")
             pdf.cell(ANCH_F[3], 6, fechas,                           1, 0, "L")
             pdf.cell(ANCH_F[4], 6, str(ft.get("dias", 0)),           1, 0, "C")
-            pdf.cell(ANCH_F[5], 6, ft.get("estado", ""),             1, 0, "C")
-            pdf.cell(ANCH_F[6], 6, ft.get("observaciones", "") or "", 1, 1, "L")
+            if fue_anulado:
+                pdf.set_text_color(180, 0, 0)
+            pdf.cell(ANCH_F[5], 6, estado_mostrado,                  1, 0, "C")
+            if fue_anulado:
+                pdf.set_text_color(0, 0, 0)
+            pdf.cell(ANCH_F[6], 6, obs_mostrada,                     1, 1, "L")
 
     if devoluciones:
         pdf.ln(5)
@@ -6515,7 +6546,8 @@ def periodos_francos_pdf(pid):
             return "Cierre no encontrado.", 404
         francos = conn.execute("""
             SELECT legajo, nombre, departamento, tipo, fecha_desde, fecha_hasta,
-                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones
+                   fechas_sueltas, dias, estado, fecha_emision, autorizado_por, observaciones,
+                   francos_tomados_id
             FROM francos_cierre_detalle
             WHERE periodo_id=?
             ORDER BY CAST(legajo AS INTEGER), fecha_desde
@@ -6524,13 +6556,17 @@ def periodos_francos_pdf(pid):
             "SELECT * FROM francos_anulaciones_cerrados WHERE periodo_aplicado_id=? ORDER BY CAST(legajo AS INTEGER)",
             (pid,)
         ).fetchall()
+        francos_list = [dict(r) for r in francos]
+        anulados_info = _anulados_por_franco_id(
+            conn, [r.get("francos_tomados_id") for r in francos_list]
+        )
     fecha_corte = _normalizar_cargado_en(p["cerrado_en"] or "")
     hoy = datetime.now().strftime("%Y-%m-%d")
-    francos_list = [dict(r) for r in francos]
     devoluciones_list = [dict(d) for d in devoluciones]
     pdf_bytes = _generar_pdf_francos_cierre(pid, francos_list, fecha_corte,
                                              reimpreso_el=hoy, escribir_archivo=False,
-                                             devoluciones=devoluciones_list)
+                                             devoluciones=devoluciones_list,
+                                             anulados_info=anulados_info)
     if pdf_bytes is None:
         return "Error generando PDF.", 500
     fd = (p["fecha_desde"] or "").replace("-", "")
@@ -9148,6 +9184,40 @@ def francos_nuevo():
         )
         conn.commit()
     return redirect(url_for("francos"))
+
+def _anulados_por_franco_id(conn, ft_ids):
+    """{francos_tomados_id: {anulado_en, motivo}} para los ids de
+    francos_cierre_detalle.francos_tomados_id que fueron anulados alguna
+    vez via /francos/anular-cerrado -- sin importar a qué cierre se le
+    aplicó la devolución del día (periodo_aplicado_id puede ser de un
+    cierre posterior distinto del que se está mirando). Usado para que el
+    detalle de francos de un cierre ya cerrado no siga mostrando
+    "Aprobado" para siempre en un franco que se anuló después."""
+    ft_ids = [i for i in ft_ids if i]
+    if not ft_ids:
+        return {}
+    ph = ",".join("?" * len(ft_ids))
+    rows = conn.execute(
+        f"SELECT francos_tomados_id, anulado_en, motivo FROM francos_anulaciones_cerrados "
+        f"WHERE francos_tomados_id IN ({ph})",
+        ft_ids
+    ).fetchall()
+    return {r["francos_tomados_id"]: dict(r) for r in rows}
+
+
+def _estado_obs_franco_cierre(ft, anulados_info):
+    """(estado_mostrado, obs_mostrada, fue_anulado) para una fila de
+    francos_cierre_detalle, reemplazando el estado congelado al momento
+    del cierre por "Anulado" + fecha/motivo si corresponde."""
+    anulacion = anulados_info.get(ft.get("francos_tomados_id"))
+    if not anulacion:
+        return ft.get("estado", ""), (ft.get("observaciones", "") or ""), False
+    fecha_anul = (anulacion.get("anulado_en") or "")[:10]
+    obs = f"Anulado el {fecha_anul}"
+    if anulacion.get("motivo"):
+        obs += f" — {anulacion['motivo']}"
+    return "Anulado", obs, True
+
 
 def _devolver_saldo_franco_anulado(conn, legajo, dias, cargado_en):
     """Si el franco anulado ya estaba contado en tomados_al_corte, devuelve
