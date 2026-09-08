@@ -76,12 +76,15 @@ def test_estado_obs_franco_cierre_sin_anulacion():
 
 
 def test_estado_obs_franco_cierre_con_anulacion():
+    # Obs. compacta a propósito -- una de las 3 columnas donde se muestra
+    # (PDF "Ver francos") es angosta y no entra "Anulado el YYYY-MM-DD —
+    # motivo largo". "Anulado" ya se ve en Estado; acá solo la fecha corta.
     ft = {"francos_tomados_id": 50, "estado": "Aprobado", "observaciones": ""}
     anulados = {50: {"anulado_en": "2026-09-08 10:00:00", "motivo": "cargado por error"}}
     estado, obs, fue_anulado = servidor._estado_obs_franco_cierre(ft, anulados)
     assert estado == "Anulado"
-    assert "2026-09-08" in obs
-    assert "cargado por error" in obs
+    assert obs == "Anul. 08/09/2026"
+    assert fue_anulado is True
     assert fue_anulado is True
 
 
@@ -142,6 +145,6 @@ def test_pdf_ver_francos_muestra_anulado_en_vez_de_aprobado(db_temporal, client)
 
     assert "BARRIENTOS RODRIGO" in texto
     assert "Anulado" in texto
-    assert "2026-09-08" in texto
+    assert "08/09/2026" in texto  # fecha corta en Obs., formato DD/MM/YYYY
     # El otro franco (no anulado) debe seguir figurando como Aprobado.
     assert "BARRIENTOS ROBERTO" in texto

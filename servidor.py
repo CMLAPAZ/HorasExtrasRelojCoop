@@ -4124,6 +4124,51 @@ def admin_desglose_generados(legajo):
     })
 
 
+@app.route("/admin/diagnostico-francos-anulados/<int:pid>")
+def admin_diagnostico_francos_anulados(pid):
+    """Solo lectura: para un cierre puntual, compara cada fila de
+    francos_cierre_detalle contra francos_anulaciones_cerrados y
+    francos_tomados (estado en vivo), para diagnosticar sin adivinar por
+    qué un franco anulado después del cierre no se está marcando como tal
+    en el detalle de francos del cierre (ver _anulados_por_franco_id)."""
+    if not _autenticado(): return jsonify({"error": "No autorizado"}), 401
+    with _get_db() as conn:
+        detalle = [dict(r) for r in conn.execute(
+            "SELECT * FROM francos_cierre_detalle WHERE periodo_id=? "
+            "ORDER BY CAST(legajo AS INTEGER), fecha_desde",
+            (pid,)
+        ).fetchall()]
+        filas = []
+        for d in detalle:
+            ft_id = d.get("francos_tomados_id")
+            anulacion = None
+            if ft_id:
+                anulacion = conn.execute(
+                    "SELECT * FROM francos_anulaciones_cerrados WHERE francos_tomados_id=?",
+                    (ft_id,)
+                ).fetchone()
+                anulacion = dict(anulacion) if anulacion else None
+            vivo = None
+            if ft_id:
+                vivo_row = conn.execute(
+                    "SELECT id, estado, fecha_anulacion, motivo_anulacion FROM francos_tomados WHERE id=?",
+                    (ft_id,)
+                ).fetchone()
+                vivo = dict(vivo_row) if vivo_row else None
+            filas.append({
+                "legajo": d.get("legajo"),
+                "nombre": d.get("nombre"),
+                "fecha_desde": d.get("fecha_desde"),
+                "francos_cierre_detalle_id": d.get("id"),
+                "francos_tomados_id_en_snapshot": ft_id,
+                "estado_congelado_en_snapshot": d.get("estado"),
+                "francos_tomados_estado_en_vivo": vivo.get("estado") if vivo else "(sin francos_tomados_id o fila borrada)",
+                "encontro_anulacion_por_id": anulacion is not None,
+                "anulacion_encontrada": anulacion,
+            })
+    return jsonify({"periodo_id": pid, "total_filas": len(filas), "filas": filas})
+
+
 @app.route("/admin/auditoria-completa-saldos-francos")
 def admin_auditoria_completa_saldos_francos():
     """Solo lectura: para TODOS los legajos con al menos un cierre en el
@@ -9212,11 +9257,17 @@ def _estado_obs_franco_cierre(ft, anulados_info):
     anulacion = anulados_info.get(ft.get("francos_tomados_id"))
     if not anulacion:
         return ft.get("estado", ""), (ft.get("observaciones", "") or ""), False
-    fecha_anul = (anulacion.get("anulado_en") or "")[:10]
-    obs = f"Anulado el {fecha_anul}"
-    if anulacion.get("motivo"):
-        obs += f" — {anulacion['motivo']}"
-    return "Anulado", obs, True
+    # Columna Obs. angosta en alguno de los 3 PDFs que usan esto (ej. "Ver
+    # francos" del cierre) -- "Anulado" ya se ve en la columna Estado, acá
+    # solo entra la fecha corta; el motivo completo queda en la sección
+    # "Movimientos compensatorios"/"MOVIMIENTOS COMPENSATORIOS" de los PDFs
+    # que la tienen.
+    fecha_iso = (anulacion.get("anulado_en") or "")[:10]
+    try:
+        fecha_anul = datetime.strptime(fecha_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        fecha_anul = fecha_iso
+    return "Anulado", f"Anul. {fecha_anul}", True
 
 
 def _devolver_saldo_franco_anulado(conn, legajo, dias, cargado_en):
