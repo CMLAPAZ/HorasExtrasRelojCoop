@@ -5626,6 +5626,7 @@ def periodos_ver(pid):
             "SELECT * FROM periodo_empleados WHERE periodo_id=? ORDER BY departamento, CAST(legajo AS INTEGER)",
             (pid,)
         ).fetchall()
+    excluidos_ot_ver = _cargar_excluidos_ot()
     empleados = []
     for e in rows:
         if str(e["legajo"]) in LEGAJOS_EXCLUIR_INFORMES:
@@ -5633,6 +5634,10 @@ def periodos_ver(pid):
         d = dict(e)
         d["semanas"]   = json.loads(d["semanas"] or "[]")
         d["confirmado"] = bool(d["confirmado"])
+        # periodo_empleados no guarda excluido_ot -- se chequea en vivo, igual
+        # criterio que _calcular_periodo() y _generar_pdf_cierre_completo(),
+        # para que el total de esta pantalla no sume horas de otra categoría.
+        d["excluido_ot"] = str(e["legajo"]) in excluidos_ot_ver
         empleados.append(d)
     semanas = sorted({s for e in empleados for s in e.get("semanas", [])})
     deptos_cierre = sorted({e["departamento"] for e in empleados if e.get("departamento")})
