@@ -9503,7 +9503,15 @@ _ODS_PERSONAL = Path(r"I:\Desde Facturacion\PERSONAL POR SECTOR.ods")
 
 
 def _leer_ods_personal():
-    """Parsea el ODS y devuelve lista de {nombre, departamento}."""
+    """Parsea el ODS y devuelve lista de {nombre, departamento}.
+
+    _ODS_PERSONAL apunta a una unidad de red de la oficina (I:\\...) que
+    solo existe en esa red local -- desde la web (PythonAnywhere) nunca es
+    alcanzable, y eso no es un error real que valga la pena mostrarle a la
+    usuaria como tal cada vez que entra a esta pantalla.
+    """
+    if not _ODS_PERSONAL.exists():
+        return [], None
     try:
         import pandas as pd
         df = pd.read_excel(str(_ODS_PERSONAL), engine="odf", header=None)
