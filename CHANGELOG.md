@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [1.3.1] - 2026-09-07
+
+### Corregido
+
+- **Bug de cuadrilla/madrugada:** `inferir_inicio_grupal()` tomaba la primera fichada ENTRADA cruda del día (sin descartar tramos cortos aislados de madrugada, ej. 01:42-02:07) para inferir el horario de cuadrilla — eso podía dejar a un legajo con un horario inferido muy temprano (04:30) aunque el resto de su grupo entrara mucho después, marcándolo "Tarde" por error. Ahora se calcula una cuadrilla provisoria, se descartan con ella los tramos que ya se imputarían al día anterior, y se recalcula la cuadrilla final. Afecta tanto al informe día a día (procesador.py) como al módulo de Control de Puntualidad.
+
 ## [1.3.0] - 2026-08-10
 
 ### Agregado
